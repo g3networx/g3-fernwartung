@@ -32,6 +32,9 @@ git -C "$tools/vcpkg" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d; Check
 $env:VCPKG_ROOT="$tools/vcpkg"
 & "$tools/vcpkg/vcpkg.exe" install --triplet x64-windows-static --host-triplet x64-windows-static "--x-install-root=$tools/vcpkg/installed"; Check
 python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Check
+Push-Location flutter
+flutter test --no-pub test/g3_legal_notices_test.dart; Check
+Pop-Location
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
 New-Item -ItemType Directory -Path outputs,g3-build/msi -Force | Out-Null

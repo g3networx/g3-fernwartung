@@ -1,3 +1,4 @@
+import '../widgets/g3_legal_notices.dart';
 import '../../g3_passwords.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -2575,41 +2576,7 @@ class _AboutState extends State<_About> {
                 translate('Slogan_tip'),
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ).marginSymmetric(vertical: 4.0),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: const Text('Rechtliche Hinweise / Legal notices'),
-                children: [
-                  SelectionArea(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Tech Pte. Ltd.\n$license',
-                        ),
-                        const Text(
-                          'RustDesk · GNU Affero General Public License v3. '
-                          'Weitergabe und Änderungen sind nach dieser Lizenz erlaubt. '
-                          'Keine Gewährleistung, soweit gesetzlich zulässig.\n'
-                          'Redistribution and modification are permitted under this license. '
-                          'No warranty, to the extent permitted by law.',
-                        ).marginSymmetric(vertical: 8.0),
-                        InkWell(
-                          onTap: () => launchUrlString(
-                              'https://www.gnu.org/licenses/agpl-3.0.html'),
-                          child: const Text('Lizenztext / License', style: linkStyle)
-                              .marginSymmetric(vertical: 4.0),
-                        ),
-                        InkWell(
-                          onTap: () => launchUrlString(
-                              'https://github.com/g3networx/g3-fernwartung'),
-                          child: const Text('Quellcode / Source code', style: linkStyle)
-                              .marginSymmetric(vertical: 4.0),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ).marginSymmetric(vertical: 4.0)
+              G3LegalNotices(license: license, year: DateTime.now().year)
             ],
           ).marginOnly(left: _kContentHMargin)
         ]),
