@@ -376,6 +376,16 @@ impl Client {
         (i32, String),
     )> {
         debug_assert!(peer == interface.get_id());
+        let local_ids = tokio::task::spawn_blocking(|| {
+            let mut ids = crate::g3_local_connection_ids();
+            #[cfg(not(target_os = "ios"))]
+            ids.push(crate::ipc::get_id());
+            ids
+        })
+            .await.unwrap_or_else(|_|vec![Config::get_id()]);
+        if crate::g3_self_connection::target_is_self(peer, &local_ids) {
+            bail!(crate::g3_self_connection::ERROR);
+        }
         interface.update_direct(None);
         interface.update_received(false);
         match Self::_start(peer, key, token, conn_type, interface.clone()).await {
@@ -3881,6 +3891,7 @@ impl LoginConfigHandler {
             os_login,
             hwid,
             avatar,
+            g3_machine: crate::g3_machine_marker(),
             ..Default::default()
         };
         match self.conn_type {

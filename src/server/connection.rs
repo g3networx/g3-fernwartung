@@ -370,6 +370,7 @@ pub struct Connection {
     port_forward_address: String,
     tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
     authorized: bool,
+    g3_session: Option<crate::g3_sessions::Session>,
     // The place among the unauthorized connections; given back at authorization.
     unauthorized_id: Option<UnauthorizedID>,
     require_2fa: Option<totp_rs::TOTP>,
@@ -586,6 +587,7 @@ impl Connection {
             port_forward_address: "".to_owned(),
             tx_to_cm,
             authorized: false,
+            g3_session: None,
             unauthorized_id: Some(unauthorized),
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
@@ -1157,6 +1159,10 @@ impl Connection {
                     }
                 }
                 _ = second_timer.tick() => {
+                    if conn.g3_session.as_ref().map(|s| !s.valid()).unwrap_or(false) {
+                        conn.on_close("Customer session admission expired", true).await;
+                        break;
+                    }
                     #[cfg(windows)]
                     conn.portable_check();
                     raii::AuthedConnID::check_wake_lock_on_setting_changed();
@@ -1888,6 +1894,11 @@ impl Connection {
         if !self.connect_port_forward_if_needed().await {
             return false;
         }
+        let kind = if self.file_transfer.is_some() {"file"} else if self.terminal {"terminal"} else if self.is_port_forward() {"tunnel"} else {"desktop"};
+        match crate::g3_sessions::Session::start(self.lr.my_id.clone(), kind).await {
+            Ok(s) => self.g3_session = Some(s),
+            Err(e) => { self.send_login_error(e).await; return false; }
+        }
         self.authorized = true;
         self.unauthorized_id = None;
         // One-time means gone once it has let a peer in, not once that peer
@@ -1934,6 +1945,7 @@ impl Connection {
         let mut res = LoginResponse::new();
         let mut pi = PeerInfo {
             username: username.clone(),
+            g3_machine: crate::g3_machine_marker(),
             version: VERSION.to_owned(),
             ..Default::default()
         };
@@ -2565,6 +2577,31 @@ impl Connection {
                 return true;
             }
         }
+        // An explicitly provisioned service credential supplements existing customer credentials.
+        // Use the normal challenge and all subsequent authorization checks, never a plaintext fallback.
+        if matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host" | "g3Soforthilfe") {
+            let local = Config::get_option("g3-local-passwords");
+            let (local_json, local_decrypted, _) = password::decrypt_str_or_original(&local, "00");
+            if local_decrypted {
+                if let Ok(passwords) = serde_json::from_str::<Vec<(String,String)>>(&local_json) {
+                    if passwords.iter().take(16).any(|(_,p)| !p.is_empty() && self.validate_password_plain(p)) {
+                        self.set_conn_audit_primary_auth(ConnAuditPrimaryAuth::PermanentPassword);
+                        return true;
+                    }
+                }
+            }
+            let stored = Config::get_option("g3-service-password");
+            let (service_password, decrypted, _) = password::decrypt_str_or_original(&stored, "00");
+            if decrypted {
+                let passwords = serde_json::from_str::<Vec<String>>(&service_password)
+                    .unwrap_or_else(|_| vec![service_password]);
+                if passwords.iter().take(16).any(|p| !p.is_empty() && self.validate_password_plain(p)) {
+                    self.set_conn_audit_primary_auth(ConnAuditPrimaryAuth::PermanentPassword);
+                    return true;
+                }
+            }
+        }
+
         if password::permanent_enabled() || allow_permanent_password {
             let print_fallback = || {
                 if allow_permanent_password && !password::permanent_enabled() {
@@ -2860,6 +2897,15 @@ impl Connection {
         }
         // After handling CloseReason messages, proceed to process other message types
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
+            // Reject before authorization, consent UI, capture and accounting.
+            // This also catches Full/Host/Ad-Hoc and separate RDP-user IDs.
+            let same_machine = crate::g3_self_connection::same_machine(&crate::g3_machine_marker(), &lr.g3_machine);
+            let local_ids = tokio::task::spawn_blocking(crate::g3_local_connection_ids).await.unwrap_or_default();
+            let source_id = lr.my_id.split('@').next().unwrap_or(&lr.my_id);
+            if same_machine || local_ids.iter().any(|id|!id.is_empty() && id==source_id) {
+                self.send_login_error(crate::g3_self_connection::ERROR).await;
+                return false;
+            }
             if !self.check_login_scope(&lr).await {
                 return false;
             }
@@ -5236,6 +5282,7 @@ impl Connection {
             return;
         }
         self.closed = true;
+        if let Some(s) = self.g3_session.take() { s.close(); }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //

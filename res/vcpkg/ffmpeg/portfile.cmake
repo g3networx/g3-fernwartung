@@ -1,3 +1,5 @@
+# g3 Windows production client uses the validated release libraries only.
+set(VCPKG_BUILD_TYPE release)
 # FFmpeg 7.1.1 includes the HEVC WPP slice-thread deadlock fix:
 # https://github.com/FFmpeg/FFmpeg/commit/79c47dfd25f101b6842bbec8c6ffef8d5077c3ae
 vcpkg_from_github(

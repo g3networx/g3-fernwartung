@@ -100,6 +100,8 @@ mod acl;
 mod installer_handoff;
 mod installer_shell;
 mod msi_registry;
+mod g3_msi;
+pub(crate) use g3_msi::enrollment_source as g3_msi_enrollment_source;
 pub(crate) use acl::current_process_user_sid_string;
 pub use acl::{
     set_path_permission, set_path_permission_for_portable_service_shmem_dir,
@@ -1481,8 +1483,10 @@ pub fn copy_exe_cmd(src_exe: &str, exe: &str, path: &str) -> ResultType<String> 
     Ok(format!(
         "
         {main_exe}
+        {normalize_exe}
         copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
         ",
+        normalize_exe = if matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host" | "g3Soforthilfe") { rename_exe_cmd(src_exe, path)? } else { String::new() },
         ORIGIN_PROCESS_EXE = win_topmost_window::ORIGIN_PROCESS_EXE,
         broker_exe = win_topmost_window::INJECTED_PROCESS_EXE,
     ))
@@ -1534,8 +1538,14 @@ fn get_after_install(
     // https://github.com/rustdesk/rustdesk/commit/f4bdfb6936ae4804fc8ab1cf560db192622ad01a
     // and https://github.com/leanflutter/uni_links_desktop/blob/1b72b0226cec9943ca8a84e244c149773f384e46/lib/src/protocol_registrar_impl_windows.dart#L30
     let hcu = RegKey::predef(HKEY_CURRENT_USER);
-    hcu.delete_subkey_all(format!("Software\\Classes\\{}", exe))
+    hcu.delete_subkey_all(format!("Software\\Classes\\{}", ext))
         .ok();
+
+    let repair_acl = if app_name == "g3Fernwartung" || app_name == "g3Host" {
+        std::path::Path::new(exe).parent().and_then(|p| p.to_str())
+            .map(|p| format!("icacls \"{}\" /reset /T /C /Q", escape_nested_cmd_ampersands(p)))
+            .unwrap_or_default()
+    } else { String::new() };
 
     let desktop_shortcuts = reg_value_desktop_shortcuts
         .map(|v| {
@@ -1559,6 +1569,7 @@ fn get_after_install(
 
     format!("
     chcp 65001
+    {repair_acl}
     reg add HKEY_CLASSES_ROOT\\.{ext} /f
     {desktop_shortcuts}
     {start_menu_shortcuts}
@@ -1569,12 +1580,12 @@ fn get_after_install(
     reg add HKEY_CLASSES_ROOT\\.{ext}\\shell\\open /f
     reg add HKEY_CLASSES_ROOT\\.{ext}\\shell\\open\\command /f
     reg add HKEY_CLASSES_ROOT\\.{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{nested_exe}\\\" --play \\\"%%1\\\"\"
-    reg add HKEY_CLASSES_ROOT\\{ext} /f
-    reg add HKEY_CLASSES_ROOT\\{ext} /f /v \"URL Protocol\" /t REG_SZ /d \"\"
-    reg add HKEY_CLASSES_ROOT\\{ext}\\shell /f
-    reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open /f
-    reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f
-    reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{nested_exe}\\\" \\\"%%1\\\"\"
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext} /f
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext} /f /v \"URL Protocol\" /t REG_SZ /d \"\"
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext}\\shell /f
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext}\\shell\\open /f
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext}\\shell\\open\\command /f
+    reg add HKEY_LOCAL_MACHINE\\Software\\Classes\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{nested_exe}\\\" \\\"%%1\\\"\"
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
@@ -1587,6 +1598,13 @@ pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> Res
     let (installed_subkey, _, _, _) = get_install_info();
     if get_windows_installer_state(&installed_subkey)? == Some(true) {
         bail!("Cannot install the EXE package over an existing MSI installation");
+    }
+    if matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host") {
+        let source = std::env::current_exe()?;
+        let directory = source.parent().ok_or_else(|| anyhow!("Missing installer directory"))?;
+        for item in ["data/app.so", "data/icudtl.dat", "librustdesk.dll", "flutter_windows.dll"] {
+            if !directory.join(item).is_file() { bail!("Incomplete client package; existing installation retained"); }
+        }
     }
     let uninstall_str = get_uninstall(false, false)?;
     let mut path = path.trim_end_matches('\\').to_owned();
@@ -1712,7 +1730,7 @@ copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\
         // No need to use `|| true` here.
         // The script will not exit even if `--install-remote-printer` panics.
         format!("\"{}\" --install-remote-printer", &src_exe)
-    } else if is_win_10_or_greater() {
+    } else if is_win_10_or_greater() && !matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host" | "g3Soforthilfe") {
         format!("\"{}\" --uninstall-remote-printer", &src_exe)
     } else {
         "".to_owned()
@@ -4149,6 +4167,7 @@ impl Drop for WallPaperRemover {
 }
 
 fn get_uninstall_amyuni_idd() -> String {
+    if matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host" | "g3Soforthilfe") { return String::new(); }
     match std::env::current_exe() {
         Ok(path) => format!("\"{}\" --uninstall-amyuni-idd", path.to_str().unwrap_or("")),
         Err(e) => {

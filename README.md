@@ -1,3 +1,19 @@
+# g3 NetworX Fernwartung
+
+Independent GNU AGPL-3.0 fork of RustDesk for authorized remote support. Windows variants include a full technician client, an incoming-only installed host and portable attended support. Device enrollment, scoped address books, HTTPS credential handoff, password provisioning, self-connection prevention and automatic session accounting are implemented by the g3 additions.
+
+## Code signing policy
+
+See [Code signing policy and privacy](CODE_SIGNING_POLICY.md). SignPath Foundation sponsorship is being requested; it has not been granted. Existing public downloads use an internal self-issued certificate, not public publisher trust. No customer enrollment codes, credentials or private keys are included in this repository.
+
+## Verifiable Windows build
+
+The [g3 Windows verified build](.github/workflows/g3-windows.yml) builds committed source on a hosted Windows runner, applies the reviewed hbb_common patch, checks the pinned engine and WiX archive hashes, runs the IPC regression test, and uploads unsigned packages, source-commit provenance and SHA256 checksums. This establishes build traceability; byte-for-byte reproducibility and public signing are not yet claimed. Build logs and failed runs are public.
+
+Downloads: https://rust.g3nx.net/client . Full source history and upstream notices are retained below. Upstream RustDesk does not endorse this fork.
+
+---
+
 <p align="center">
   <img src="res/logo-header.svg" alt="RustDesk - Your remote desktop"><br>
   <a href="#raw-steps-to-build">Build</a> •

@@ -1579,6 +1579,10 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                     }
                     Some(login_response::Union::PeerInfo(pi)) => {
+                        if crate::g3_self_connection::same_machine(&crate::g3_machine_marker(), &pi.g3_machine) {
+                            self.handler.handle_login_error(crate::g3_self_connection::ERROR);
+                            return false;
+                        }
                         let peer_version = pi.version.clone();
                         let peer_platform = pi.platform.clone();
                         self.set_peer_info(&pi);

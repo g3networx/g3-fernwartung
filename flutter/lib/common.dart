@@ -1,3 +1,4 @@
+import 'package:http/http.dart' as g3Http;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -249,16 +250,16 @@ class MyTheme {
   MyTheme._();
 
   static const Color grayBg = Color(0xFFEFEFF2);
-  static const Color accent = Color(0xFF0071FF);
+  static const Color accent = Color(0xFF00B8E8);
   static const Color accent50 = Color(0x770071FF);
   static const Color accent80 = Color(0xAA0071FF);
-  static const Color canvasColor = Color(0xFF212121);
+  static const Color canvasColor = Color(0xFF071D29);
   static const Color border = Color(0xFFCCCCCC);
   static const Color idColor = Color(0xFF00B6F0);
   static const Color darkGray = Color.fromARGB(255, 148, 148, 148);
   static const Color cmIdColor = Color(0xFF21790B);
   static const Color dark = Colors.black87;
-  static const Color button = Color(0xFF2C8CFF);
+  static const Color button = Color(0xFF087DCA);
   static const Color hoverBorder = Color(0xFF999999);
 
   // ListTile
@@ -472,8 +473,8 @@ class MyTheme {
     useMaterial3: false,
     brightness: Brightness.dark,
     hoverColor: Color.fromARGB(255, 45, 46, 53),
-    scaffoldBackgroundColor: Color(0xFF18191E),
-    dialogBackgroundColor: Color(0xFF18191E),
+    scaffoldBackgroundColor: Color(0xFF071D29),
+    dialogBackgroundColor: Color(0xFF071D29),
     appBarTheme: AppBarTheme(
       shadowColor: Colors.transparent,
     ),
@@ -483,14 +484,14 @@ class MyTheme {
         borderRadius: BorderRadius.circular(18.0),
         side: BorderSide(
           width: 1,
-          color: Color(0xFF24252B),
+          color: Color(0xFF102E3E),
         ),
       ),
     ),
     scrollbarTheme: scrollbarThemeDark,
     inputDecorationTheme: (isDesktop || isWebDesktop)
         ? InputDecorationTheme(
-            fillColor: Color(0xFF24252B),
+            fillColor: Color(0xFF102E3E),
             filled: true,
             isDense: true,
             border: OutlineInputBorder(
@@ -509,7 +510,7 @@ class MyTheme {
         color: accent80,
       ),
     ),
-    cardColor: Color(0xFF24252B),
+    cardColor: Color(0xFF102E3E),
     visualDensity: VisualDensity.adaptivePlatformDensity,
     tabBarTheme: const TabBarTheme(
       labelColor: Colors.white70,
@@ -543,7 +544,7 @@ class MyTheme {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        backgroundColor: Color(0xFF24252B),
+        backgroundColor: Color(0xFF102E3E),
         side: BorderSide(color: Colors.white12, width: 0.5),
         disabledForegroundColor: Colors.white70,
         foregroundColor: Colors.white70,
@@ -562,7 +563,7 @@ class MyTheme {
     colorScheme: ColorScheme.dark(
       primary: Colors.blue,
       secondary: accent,
-      background: Color(0xFF24252B),
+      background: Color(0xFF102E3E),
     ),
     popupMenuTheme: PopupMenuThemeData(
         shape: RoundedRectangleBorder(
@@ -577,7 +578,8 @@ class MyTheme {
   );
 
   static ThemeMode getThemeModePreference() {
-    return themeModeFromString(bind.mainGetLocalOption(key: kCommConfKeyTheme));
+    final value = bind.mainGetLocalOption(key: kCommConfKeyTheme);
+    return themeModeFromString(value.isEmpty ? 'dark' : value);
   }
 
   static Future<void> changeDarkMode(ThemeMode mode) async {
@@ -1321,7 +1323,7 @@ Color? _msgboxColor(String type) {
   if (type.contains("error") || type == "re-input-password") {
     return Color(0xFFE04F5F);
   }
-  return Color(0xFF2C8CFF);
+  return Color(0xFF087DCA);
 }
 
 Widget msgboxIcon(String type) {
@@ -2196,7 +2198,7 @@ Future<bool> initUniLinks() async {
   // check cold boot
   try {
     final initialLink = await getInitialLink();
-    print("initialLink: $initialLink");
+    // Launch URI omitted from logs.
     if (initialLink == null || initialLink.isEmpty) {
       return false;
     }
@@ -2223,7 +2225,7 @@ StreamSubscription? listenUniLinks({handleByFlutter = true}) {
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
-    debugPrint("A uri was received: $uri. handleByFlutter $handleByFlutter");
+    // Launch URI omitted from logs.
     if (uri != null) {
       if (handleByFlutter) {
         handleUriLink(uri: uri);
@@ -2388,7 +2390,49 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   return false;
 }
 
+Future<void> redeemG3Session(String token) async {
+  if (!RegExp(r'^[A-Za-z0-9_-]{54}$').hasMatch(token)) return;
+  try {
+    final client = g3Http.Client();
+    try {
+      final req =
+          g3Http.Request('GET', Uri.https('rust.g3nx.net', '/client-handoff'));
+      req.followRedirects = false;
+      req.headers['Authorization'] = 'Bearer $token';
+      req.headers['X-G3-Client-ID']=(await bind.mainGetMyId()).replaceAll(' ','');
+      final response = await client.send(req).timeout(Duration(seconds: 15));
+      if (response.statusCode != 200) throw Exception('Unavailable');
+      final body =
+          await response.stream.bytesToString().timeout(Duration(seconds: 10));
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final id = data['id'];
+      final password = data['password'];
+      if (id is! String ||
+          password is! String ||
+          !RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id)) return;
+      // Credentials stay in-process; never route through CLI or a password-bearing URI.
+      for (var attempt = 0; attempt < 50 && Get.context == null; attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      final context = Get.context;
+      if (context == null) throw Exception('Window not ready');
+      connect(context, id, password: password);
+    } finally {
+      client.close();
+    }
+  } catch (_) {
+    showToast(
+        'Verbindungsfreigabe abgelaufen. Bitte in der Web-Konsole erneut starten.');
+  }
+}
+
 List<String>? urlLinkToCmdArgs(Uri uri) {
+  if (uri.scheme == 'g3fernwartung' &&
+      uri.authority == 'g3-session' &&
+      uri.pathSegments.length == 1) {
+    redeemG3Session(uri.pathSegments.single);
+    return null;
+  }
   String? command;
   String? id;
   final options = [
@@ -3812,7 +3856,25 @@ class _LogoState extends State<_Logo> {
             child: image,
           ).marginOnly(left: 12, right: 12, top: 12);
         }
-        return const Offstage();
+        return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              loadIcon(38),
+              const SizedBox(width: 10),
+              const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('g3 NetworX',
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.w800)),
+                    Text('FERNWARTUNG',
+                        style: TextStyle(
+                            fontSize: 9,
+                            letterSpacing: 2,
+                            color: MyTheme.accent))
+                  ])
+            ]));
       },
     );
   }

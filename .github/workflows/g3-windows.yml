@@ -1,0 +1,28 @@
+name: g3 Windows verified build
+on:
+  push:
+    branches: [g3-verified-build]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Build from committed source
+        shell: pwsh
+        run: ./g3-build/build.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: g3-windows-unsigned-${{ github.sha }}
+          path: outputs/*
+          if-no-files-found: error
+          retention-days: 30

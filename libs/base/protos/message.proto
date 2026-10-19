@@ -84,6 +84,7 @@ message LoginRequest {
   string my_platform = 13;
   bytes hwid = 14;
   string avatar = 17;
+  bytes g3_machine = 18; // Domain-separated machine marker for self-connection safety.
 }
 
 message Terminal {
@@ -134,6 +135,7 @@ message PeerInfo {
   // NOTE: Only support one-level dictionaries (for peer to update), and the key is of type string.
   string platform_additions = 12;
   WindowsSessions windows_sessions = 13;
+  bytes g3_machine = 14;
 }
 
 message WindowsSession {  

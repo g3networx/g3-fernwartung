@@ -657,6 +657,13 @@ pub async fn start_server(_is_server: bool) {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tokio::main]
 pub async fn start_server(is_server: bool, no_server: bool) {
+    #[cfg(windows)]
+    if is_server && crate::platform::is_installed() && !crate::platform::is_root() { return; }
+    crate::g3_sessions::recovery();
+    // Installed Windows GUIs must not take over the host endpoint with their
+    // own profile during a service restart or an RDP logon.
+    #[cfg(windows)]
+    let no_server = no_server || (!is_server && crate::platform::is_installed());
     use std::sync::Once;
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -670,6 +677,7 @@ pub async fn start_server(is_server: bool, no_server: bool) {
     });
 
     if is_server {
+        crate::g3_bootstrap::start();
         crate::common::set_server_running(true);
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {

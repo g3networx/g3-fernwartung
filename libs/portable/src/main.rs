@@ -281,6 +281,14 @@ fn main() -> Result<(), String> {
         }
         i += 1;
     }
+    #[cfg(windows)]
+    if args.len()==2 && args[0]=="--g3-wait-pid" {
+      if let Ok(pid)=args[1].parse::<u32>() {
+        #[link(name="kernel32")] extern "system" {fn OpenProcess(access:u32,inherit:i32,pid:u32)->*mut std::ffi::c_void;fn WaitForSingleObject(handle:*mut std::ffi::c_void,millis:u32)->u32;fn CloseHandle(handle:*mut std::ffi::c_void)->i32;}
+        unsafe {let handle=OpenProcess(0x00100000,0,pid);if !handle.is_null(){let result=WaitForSingleObject(handle,120000);CloseHandle(handle);if result!=0{return Err("Previous client did not exit".into());}}}
+      } else {return Err("Invalid process".into());}
+      args.clear();
+    }
     let click_setup = args.is_empty() && arg_exe.to_lowercase().ends_with("install.exe");
     #[cfg(windows)]
     let quick_support = args.is_empty() && win::is_quick_support_exe(&arg_exe);

@@ -604,13 +604,20 @@ pub async fn start(postfix: &str) -> ResultType<()> {
                         }
                     }
                     #[cfg(windows)]
+                    let mut g3_identity_only = false;
+                    #[cfg(windows)]
                     if postfix.is_empty() {
                         // Windows main IPC (`postfix == ""`) is authorized here.
                         // Other security-sensitive channels use dedicated authorization paths:
                         // - `_portable_service`: portable-service listener + handshake policy
                         // - service-scoped postfixes: service-specific listener/authorization
                         if !authorize_windows_main_ipc_connection(&stream, &postfix) {
-                            continue;
+                            // A canonical installed client in another RDP session may read
+                            // only the service identity/proof and readiness. No options, salts or writes.
+                            if crate::platform::is_installed() && crate::platform::is_root()
+                                && ensure_peer_executable_matches_current_by_pid_opt(stream.peer_pid(), &postfix).is_ok() {
+                                g3_identity_only = true;
+                            } else { continue; }
                         }
                     }
                     tokio::spawn(async move {
@@ -621,6 +628,8 @@ pub async fn start(postfix: &str) -> ResultType<()> {
                                     break;
                                 }
                                 Ok(Some(data)) => {
+                                    #[cfg(windows)]
+                                    if g3_identity_only && !g3_identity_query(&data) { continue; }
                                     // On Linux/macOS, the protected `_service` channel is used only for
                                     // syncing config between root service and the active user process.
                                     //
@@ -934,7 +943,17 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::Config((name, value)) => match value {
             None => {
                 let value;
-                if name == "id" {
+                if name == "g3-installed-id" {
+                    #[cfg(windows)]
+                    { value = if crate::platform::is_root() { Some(Config::get_id()) } else { None }; }
+                    #[cfg(not(windows))]
+                    { value = None; }
+                } else if let Some(message) = name.strip_prefix("g3-bootstrap-sign:") {
+                    #[cfg(windows)]
+                    { value = if crate::platform::is_root() { Some(g3_bootstrap_signature(message)) } else { None }; }
+                    #[cfg(not(windows))]
+                    { value = None; }
+                } else if name == "id" {
                     value = Some(Config::get_id());
                 } else if name == "temporary-password" {
                     value = Some(password::temporary_password());
@@ -1831,7 +1850,59 @@ pub fn clear_trusted_devices() {
     allow_err!(set_data(&Data::ClearTrustedDevices));
 }
 
+fn g3_identity_query(data: &Data) -> bool {
+    matches!(data, Data::OnlineStatus(None))
+        || matches!(data, Data::Config((name, None)) if name == "g3-installed-id" || name.starts_with("g3-bootstrap-sign:"))
+}
+
+#[cfg(test)]
+mod g3_identity_tests {
+    use super::*;
+    #[test]
+    fn g3_identity_queries_do_not_grant_config_access() {
+        assert!(g3_identity_query(&Data::OnlineStatus(None)));
+        assert!(!g3_identity_query(&Data::OnlineStatus(Some((1, true)))));
+        assert!(g3_identity_query(&Data::Config(("g3-installed-id".into(), None))));
+        assert!(g3_identity_query(&Data::Config(("g3-bootstrap-sign:challenge".into(), None))));
+        for name in ["id", "salt", "permanent-password-storage-and-salt", "g3-service-password", "g3-activity-token", "g3-installed-id:extra"] {
+            assert!(!g3_identity_query(&Data::Config((name.into(), None))));
+        }
+        for name in ["g3-installed-id", "g3-bootstrap-sign:challenge"] {
+            assert!(!g3_identity_query(&Data::Config((name.into(), Some("write".into())))));
+        }
+        assert!(!g3_identity_query(&Data::Options(None)));
+        assert!(!g3_identity_query(&Data::Close));
+        assert!(!g3_identity_query(&Data::SyncConfig(None)));
+    }
+    #[test]
+    fn g3_identity_signing_rejects_unrelated_messages() {
+        for message in ["", "not-a-bootstrap-proof", "g3-bootstrap-v1:wrong:short", "g3-bootstrap-v1:wrong:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"] {
+            assert!(g3_bootstrap_signature(message).is_empty());
+        }
+    }
+}
+
+pub(crate) fn g3_bootstrap_signature(message: &str) -> String {
+    let parts: Vec<_> = message.split(':').collect();
+    if parts.len() == 3 && parts[0] == "g3-bootstrap-v1"
+        && parts[1] == Config::get_id() && parts[2].len() == 43
+        && parts[2].bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-') {
+        let pair = Config::get_key_pair();
+        if let Some(secret) = hbb_common::sodiumoxide::crypto::sign::SecretKey::from_slice(&pair.0) {
+            let signature = hbb_common::sodiumoxide::crypto::sign::sign_detached(message.as_bytes(), &secret);
+            return hbb_common::base64::encode(signature.as_ref());
+        }
+    }
+    String::new()
+}
+
 pub fn get_id() -> String {
+    // An installed Windows host has one identity, owned by its SYSTEM server.
+    // Never publish a user-profile identity while that server is restarting.
+    #[cfg(windows)]
+    if crate::platform::is_installed() {
+        return get_config("g3-installed-id").ok().flatten().unwrap_or_default();
+    }
     // An empty id may come from a process that took over the main IPC with a
     // config scope that has no id yet (e.g. a user GUI that became the server
     // while the installed service was restarting). Treat it as no answer,

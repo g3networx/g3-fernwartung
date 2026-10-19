@@ -1,3 +1,5 @@
+import 'package:flutter_hbb/g3_update.dart';
+import 'package:flutter_hbb/g3_enrollment.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
@@ -75,6 +77,27 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         block: _block, mask: true, use: canBeBlocked, child: child);
   }
 
+  Widget _g3Action(BuildContext context, IconData icon, String label,
+      VoidCallback onPressed, {bool primary = false}) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        backgroundColor: primary ? MyTheme.accent.withOpacity(0.10) : Colors.transparent,
+        side: BorderSide(color: MyTheme.accent.withOpacity(primary ? 0.50 : 0.20)),
+        minimumSize: const Size.fromHeight(42),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+      ),
+      child: Row(children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+      ]),
+    );
+  }
+
   Widget buildLeftPane(BuildContext context) {
     final isIncomingOnly = bind.isIncomingOnly();
     final isOutgoingOnly = bind.isOutgoingOnly();
@@ -91,7 +114,28 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       ),
       buildTip(context),
       if (!isOutgoingOnly) buildIDBoard(context),
-      if (!isOutgoingOnly) buildPasswordBoard(context),
+      if (!isOutgoingOnly && !g3IsAdhoc()) buildPasswordBoard(context),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!g3IsAdhoc()) ...[
+              _g3Action(context, Icons.folder_open_rounded, 'Gerät zuordnen',
+                  () => showG3Enrollment(context), primary: true),
+              const SizedBox(height: 8),
+            ],
+            _g3Action(context, Icons.system_update_alt_rounded, 'Updates',
+                () => showG3Update(context)),
+            const SizedBox(height: 10),
+            Text('Version $g3ClientVersion',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11,
+                    color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.65))),
+          ],
+        ),
+      ),
       FutureBuilder<Widget>(
         future: Future.value(
             Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
@@ -129,7 +173,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     return ChangeNotifierProvider.value(
       value: gFFI.serverModel,
       child: Container(
-        width: isIncomingOnly ? 280.0 : 200.0,
+        width: isIncomingOnly ? 280.0 : 240.0,
         color: Theme.of(context).colorScheme.background,
         child: Stack(
           children: [
@@ -401,7 +445,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    translate("Your Desktop"),
+                    g3IsAdhoc()?"Soforthilfe":translate("Your Desktop"),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
@@ -412,7 +456,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           ),
           if (!isOutgoingOnly)
             Text(
-              translate("desk_tip"),
+              g3IsAdhoc()?"Teile deine ID mit dem Techniker und bestätige die Verbindung.":translate("desk_tip"),
               overflow: TextOverflow.clip,
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -471,7 +515,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             "Status", "Your installation is lower version.", "Click to upgrade",
             () async {
           await rustDeskWinManager.closeAllSubWindows();
-          bind.mainUpdateMe();
+          if (bind.mainGetAppNameSync().startsWith('g3')) {
+            await showG3Update(context);
+          } else {
+            bind.mainUpdateMe();
+          }
         });
       }
     } else if (isMacOS) {
@@ -765,7 +813,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
     bool isChattyMethod(String methodName) {
       switch (methodName) {
-        case kWindowBumpMouse: return true;
+        case kWindowBumpMouse:
+          return true;
       }
 
       return false;
@@ -774,7 +823,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
       if (!isChattyMethod(call.method)) {
         debugPrint(
-          "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
+            "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
       }
       if (call.method == kWindowMainWindowOnTop) {
         windowOnTop(null);
@@ -802,9 +851,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           connToken: call.arguments['connToken'],
         );
       } else if (call.method == kWindowBumpMouse) {
-        return RdPlatformChannel.instance.bumpMouse(
-          dx: call.arguments['dx'],
-          dy: call.arguments['dy']);
+        return RdPlatformChannel.instance
+            .bumpMouse(dx: call.arguments['dx'], dy: call.arguments['dy']);
       } else if (call.method == kWindowEventMoveTabToNewWindow) {
         final args = call.arguments.split(',');
         int? windowId;

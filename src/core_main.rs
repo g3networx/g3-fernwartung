@@ -434,6 +434,52 @@ pub fn core_main() -> Option<Vec<String>> {
                 import_config(&filepath);
             }
             return None;
+        } else if args[0] == "--g3-local-password-stdin" {
+            if !crate::platform::is_installed() || !is_root() || is_cli_setting_change_disabled() || config::Config::is_disable_change_permanent_password() {
+                std::process::exit(2);
+            }
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_err() { std::process::exit(3); }
+            let mut options = crate::ipc::get_options();
+            if crate::g3_passwords::apply(&mut options, input.trim_end_matches(&['\r', '\n'][..])).is_err() { std::process::exit(4); }
+            let expected = options.get("g3-local-password-labels").cloned();
+            if crate::ipc::set_options(options).is_err() { std::process::exit(5); }
+            if crate::ipc::get_options().get("g3-local-password-labels").cloned() != expected { std::process::exit(6); }
+            println!("Customer password change confirmed");
+            return None;
+        } else if args[0] == "--g3-service-password-stdin" {
+            // Administrative provisioning keeps credentials out of process arguments and logs.
+            if !crate::platform::is_installed() || !is_root() || is_cli_setting_change_disabled() {
+                std::process::exit(2);
+            }
+            let mut password = String::new();
+            if std::io::stdin().read_line(&mut password).is_err() {
+                std::process::exit(3);
+            }
+            let input = password.trim_end_matches(&['\r', '\n'][..]);
+            let passwords: Vec<String> = if input.starts_with('[') {
+                match serde_json::from_str(input) { Ok(v) => v, Err(_) => std::process::exit(4) }
+            } else { vec![input.to_owned()] };
+            if passwords.is_empty() || passwords.len() > 16 || passwords.iter().any(|p| p.len() < 8 || p.len() > 128) {
+                std::process::exit(4);
+            }
+            let json = serde_json::to_string(&passwords).unwrap_or_default();
+            let encrypted = hbb_common::password_security::encrypt_str_or_original(&json, "00", 4096);
+            if encrypted == json { std::process::exit(5); }
+            crate::ipc::set_option("g3-service-password", &encrypted);
+            println!("Provisioning accepted by service");
+            return None;
+        } else if args[0] == "--password-stdin" {
+            if !crate::platform::is_installed() || !is_root() || is_cli_setting_change_disabled() || config::Config::is_disable_change_permanent_password() {
+                std::process::exit(2);
+            }
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_err() { std::process::exit(3); }
+            let password = input.trim_end_matches(&['\r', '\n'][..]);
+            if password.chars().count()<8 || password.chars().count()>128 { std::process::exit(4); }
+            if crate::ipc::set_permanent_password(password.to_owned()).is_err() { std::process::exit(5); }
+            println!("Permanent password confirmed by service");
+            return None;
         } else if args[0] == "--password" {
             if is_cli_setting_change_disabled() {
                 println!("Settings are disabled!");
@@ -738,6 +784,17 @@ pub fn core_main() -> Option<Vec<String>> {
 
 fn import_config(path: &str) {
     use hbb_common::{config::*, get_exe_time, get_modified_time};
+    // Setup may be launched by a different RDP user. An existing SYSTEM host
+    // owns the device identity and credentials; a profile's mtime grants no
+    // authority to replace them during an update/reinstallation.
+    #[cfg(windows)]
+    if crate::platform::is_root() && Config::file().is_file() {
+        let installed: Config = load_path(Config::file());
+        if !installed.is_empty() {
+            log::info!("Existing installed host configuration retained");
+            return;
+        }
+    }
     let path2 = path.replace(".toml", "2.toml");
     let path2 = std::path::Path::new(&path2);
     let path = std::path::Path::new(path);

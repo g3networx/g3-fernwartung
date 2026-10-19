@@ -2546,6 +2546,43 @@ pub fn get_hwid() -> Bytes {
     Bytes::from(hasher.finalize().to_vec())
 }
 
+pub fn g3_machine_marker() -> Bytes {
+    use hbb_common::sha2::{Digest, Sha256};
+    let uuid = hbb_common::get_uuid();
+    if uuid.is_empty() { return Bytes::new(); }
+    let mut hash = Sha256::new();
+    hash.update(b"g3-self-connection-safety-v1\0");
+    hash.update(uuid);
+    Bytes::from(hash.finalize().to_vec())
+}
+
+pub fn g3_local_connection_ids() -> Vec<String> {
+    let mut ids = vec![Config::get_id()];
+    // Read only the ID fields of this user's sibling variants. This prevents
+    // an updated FullClient connecting to an older portable local client too.
+    // Never change APP_NAME, import another profile, or expose any credential.
+    #[cfg(windows)]
+    if let Some(root) = Config::file().parent().and_then(|p|p.parent()).and_then(|p|p.parent()) {
+        for name in ["g3Fernwartung", "g3Host", "g3Soforthilfe"] {
+            let path = root.join(name).join("config").join(format!("{}.toml",name));
+            if std::fs::metadata(&path).map_or(true, |m|m.len()>65536) { continue; }
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if let Ok(config) = text.parse::<hbb_common::toml::Value>() {
+                    for key in ["id", "enc_id"] {
+                        if let Some(value) = config.get(key).and_then(|v|v.as_str()) {
+                            let (value,_,_) = hbb_common::password_security::decrypt_str_or_original(value,"00");
+                            if (6..=40).contains(&value.len()) && value.bytes().all(|c|c.is_ascii_alphanumeric() || c==b'_' || c==b'-') {
+                                ids.push(value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ids.retain(|id|!id.is_empty()); ids.sort(); ids.dedup(); ids
+}
+
 #[inline]
 pub fn get_builtin_option(key: &str) -> String {
     config::BUILTIN_SETTINGS

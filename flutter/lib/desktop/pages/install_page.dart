@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/g3_enrollment.dart';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -80,7 +81,7 @@ class _InstallPageBodyState extends State<_InstallPageBody>
     final installOptions = jsonDecode(bind.installInstallOptions());
     startmenu.value = installOptions['STARTMENUSHORTCUTS'] != '0';
     desktopicon.value = installOptions['DESKTOPSHORTCUTS'] != '0';
-    printer.value = installOptions['PRINTER'] == '1';
+    printer.value = false;
   }
 
   @override
@@ -165,7 +166,7 @@ class _InstallPageBodyState extends State<_InstallPageBody>
                   .marginOnly(bottom: 7),
               Option(desktopicon, label: 'Create desktop icon')
                   .marginOnly(bottom: 7),
-              Option(printer, label: 'Install {$appName} Printer'),
+
               Container(
                   padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -187,9 +188,9 @@ class _InstallPageBodyState extends State<_InstallPageBody>
                           InkWell(
                             hoverColor: Colors.transparent,
                             onTap: () => launchUrlString(
-                                'https://rustdesk.com/privacy.html'),
+                                'https://www.g3networx.de/impressum/#datenschutz'),
                             child: Tooltip(
-                              message: 'https://rustdesk.com/privacy.html',
+                              message: 'https://www.g3networx.de/impressum/#datenschutz',
                               child: Row(children: [
                                 Icon(Icons.launch_outlined, size: 16)
                                     .marginOnly(right: 5),
@@ -226,7 +227,12 @@ class _InstallPageBodyState extends State<_InstallPageBody>
                     () => ElevatedButton.icon(
                       icon: Icon(Icons.done_rounded, size: 16),
                       label: Text(translate('Accept and Install')),
-                      onPressed: btnEnabled.value ? install : null,
+                      onPressed: btnEnabled.value
+                          ? () async {
+                              await g3PrepareEnrollmentAfterInstall();
+                              install();
+                            }
+                          : null,
                       style: buttonStyle,
                     ),
                   ),

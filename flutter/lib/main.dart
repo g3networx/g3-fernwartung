@@ -1,3 +1,5 @@
+import 'package:flutter_hbb/g3_activity.dart';
+import 'package:flutter_hbb/g3_enrollment.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -39,7 +41,7 @@ Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
 
-  debugPrint("launch args: $args");
+  // Do not log launch arguments: they can contain session credentials.
   kBootArgs = List.from(args);
 
   if (!isDesktop) {
@@ -136,12 +138,24 @@ void runMainApp(bool startService) async {
   checkUpdate();
   // trigger connection status updater
   await bind.mainCheckConnectStatus();
+  final g3EnrollmentCheck = g3BootstrapReporting();
+  g3RecoverLegacyJournal();
   if (startService) {
     gFFI.serverModel.startService();
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await g3EnrollmentCheck;
+    if ((bind.mainGetLocalOption(key: 'g3-pending-enrollment').isNotEmpty ||
+            (bind.mainGetLocalOption(key:'g3-install-enrollment-pending')=='Y' && bind.mainGetLocalOption(key:'g3-enrolled')!='Y') ||
+            (g3CustomerCode().isNotEmpty &&
+                bind.mainGetLocalOption(key: 'g3-enrolled') != 'Y')) &&
+        Get.context != null) {
+      showG3Enrollment(Get.context!);
+    }
+  });
 
   bool? alwaysOnTop;
   if (isDesktop) {

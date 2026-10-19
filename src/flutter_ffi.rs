@@ -997,6 +997,13 @@ pub fn main_get_option(key: String) -> String {
 }
 
 pub fn main_get_option_sync(key: String) -> SyncReturn<String> {
+    if let Some(message) = key.strip_prefix("g3-bootstrap-sign:") {
+        #[cfg(windows)]
+        if crate::platform::is_installed() {
+            return SyncReturn(crate::ipc::get_config(&key).ok().flatten().unwrap_or_default());
+        }
+        return SyncReturn(crate::ipc::g3_bootstrap_signature(message));
+    }
     SyncReturn(get_option(key))
 }
 
@@ -1005,6 +1012,24 @@ pub fn main_get_error() -> String {
 }
 
 pub fn main_set_option(key: String, value: String) {
+    if key == "g3-local-password-action" {
+        if config::Config::is_disable_change_permanent_password() { return; }
+        let mut options = crate::ipc::get_options();
+        if crate::g3_passwords::apply(&mut options, &value).is_ok() {
+            set_options(options);
+        }
+        return;
+    }
+
+    if key == "g3-service-password-provision" {
+        if let Ok(passwords) = serde_json::from_str::<Vec<String>>(&value) {
+            if !passwords.is_empty() && passwords.len() <= 16 && passwords.iter().all(|p| p.len() >= 8 && p.len() <= 128) {
+                let encrypted = hbb_common::password_security::encrypt_str_or_original(&value, "00", 4096);
+                if encrypted != value { set_option("g3-service-password".to_owned(), encrypted); }
+            }
+        }
+        return;
+    }
     #[cfg(target_os = "android")]
     {
         let is_permission_option = key.eq(keys::OPTION_ENABLE_CLIPBOARD)
@@ -1219,6 +1244,10 @@ pub fn main_get_use_texture_render() -> SyncReturn<bool> {
 }
 
 pub fn main_get_env(key: String) -> SyncReturn<String> {
+    #[cfg(windows)]
+    if key == "G3_MSI_SOURCE" {
+        return SyncReturn(crate::platform::g3_msi_enrollment_source());
+    }
     SyncReturn(std::env::var(key).unwrap_or_default())
 }
 

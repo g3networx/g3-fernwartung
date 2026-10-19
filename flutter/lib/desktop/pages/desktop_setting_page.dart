@@ -1,3 +1,4 @@
+import '../../g3_passwords.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -997,6 +998,8 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
               child: Column(children: [
                 permissions(context),
                 password(context),
+                if (bind.mainGetAppNameSync().startsWith('g3'))
+                  _Card(title: 'Zusätzliche feste Passwörter', children: [G3Passwords(enabled: !locked)]),
                 _Card(title: '2FA', children: [tfa()]),
                 if (!isChangeIdDisabled())
                   _Card(title: 'ID', children: [changeId()]),

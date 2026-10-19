@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/g3_update.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -802,6 +803,10 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   Widget _buildToolbar(
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
     final List<Widget> toolbarItems = [];
+    toolbarItems.add(IconButton(
+        tooltip: 'Diesen Rechner aktualisieren',
+        icon: const Icon(Icons.system_update_alt),
+        onPressed: () => showG3Update(context)));
     toolbarItems.add(_PinMenu(state: widget.state));
     toolbarItems.add(Obx(() {
       final privacyModeState = PrivacyModeState.find(widget.id);

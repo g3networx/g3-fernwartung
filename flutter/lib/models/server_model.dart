@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/g3_activity.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -148,6 +149,22 @@ class ServerModel with ChangeNotifier {
     */
 
     timerCallback() async {
+      if (desktopType == DesktopType.cm) {
+        g3RecordConnections(_clients
+            .map((c) => <String, dynamic>{
+                  'id': c.id,
+                  'authorized': c.authorized,
+                  'disconnected': c.disconnected,
+                  'peer_id': c.peerId,
+                  'kind': c.isFileTransfer
+                      ? 'file'
+                      : (c.isTerminal
+                          ? 'terminal'
+                          : (c.portForward.isNotEmpty ? 'tunnel' : 'desktop'))
+                })
+            .toList());
+      }
+
       final connectionStatus =
           jsonDecode(await bind.mainGetConnectStatus()) as Map<String, dynamic>;
       final statusNum = connectionStatus['status_num'] as int;
@@ -164,7 +181,7 @@ class ServerModel with ChangeNotifier {
         } else {
           if (_clients.isEmpty) {
             hideCmWindow();
-            if (_zeroClientLengthCounter++ == 12) {
+            if (!g3AccountingBusy && _zeroClientLengthCounter++ == 12) {
               // 6 second
               windowManager.close();
             }
@@ -693,7 +710,7 @@ class ServerModel with ChangeNotifier {
     }
   }
 
-  void onClientRemove(Map<String, dynamic> evt) {
+  void onClientRemove(Map<String, dynamic> evt) async {
     try {
       final id = int.parse(evt['id'] as String);
       final close = (evt['close'] as String) == 'true';
@@ -702,6 +719,12 @@ class ServerModel with ChangeNotifier {
         if (index >= 0) {
           if (close) {
             _clients.removeAt(index);
+            if (desktopType == DesktopType.cm) {
+              await g3FlushConnections(_clients.map((c)=><String,dynamic>{
+                'id':c.id,'authorized':c.authorized,'disconnected':c.disconnected,
+                'peer_id':c.peerId,'kind':c.isFileTransfer?'file':(c.isTerminal?'terminal':(c.portForward.isNotEmpty?'tunnel':'desktop'))
+              }).toList());
+            }
             tabController.remove(index);
           } else {
             _clients[index].disconnected = true;
@@ -710,8 +733,12 @@ class ServerModel with ChangeNotifier {
         parent.target?.dialogManager.dismissByTag(getLoginDialogTag(id));
         parent.target?.invokeMethod("cancel_notification", id);
       }
-      if (desktopType == DesktopType.cm && _clients.isEmpty) {
-        hideCmWindow();
+      if (desktopType == DesktopType.cm) {
+        await g3FlushConnections(_clients.map((c)=><String,dynamic>{
+          'id':c.id,'authorized':c.authorized,'disconnected':c.disconnected,
+          'peer_id':c.peerId,'kind':c.isFileTransfer?'file':(c.isTerminal?'terminal':(c.portForward.isNotEmpty?'tunnel':'desktop'))
+        }).toList());
+        if (_clients.isEmpty) hideCmWindow();
       }
       if (isAndroid) androidUpdatekeepScreenOn();
       notifyListeners();

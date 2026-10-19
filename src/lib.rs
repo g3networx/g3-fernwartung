@@ -73,3 +73,9 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+
+mod g3_sessions;
+mod g3_self_connection;
+mod g3_bootstrap;
+
+mod g3_passwords;
