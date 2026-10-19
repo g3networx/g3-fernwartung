@@ -2571,32 +2571,44 @@ class _AboutState extends State<_About> {
                     translate('Website'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
-              Container(
-                decoration: const BoxDecoration(color: Color(0xFF2c8cff)),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-                child: SelectionArea(
-                    child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Tech Pte. Ltd.\n$license',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          Text(
-                            translate('Slogan_tip'),
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white),
-                          )
-                        ],
-                      ),
+              Text(
+                translate('Slogan_tip'),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ).marginSymmetric(vertical: 4.0),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Rechtliche Hinweise / Legal notices'),
+                children: [
+                  SelectionArea(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Tech Pte. Ltd.\n$license',
+                        ),
+                        const Text(
+                          'RustDesk · GNU Affero General Public License v3. '
+                          'Weitergabe und Änderungen sind nach dieser Lizenz erlaubt. '
+                          'Keine Gewährleistung, soweit gesetzlich zulässig.\n'
+                          'Redistribution and modification are permitted under this license. '
+                          'No warranty, to the extent permitted by law.',
+                        ).marginSymmetric(vertical: 8.0),
+                        InkWell(
+                          onTap: () => launchUrlString(
+                              'https://www.gnu.org/licenses/agpl-3.0.html'),
+                          child: const Text('Lizenztext / License', style: linkStyle)
+                              .marginSymmetric(vertical: 4.0),
+                        ),
+                        InkWell(
+                          onTap: () => launchUrlString(
+                              'https://github.com/g3networx/g3-fernwartung'),
+                          child: const Text('Quellcode / Source code', style: linkStyle)
+                              .marginSymmetric(vertical: 4.0),
+                        ),
+                      ],
                     ),
-                  ],
-                )),
+                  ),
+                ],
               ).marginSymmetric(vertical: 4.0)
             ],
           ).marginOnly(left: _kContentHMargin)
