@@ -2416,7 +2416,7 @@ Future<void> redeemG3Session(String token) async {
       }
       final context = Get.context;
       if (context == null) throw Exception('Window not ready');
-      connect(context, id, password: password);
+      connect(context, id, password: password, forceRelay: true);
     } finally {
       client.close();
     }

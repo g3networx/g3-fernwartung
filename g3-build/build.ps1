@@ -33,6 +33,7 @@ $env:VCPKG_ROOT="$tools/vcpkg"
 & "$tools/vcpkg/vcpkg.exe" install --triplet x64-windows-static --host-triplet x64-windows-static "--x-install-root=$tools/vcpkg/installed"; Check
 python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
+cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
 New-Item -ItemType Directory -Path outputs,g3-build/msi -Force | Out-Null
 Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
 if ((Get-FileHash "$tools/wix.zip").Hash -ne '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31') { throw 'WiX SHA256 mismatch' }

@@ -2074,6 +2074,20 @@ impl Connection {
                 username = "".to_owned();
             }
         }
+        #[cfg(windows)]
+        if self.file_transfer.is_some() && self.file && username.is_empty() {
+            // An enrolled host can serve authenticated transfers as its actual service account.
+            if let Some(account) = crate::platform::g3_file_transfer_identity(
+                self.conn_audit_primary_auth == ConnAuditPrimaryAuth::PermanentPassword,
+            ) {
+                if let Some(p) = self.start_cm_ipc_para.take() {
+                    tokio::spawn(crate::ui_cm_interface::g3_authenticated_service_files(
+                        p.rx_to_cm, p.tx_from_cm, self.inner.id(),
+                    ));
+                    username = account;
+                }
+            }
+        }
         // Terminal feature is supported on desktop only
         #[allow(unused_mut)]
         let mut terminal = cfg!(not(any(target_os = "android", target_os = "ios")));
@@ -2852,6 +2866,14 @@ impl Connection {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn try_start_cm_ipc(&mut self) {
+        #[cfg(windows)]
+        if self.file_transfer.is_some()
+            && crate::platform::is_prelogin()
+            && crate::platform::g3_file_transfer_identity(true).is_some()
+        {
+            // The private service file worker starts only after successful authentication.
+            return;
+        }
         if let Some(p) = self.start_cm_ipc_para.take() {
             tokio::spawn(async move {
                 #[cfg(windows)]

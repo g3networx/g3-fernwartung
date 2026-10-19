@@ -1,3 +1,7 @@
+#[cfg(windows)]
+mod g3_service_files;
+#[cfg(windows)]
+pub(crate) use g3_service_files::run as g3_authenticated_service_files;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use crate::ipc::Connection;
 #[cfg(not(any(target_os = "ios")))]

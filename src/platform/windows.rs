@@ -101,6 +101,8 @@ mod installer_handoff;
 mod installer_shell;
 mod msi_registry;
 mod g3_msi;
+mod g3_file_transfer;
+pub(crate) use g3_file_transfer::authenticated_service_identity as g3_file_transfer_identity;
 pub(crate) use g3_msi::enrollment_source as g3_msi_enrollment_source;
 pub(crate) use acl::current_process_user_sid_string;
 pub use acl::{
