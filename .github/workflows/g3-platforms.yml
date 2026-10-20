@@ -114,9 +114,10 @@ jobs:
         vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
         doNotCache: false
     - name: Install vcpkg dependencies
-      run: "if ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\"\
-        \ | while read -r _1; do\n    echo \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit\
-        \ 1\nfi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log\" || true\n"
+      run: "if ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name\
+        \ \"*.log\" | while read -r _1; do\n    echo \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\
+        \"\n  done\n  exit 1\nfi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log\"\
+        \ || true\n"
     - name: Show version information (Rust, cargo, Clang)
       shell: bash
       run: 'clang --version || true
@@ -134,10 +135,11 @@ jobs:
         '
     - name: Build rustdesk
       run: "if [ \"${{ matrix.job.target }}\" = \"aarch64-apple-darwin\" ]; then\n  MIN_MACOS_VERSION=\"12.3\"\n  sed -i -e \"s/MACOSX_DEPLOYMENT_TARGET\\\
-        =[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/\" build.py\n  sed -i -e \"s/platform :osx, '.*'/platform :osx, '${MIN_MACOS_VERSION}'/\"\
-        \ flutter/macos/Podfile\n  sed -i -e \"s/osx_minimum_system_version = \\\"[0-9]*.[0-9]*\\\"/osx_minimum_system_version = \\\"${MIN_MACOS_VERSION}\\\
-        \"/\" Cargo.toml\n  sed -i -e \"s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/\" flutter/macos/Runner.xcodeproj/project.pbxproj\n\
-        fi\n./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}\n"
+        =[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/\" build.py\n  sed -i -e \"s/platform :osx, '.*'/platform :osx,\
+        \ '${MIN_MACOS_VERSION}'/\" flutter/macos/Podfile\n  sed -i -e \"s/osx_minimum_system_version = \\\"[0-9]*.[0-9]*\\\"/osx_minimum_system_version\
+        \ = \\\"${MIN_MACOS_VERSION}\\\"/\" Cargo.toml\n  sed -i -e \"s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET\
+        \ = ${MIN_MACOS_VERSION};/\" flutter/macos/Runner.xcodeproj/project.pbxproj\nfi\n./build.py --flutter --hwcodec --unix-file-copy-paste\
+        \ ${{ matrix.job.extra-build-args }}\n"
     - name: create unsigned dmg
       if: env.UPLOAD_ARTIFACT == 'true'
       run: 'CREATE_DMG="$(command -v create-dmg)"
@@ -146,8 +148,8 @@ jobs:
 
         sed -i -e ''s/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/'' "$CREATE_DMG"
 
-        create-dmg --icon "g3Fernwartung.app" 200 190 --hide-extension "g3Fernwartung.app" --window-size 800 400 --app-drop-link 600 185 g3-Fernwartung-${{
-        env.VERSION }}-macos-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/g3Fernwartung.app
+        create-dmg --icon "g3Fernwartung.app" 200 190 --hide-extension "g3Fernwartung.app" --window-size 800 400 --app-drop-link 600
+        185 g3-Fernwartung-${{ env.VERSION }}-macos-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/g3Fernwartung.app
 
         '
     - name: Record macOS provenance
@@ -161,6 +163,14 @@ jobs:
 
           platform-provenance-*.json'
         if-no-files-found: error
+        retention-days: 14
+    - name: Preserve native library if UI packaging fails
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-native-macos-${{ matrix.job.arch }}-${{ github.sha }}
+        path: target/release/liblibrustdesk.dylib
+        if-no-files-found: ignore
         retention-days: 14
     timeout-minutes: 360
     if: ${{ inputs.build_scope != 'linux' }}
@@ -244,9 +254,9 @@ jobs:
     - name: Install vcpkg dependencies
       if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
       run: "sudo apt install -y libva-dev && apt show libva-dev\nif ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --triplet ${{ matrix.job.vcpkg-triplet\
-        \ }} \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\" | while read -r _1; do\n    echo\
-        \ \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit 1\nfi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{\
-        \ matrix.job.vcpkg-triplet }}-rel-out.log\" || true\n"
+        \ }} \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\" | while read -r _1; do\n\
+        \    echo \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit 1\nfi\nhead -n\
+        \ 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log\" || true\n"
       shell: bash
     - uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8
       name: Build rustdesk
@@ -267,32 +277,35 @@ jobs:
 
           '
         shell: /bin/bash
-        install: "apt-get update -y\necho -e \"installing deps\"\napt-get install -y \\\n   build-essential \\\n   clang \\\n   cmake \\\n   curl\
-          \ \\\n   gcc \\\n   git \\\n   g++ \\\n   libayatana-appindicator3-dev \\\n   libasound2-dev \\\n   libclang-10-dev \\\n   libgstreamer1.0-dev\
-          \ \\\n   libgstreamer-plugins-base1.0-dev \\\n   libgtk-3-dev \\\n   libpulse-dev \\\n   libva-dev \\\n   libxcb-randr0-dev \\\n   libxcb-shape0-dev\
-          \ \\\n   libxcb-xfixes0-dev \\\n   libxdo-dev \\\n   libxfixes-dev \\\n   llvm-10-dev \\\n   nasm \\\n   ninja-build \\\n   pkg-config\
-          \ \\\n   tree \\\n   python3 \\\n   rpm \\\n   unzip \\\n   wget \\\n   xz-utils \\\n   libssl-dev\n# we have libopus compiled by us.\n\
-          apt-get remove -y libopus-dev || true\n# output devs\nls -l ./\ntree -L 3 /opt/artifacts/vcpkg/installed\n"
-        run: "# disable git safe.directory\ngit config --global --add safe.directory \"*\"\n# rust\npushd /opt\n# do not use rustup, because memory\
-          \ overflow in qemu\nwget -O rust.tar.gz https://static.rust-lang.org/dist/rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target\
-          \ }}.tar.gz\ntar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz\ncd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target }} &&\
-          \ ./install.sh\nrm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target }}\n# edit config\nmkdir -p ~/.cargo/\necho \"\"\"\
-          \n  [source.crates-io]\n  registry = 'https://github.com/rust-lang/crates.io-index'\n\"\"\" > ~/.cargo/config\ncat ~/.cargo/config\n\
-          # start build\npushd /workspace\nexport VCPKG_ROOT=/opt/artifacts/vcpkg\nif [[ \"${{ matrix.job.arch }}\" == \"aarch64\" ]]; then\n\
-          \  export JOBS=\"--jobs 3\"\nelse\n  export JOBS=\"\"\nfi\necho $JOBS\ncargo build --locked --lib $JOBS --features hwcodec,flutter,unix-file-copy-paste\
-          \ --release\nrm -rf target/release/deps target/release/build\nrm -rf ~/.cargo\n\n# Setup Flutter\n# disable git safe.directory\ngit\
-          \ config --global --add safe.directory \"*\"\npushd /workspace\ncase ${{ matrix.job.arch }} in\n  aarch64)\n    export PATH=/opt/flutter-elinux/bin:$PATH\n\
-          \    sed -i \"s/flutter build linux --release/flutter-elinux build linux --verbose/g\" ./build.py\n    sed -i \"s/x64\\/release/arm64\\\
-          /release/g\" ./build.py\n  ;;\n  x86_64)\n    export PATH=/opt/flutter/bin:$PATH\n  ;;\nesac\npopd\npushd /opt\nwget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{\
-          \ env.FLUTTER_VERSION }}-stable.tar.xz\ntar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz\ncase ${{ matrix.job.arch }} in\n\
-          \  aarch64)\n    # clone repo and reset to flutter ${{ env.FLUTTER_VERSION }}\n    git clone https://github.com/sony/flutter-elinux.git\
-          \ || true\n    pushd flutter-elinux\n      git fetch\n      git reset --hard ${{ env.FLUTTER_VERSION }}\n      bin/flutter-elinux doctor\
-          \ -v\n      bin/flutter-elinux precache --linux\n    popd\n    cp -R flutter/bin/cache/artifacts/engine/linux-x64/shader_lib flutter-elinux/flutter/bin/cache/artifacts/engine/linux-arm64\n\
-          \    rm -rf flutter\n  ;;\n  x86_64)\n    flutter doctor -v\n  ;;\nesac\n\nif [[ \"3.24.5\" == ${{ env.FLUTTER_VERSION }} ]]; then\n\
-          \  case ${{ matrix.job.arch }} in\n    aarch64)\n      pushd /opt/flutter-elinux/flutter\n    ;;\n    x86_64)\n      pushd /opt/flutter\n\
-          \    ;;\n  esac\n  git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff\n  popd\nfi\n\n\
-          # build flutter\npushd /workspace\nexport CARGO_INCREMENTAL=0\nexport DEB_ARCH=${{ matrix.job.deb_arch }}\npython3 ./build.py --flutter\
-          \ --skip-cargo\nfor name in rustdesk*??.deb; do\n  mv \"$name\" \"${name%%.deb}-${{ matrix.job.arch }}.deb\"\ndone\n\n"
+        install: "apt-get update -y\necho -e \"installing deps\"\napt-get install -y \\\n   build-essential \\\n   clang \\\n   cmake\
+          \ \\\n   curl \\\n   gcc \\\n   git \\\n   g++ \\\n   libayatana-appindicator3-dev \\\n   libasound2-dev \\\n   libclang-10-dev\
+          \ \\\n   libgstreamer1.0-dev \\\n   libgstreamer-plugins-base1.0-dev \\\n   libgtk-3-dev \\\n   libpulse-dev \\\n   libva-dev\
+          \ \\\n   libxcb-randr0-dev \\\n   libxcb-shape0-dev \\\n   libxcb-xfixes0-dev \\\n   libxdo-dev \\\n   libxfixes-dev \\\n\
+          \   llvm-10-dev \\\n   nasm \\\n   ninja-build \\\n   pkg-config \\\n   tree \\\n   python3 \\\n   rpm \\\n   unzip \\\n \
+          \  wget \\\n   xz-utils \\\n   libssl-dev\n# we have libopus compiled by us.\napt-get remove -y libopus-dev || true\n# output\
+          \ devs\nls -l ./\ntree -L 3 /opt/artifacts/vcpkg/installed\n"
+        run: "# disable git safe.directory\ngit config --global --add safe.directory \"*\"\n# rust\npushd /opt\n# do not use rustup,\
+          \ because memory overflow in qemu\nwget -O rust.tar.gz https://static.rust-lang.org/dist/rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{\
+          \ matrix.job.target }}.tar.gz\ntar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz\ncd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{\
+          \ matrix.job.target }} && ./install.sh\nrm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target }}\n# edit config\n\
+          mkdir -p ~/.cargo/\necho \"\"\"\n  [source.crates-io]\n  registry = 'https://github.com/rust-lang/crates.io-index'\n\"\"\"\
+          \ > ~/.cargo/config\ncat ~/.cargo/config\n# start build\npushd /workspace\nexport VCPKG_ROOT=/opt/artifacts/vcpkg\nif [[ \"\
+          ${{ matrix.job.arch }}\" == \"aarch64\" ]]; then\n  export JOBS=\"--jobs 3\"\nelse\n  export JOBS=\"\"\nfi\necho $JOBS\ncargo\
+          \ build --locked --lib $JOBS --features hwcodec,flutter,unix-file-copy-paste --release\nrm -rf target/release/deps target/release/build\n\
+          rm -rf ~/.cargo\n\n# Setup Flutter\n# disable git safe.directory\ngit config --global --add safe.directory \"*\"\npushd /workspace\n\
+          case ${{ matrix.job.arch }} in\n  aarch64)\n    export PATH=/opt/flutter-elinux/bin:$PATH\n    sed -i \"s/flutter build linux\
+          \ --release/flutter-elinux build linux --verbose/g\" ./build.py\n    sed -i \"s/x64\\/release/arm64\\/release/g\" ./build.py\n\
+          \  ;;\n  x86_64)\n    export PATH=/opt/flutter/bin:$PATH\n  ;;\nesac\npopd\npushd /opt\nwget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{\
+          \ env.FLUTTER_VERSION }}-stable.tar.xz\ntar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz\ncase ${{ matrix.job.arch\
+          \ }} in\n  aarch64)\n    # clone repo and reset to flutter ${{ env.FLUTTER_VERSION }}\n    git clone https://github.com/sony/flutter-elinux.git\
+          \ || true\n    pushd flutter-elinux\n      git fetch\n      git reset --hard ${{ env.FLUTTER_VERSION }}\n      bin/flutter-elinux\
+          \ doctor -v\n      bin/flutter-elinux precache --linux\n    popd\n    cp -R flutter/bin/cache/artifacts/engine/linux-x64/shader_lib\
+          \ flutter-elinux/flutter/bin/cache/artifacts/engine/linux-arm64\n    rm -rf flutter\n  ;;\n  x86_64)\n    flutter doctor -v\n\
+          \  ;;\nesac\n\nif [[ \"3.24.5\" == ${{ env.FLUTTER_VERSION }} ]]; then\n  case ${{ matrix.job.arch }} in\n    aarch64)\n \
+          \     pushd /opt/flutter-elinux/flutter\n    ;;\n    x86_64)\n      pushd /opt/flutter\n    ;;\n  esac\n  git apply ${{ github.workspace\
+          \ }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff\n  popd\nfi\n\n# build flutter\npushd /workspace\nexport\
+          \ CARGO_INCREMENTAL=0\nexport DEB_ARCH=${{ matrix.job.deb_arch }}\npython3 ./build.py --flutter --skip-cargo\nfor name in\
+          \ rustdesk*??.deb; do\n  mv \"$name\" \"${name%%.deb}-${{ matrix.job.arch }}.deb\"\ndone\n\n"
     - name: Package g3 Linux namespace and record provenance
       run: 'python3 g3-build/repack-linux.py
 
