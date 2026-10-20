@@ -1,0 +1,45 @@
+name: g3 Linux live session validation
+'on':
+  workflow_dispatch:
+    inputs:
+      validation_run:
+        type: string
+        required: true
+        default: '39380639746'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  session:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: x86_64
+          runner: ubuntu-22.04
+        - arch: aarch64
+          runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        persist-credentials: false
+    - name: Download validated package
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.validation_run }}
+        pattern: g3-verified-linux-${{ matrix.arch }}-*
+        merge-multiple: true
+        path: input
+    - name: Authenticated live desktop session
+      run: python3 -u g3-build/test-linux-session.py
+    - name: Record actual session result
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-linux-session-${{ matrix.arch }}
+        path: session-evidence/session-result.json
+        if-no-files-found: error
+        retention-days: 30
