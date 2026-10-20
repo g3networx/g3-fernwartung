@@ -5,7 +5,7 @@ import FlutterMacOS
 class AppDelegate: FlutterAppDelegate {
     var launched = false;
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-      dummy_method_to_enforce_bundling()
+      // MainFlutterWindow directly calls rustdesk_core_main, retaining the native library.
     // https://github.com/leanflutter/window_manager/issues/214
     return false
   }
