@@ -1,6 +1,6 @@
 """Validate build provenance and finalize platform metadata on native runners."""
 from pathlib import Path
-import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re
+import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re,platform as pyplatform
 kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.16');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
 source=json.loads(provenance[0].read_text());version=source.get('version',version);assert source['arch']==arch and source['platform']==kind
@@ -63,5 +63,5 @@ else:
  dmg=out/f'g3-Fernwartung-{version}-macos-{arch}.dmg';stage=out/'dmg-stage';stage.mkdir();run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications');run(['hdiutil','create','-volname','g3 Fernwartung','-srcfolder',str(stage),'-ov','-format','UDZO',str(dmg)]);shutil.rmtree(stage);shutil.rmtree(app)
  checks+=['Mach-O native architecture','g3 URL registration','bundle identifier','local ad-hoc integrity signature (not Apple Developer ID/not notarized)','native --version launch']
 files=list(out.glob('*.deb' if kind=='linux' else '*.dmg'));assert len(files)==1
-record={'version':version,'platform':kind,'arch':arch,'source':source,'finalization_commit':os.environ['GITHUB_SHA'],'finalization_run':os.environ['GITHUB_RUN_ID'],'checks':checks,'publicly_trusted_signature':False,'interactive_connection_acceptance':False,'files':[{'file':p.name,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}for p in files]}
+record={'version':version,'platform':kind,'arch':arch,'source':source,'finalization_commit':os.environ['GITHUB_SHA'],'finalization_run':os.environ['GITHUB_RUN_ID'],'checks':checks,'publicly_trusted_signature':False,'interactive_connection_acceptance':False,'tested_os':('Ubuntu 22.04' if kind=='linux' else 'macOS '+pyplatform.mac_ver()[0]),'configured_minimum_os':(data.get('LSMinimumSystemVersion') if kind=='macos' else None),'files':[{'file':p.name,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}for p in files]}
 (out/'validation.json').write_text(json.dumps(record,indent=2));(out/'SHA256SUMS').write_text(''.join(f"{f['sha256']}  {f['file']}\n" for f in record['files']))
