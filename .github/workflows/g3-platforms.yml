@@ -1,0 +1,299 @@
+name: g3 macOS and Linux clients
+'on':
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: g3-platforms-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  RUST_VERSION: '1.75'
+  MAC_RUST_VERSION: '1.81'
+  FLUTTER_VERSION: 3.24.5
+  FLUTTER_ELINUX_VERSION: 3.16.9
+  VCPKG_COMMIT_ID: 9e593bb18ea69cc5095e012465dcd675a822ed0d
+  VCPKG_CMAKE_VERSION: 4.3.0
+  UPLOAD_ARTIFACT: 'true'
+  VERSION: 1.5.0-g3.16
+  CARGO_BUILD_JOBS: '2'
+  VCPKG_MAX_CONCURRENCY: '2'
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+jobs:
+  build-for-macOS:
+    name: ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+        - target: x86_64-apple-darwin
+          os: macos-15-intel
+          extra-build-args: ''
+          arch: x86_64
+          vcpkg-triplet: x64-osx
+        - target: aarch64-apple-darwin
+          os: macos-14
+          extra-build-args: --screencapturekit
+          arch: aarch64
+          vcpkg-triplet: arm64-osx
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - name: Apply g3 configuration and platform safeguards
+      shell: bash
+      run: 'git -C libs/hbb_common apply --check "$GITHUB_WORKSPACE/g3-build/hbb-common.patch"
+
+        git -C libs/hbb_common apply "$GITHUB_WORKSPACE/g3-build/hbb-common.patch"
+
+        python3 g3-build/prepare-platform.py'
+    - name: Install build runtime
+      run: "brew install llvm create-dmg cmake\n# pkg-config is handled in a separate step, because it may be already installed by `macos-latest`(14.7.1)\
+        \ runner\nif command -v pkg-config &>/dev/null; then\n    echo \"pkg-config is already installed\"\nelse\n    brew install pkg-config\n\
+        fi\n"
+    - name: Install NASM
+      run: '# Install NASM 2.16.x from official release.
+
+        # Do NOT use `brew install nasm` which installs NASM 3.x.
+
+        # NASM 3.x is a complete rewrite with incompatible CLI options and removed features.
+
+        # aom and other multimedia libraries require NASM 2.x for x86/x86_64 assembly.
+
+        wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+
+        unzip nasm-2.16.03-macosx.zip
+
+        sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+
+        nasm --version
+
+        '
+    - name: Install flutter
+      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        channel: stable
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+    - name: Patch flutter
+      run: "cd $(dirname $(dirname $(which flutter)))\nif [[ \"3.24.5\" == ${{env.FLUTTER_VERSION}} ]]; then\n  git apply ${{ github.workspace\
+        \ }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff\nfi\n"
+    - name: Workaround for flutter issue
+      shell: bash
+      run: 'cd "$(dirname "$(which flutter)")"
+
+        # https://github.com/flutter/flutter/issues/133533
+
+        sed -i -e ''s/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g'' ../packages/flutter/lib/src/scheduler/binding.dart
+
+        grep -n ''_setFramesEnabledState(false);'' ../packages/flutter/lib/src/scheduler/binding.dart
+
+        '
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: ${{ env.MAC_RUST_VERSION }}
+        targets: ${{ matrix.job.target }}
+        components: rustfmt
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+      with:
+        prefix-key: ${{ matrix.job.os }}
+    - name: Setup vcpkg with Github Actions binary cache
+      uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+      with:
+        vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+        doNotCache: false
+    - name: Install vcpkg dependencies
+      run: "if ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\"\
+        \ | while read -r _1; do\n    echo \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit\
+        \ 1\nfi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log\" || true\n"
+    - name: Show version information (Rust, cargo, Clang)
+      shell: bash
+      run: 'clang --version || true
+
+        rustup -V
+
+        rustup toolchain list
+
+        rustup default
+
+        cargo -V
+
+        rustc -V
+
+        '
+    - name: Build rustdesk
+      run: "if [ \"${{ matrix.job.target }}\" = \"aarch64-apple-darwin\" ]; then\n  MIN_MACOS_VERSION=\"12.3\"\n  sed -i -e \"s/MACOSX_DEPLOYMENT_TARGET\\\
+        =[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/\" build.py\n  sed -i -e \"s/platform :osx, '.*'/platform :osx, '${MIN_MACOS_VERSION}'/\"\
+        \ flutter/macos/Podfile\n  sed -i -e \"s/osx_minimum_system_version = \\\"[0-9]*.[0-9]*\\\"/osx_minimum_system_version = \\\"${MIN_MACOS_VERSION}\\\
+        \"/\" Cargo.toml\n  sed -i -e \"s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/\" flutter/macos/Runner.xcodeproj/project.pbxproj\n\
+        fi\n./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}\n"
+    - name: create unsigned dmg
+      if: env.UPLOAD_ARTIFACT == 'true'
+      run: 'CREATE_DMG="$(command -v create-dmg)"
+
+        CREATE_DMG="$(readlink -f "$CREATE_DMG")"
+
+        sed -i -e ''s/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/'' "$CREATE_DMG"
+
+        create-dmg --icon "g3Fernwartung.app" 200 190 --hide-extension "g3Fernwartung.app" --window-size 800 400 --app-drop-link 600 185 g3-Fernwartung-${{
+        env.VERSION }}-macos-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/g3Fernwartung.app
+
+        '
+    - name: Record macOS provenance
+      shell: bash
+      run: python3 g3-build/platform-provenance.py macos "${{ matrix.job.arch }}"
+    - name: Upload g3 macOS client
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-macos-${{ matrix.job.arch }}-${{ github.sha }}
+        path: 'g3-Fernwartung-*.dmg
+
+          platform-provenance-*.json'
+        if-no-files-found: error
+        retention-days: 14
+    timeout-minutes: 360
+  build-rustdesk-linux:
+    name: build rustdesk linux ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+        - arch: x86_64
+          target: x86_64-unknown-linux-gnu
+          distro: ubuntu18.04
+          true: ubuntu-22.04
+          deb_arch: amd64
+          vcpkg-triplet: x64-linux
+        - arch: aarch64
+          target: aarch64-unknown-linux-gnu
+          distro: ubuntu18.04
+          true: ubuntu-22.04-arm
+          deb_arch: arm64
+          vcpkg-triplet: arm64-linux
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - name: Apply g3 configuration and platform safeguards
+      shell: bash
+      run: 'git -C libs/hbb_common apply --check "$GITHUB_WORKSPACE/g3-build/hbb-common.patch"
+
+        git -C libs/hbb_common apply "$GITHUB_WORKSPACE/g3-build/hbb-common.patch"
+
+        python3 g3-build/prepare-platform.py'
+    - name: Install native build prerequisites
+      run: 'sudo apt-get update -qq
+
+        sudo apt-get install -y nasm clang pkg-config libva-dev libclang-dev
+
+        python3 -m pip install --user cmake==4.3.0
+
+        echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"'
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
+      with:
+        toolchain: ${{ env.RUST_VERSION }}
+        targets: ${{ matrix.job.target }}
+        components: rustfmt
+    - name: Save Rust toolchain version
+      run: 'RUST_TOOLCHAIN_VERSION=$(cargo --version | awk ''{print $2}'')
+
+        echo "RUST_TOOLCHAIN_VERSION=$RUST_TOOLCHAIN_VERSION" >> $GITHUB_ENV
+
+        '
+    - name: Disable rust bridge build
+      run: '# only build cdylib
+
+        sed -i  "s/\[\"cdylib\", \"staticlib\", \"rlib\"\]/\[\"cdylib\"\]/g" Cargo.toml
+
+        '
+    - name: Install CMake for vcpkg on Linux ARM64
+      if: matrix.job.arch == 'aarch64' && env.UPLOAD_ARTIFACT == 'true'
+      run: 'python3 -m pip install --user "cmake==${VCPKG_CMAKE_VERSION}"
+
+        user_base="$(python3 -m site --user-base)"
+
+        "${user_base}/bin/cmake" --version
+
+        echo "${user_base}/bin" >> "${GITHUB_PATH}"
+
+        '
+    - name: Setup vcpkg with Github Actions binary cache
+      if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
+      uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+      with:
+        vcpkgDirectory: /opt/artifacts/vcpkg
+        vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+        doNotCache: false
+    - name: Install vcpkg dependencies
+      if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
+      run: "sudo apt install -y libva-dev && apt show libva-dev\nif ! $VCPKG_ROOT/vcpkg \\\n  install \\\n  --triplet ${{ matrix.job.vcpkg-triplet\
+        \ }} \\\n  --x-install-root=\"$VCPKG_ROOT/installed\"; then\n  find \"${VCPKG_ROOT}/\" -name \"*.log\" | while read -r _1; do\n    echo\
+        \ \"$_1:\"\n    echo \"======\"\n    cat \"$_1\"\n    echo \"======\"\n    echo \"\"\n  done\n  exit 1\nfi\nhead -n 100 \"${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{\
+        \ matrix.job.vcpkg-triplet }}-rel-out.log\" || true\n"
+      shell: bash
+    - uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8
+      name: Build rustdesk
+      id: vcpkg
+      if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
+      with:
+        arch: ${{ matrix.job.arch }}
+        distro: ${{ matrix.job.distro }}
+        githubToken: ${{ github.token }}
+        setup: 'ls -l "${PWD}"
+
+          ls -l /opt/artifacts/vcpkg/installed
+
+          '
+        dockerRunArgs: '--volume "${PWD}:/workspace"
+
+          --volume "/opt/artifacts:/opt/artifacts"
+
+          '
+        shell: /bin/bash
+        install: "apt-get update -y\necho -e \"installing deps\"\napt-get install -y \\\n   build-essential \\\n   clang \\\n   cmake \\\n   curl\
+          \ \\\n   gcc \\\n   git \\\n   g++ \\\n   libayatana-appindicator3-dev \\\n   libasound2-dev \\\n   libclang-10-dev \\\n   libgstreamer1.0-dev\
+          \ \\\n   libgstreamer-plugins-base1.0-dev \\\n   libgtk-3-dev \\\n   libpulse-dev \\\n   libva-dev \\\n   libxcb-randr0-dev \\\n   libxcb-shape0-dev\
+          \ \\\n   libxcb-xfixes0-dev \\\n   libxdo-dev \\\n   libxfixes-dev \\\n   llvm-10-dev \\\n   nasm \\\n   ninja-build \\\n   pkg-config\
+          \ \\\n   tree \\\n   python3 \\\n   rpm \\\n   unzip \\\n   wget \\\n   xz-utils \\\n   libssl-dev\n# we have libopus compiled by us.\n\
+          apt-get remove -y libopus-dev || true\n# output devs\nls -l ./\ntree -L 3 /opt/artifacts/vcpkg/installed\n"
+        run: "# disable git safe.directory\ngit config --global --add safe.directory \"*\"\n# rust\npushd /opt\n# do not use rustup, because memory\
+          \ overflow in qemu\nwget -O rust.tar.gz https://static.rust-lang.org/dist/rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target\
+          \ }}.tar.gz\ntar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz\ncd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target }} &&\
+          \ ./install.sh\nrm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ matrix.job.target }}\n# edit config\nmkdir -p ~/.cargo/\necho \"\"\"\
+          \n  [source.crates-io]\n  registry = 'https://github.com/rust-lang/crates.io-index'\n\"\"\" > ~/.cargo/config\ncat ~/.cargo/config\n\
+          # start build\npushd /workspace\nexport VCPKG_ROOT=/opt/artifacts/vcpkg\nif [[ \"${{ matrix.job.arch }}\" == \"aarch64\" ]]; then\n\
+          \  export JOBS=\"--jobs 3\"\nelse\n  export JOBS=\"\"\nfi\necho $JOBS\ncargo build --locked --lib $JOBS --features hwcodec,flutter,unix-file-copy-paste\
+          \ --release\nrm -rf target/release/deps target/release/build\nrm -rf ~/.cargo\n\n# Setup Flutter\n# disable git safe.directory\ngit\
+          \ config --global --add safe.directory \"*\"\npushd /workspace\ncase ${{ matrix.job.arch }} in\n  aarch64)\n    export PATH=/opt/flutter-elinux/bin:$PATH\n\
+          \    sed -i \"s/flutter build linux --release/flutter-elinux build linux --verbose/g\" ./build.py\n    sed -i \"s/x64\\/release/arm64\\\
+          /release/g\" ./build.py\n  ;;\n  x86_64)\n    export PATH=/opt/flutter/bin:$PATH\n  ;;\nesac\npopd\npushd /opt\nwget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{\
+          \ env.FLUTTER_VERSION }}-stable.tar.xz\ntar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz\ncase ${{ matrix.job.arch }} in\n\
+          \  aarch64)\n    # clone repo and reset to flutter ${{ env.FLUTTER_VERSION }}\n    git clone https://github.com/sony/flutter-elinux.git\
+          \ || true\n    pushd flutter-elinux\n      git fetch\n      git reset --hard ${{ env.FLUTTER_VERSION }}\n      bin/flutter-elinux doctor\
+          \ -v\n      bin/flutter-elinux precache --linux\n    popd\n    cp -R flutter/bin/cache/artifacts/engine/linux-x64/shader_lib flutter-elinux/flutter/bin/cache/artifacts/engine/linux-arm64\n\
+          \    rm -rf flutter\n  ;;\n  x86_64)\n    flutter doctor -v\n  ;;\nesac\n\nif [[ \"3.24.5\" == ${{ env.FLUTTER_VERSION }} ]]; then\n\
+          \  case ${{ matrix.job.arch }} in\n    aarch64)\n      pushd /opt/flutter-elinux/flutter\n    ;;\n    x86_64)\n      pushd /opt/flutter\n\
+          \    ;;\n  esac\n  git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff\n  popd\nfi\n\n\
+          # build flutter\npushd /workspace\nexport CARGO_INCREMENTAL=0\nexport DEB_ARCH=${{ matrix.job.deb_arch }}\npython3 ./build.py --flutter\
+          \ --skip-cargo\nfor name in rustdesk*??.deb; do\n  mv \"$name\" \"${name%%.deb}-${{ matrix.job.arch }}.deb\"\ndone\n\n"
+    - name: Package g3 Linux namespace and record provenance
+      run: 'python3 g3-build/repack-linux.py
+
+        python3 g3-build/platform-provenance.py linux "${{ matrix.job.arch }}"'
+    - name: Upload g3 Linux client
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-linux-${{ matrix.job.arch }}-${{ github.sha }}
+        path: 'g3-Fernwartung-*.deb
+
+          platform-provenance-*.json'
+        if-no-files-found: error
+        retention-days: 14
+    timeout-minutes: 360
