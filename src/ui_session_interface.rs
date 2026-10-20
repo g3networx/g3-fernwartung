@@ -1955,6 +1955,14 @@ impl<T: InvokeUiSession> Session<T> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
+    #[cfg(windows)]
+    let _g3_session_gate = match crate::g3_update_gate::session() {
+        Ok(guard) => guard,
+        Err(_) => {
+            handler.on_error("Ein Client-Update wird installiert. Bitte anschließend erneut verbinden.");
+            return;
+        }
+    };
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let (sender, receiver) = mpsc::unbounded_channel::<Data>();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -2064,6 +2072,14 @@ async fn start_one_port_forward<T: InvokeUiSession>(
     key: &str,
     token: &str,
 ) {
+    #[cfg(windows)]
+    let _g3_session_gate = match crate::g3_update_gate::session() {
+        Ok(guard) => guard,
+        Err(_) => {
+            handler.on_error("Ein Client-Update wird installiert. Bitte anschließend erneut verbinden.");
+            return;
+        }
+    };
     if let Err(err) = crate::port_forward::listen(
         handler.get_id(),
         handler.password.clone(),

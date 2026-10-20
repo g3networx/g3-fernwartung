@@ -530,6 +530,14 @@ impl Connection {
         meta: super::ConnectionMeta,
         unauthorized: UnauthorizedID,
     ) {
+        #[cfg(windows)]
+        let _g3_session_gate = match crate::g3_update_gate::session() {
+            Ok(guard) => guard,
+            Err(err) => {
+                log::trace!("Connection deferred: update gate unavailable: {}", err);
+                return;
+            }
+        };
         let super::ConnectionMeta {
             control_permissions,
             controlled_context,

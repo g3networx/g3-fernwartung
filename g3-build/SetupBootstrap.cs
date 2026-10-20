@@ -25,16 +25,26 @@ using System.Security.Principal;
 using Microsoft.Win32;
 
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 [assembly:AssemblyTitle("g3 NetworX Installation")]
 
 [assembly:AssemblyCompany("g3 NetworX UG & Co. KG")]
 
-[assembly:AssemblyVersion("1.5.20.0")]
+[assembly:AssemblyVersion("1.5.21.0")]
 
+internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
+internal sealed class UpdateSessionGate:IDisposable {
+ readonly FileStream file;
+ [StructLayout(LayoutKind.Sequential)]struct Overlapped {public UIntPtr Internal,InternalHigh;public uint Offset,OffsetHigh;public IntPtr Event;}
+ [DllImport("kernel32.dll",SetLastError=true)]static extern bool LockFileEx(SafeFileHandle handle,uint flags,uint reserved,uint low,uint high,ref Overlapped overlapped);
+ public UpdateSessionGate(string path){file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);var overlap=new Overlapped();if(!LockFileEx(file.SafeFileHandle,3,0,1,0,ref overlap)){int error=Marshal.GetLastWin32Error();file.Dispose();if(error==33)throw new UpdateBusyException();throw new System.ComponentModel.Win32Exception(error);}}
+ public void Dispose(){file.Dispose();}
+}
 internal sealed class SetupForm:Form {
 
- const string Kind="@KIND@", Hash="@HASH@", FileName="@FILE@", Version="@VERSION@", ExeHash="@EXEHASH@";
+ const string Kind="@KIND@", Hash="@HASH@", FileName="@FILE@", Version="@VERSION@", ExeHash="@EXEHASH@", GateDllHashes="@GATE_DLL_HASHES@";
 
  static string AppName {get{return Kind=="host_msi"?"g3Host":"g3Fernwartung";}}
 
@@ -89,21 +99,23 @@ internal sealed class SetupForm:Form {
 
   var info=new ProcessStartInfo(Application.ExecutablePath,"--g3-install-worker "+Quote(msi)){UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden};
 
-  if(previous>0)await Task.Run(()=>{try{using(var old=Process.GetProcessById(previous)){if(!old.WaitForExit(30000))throw new InvalidOperationException("Der bisherige Client ist noch aktiv.");}}catch(ArgumentException){}});
+  // The running GUI remains alive until the worker owns the exclusive session gate.
 
   using(var p=Process.Start(info)) {
 
    progress.Style=ProgressBarStyle.Marquee;status.Text="Installation läuft. Die Windows-Dateiprüfung kann mehrere Minuten dauern. Der Client wird anschließend automatisch geöffnet.";
 
-   await Task.Run(()=>p.WaitForExit());if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
+   await Task.Run(()=>p.WaitForExit());if(p.ExitCode==1618)throw new UpdateBusyException();if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
 
   }
 
   if(!VerifiedInstallation())throw new InvalidDataException("Installierte Programmdatei stimmt nicht mit dem geprüften Paket überein.");OpenClient();working=false;Close();
 
- }catch(Exception ex){working=false;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;start.Enabled=true;start.Text="Erneut versuchen";if(previous>0&&previousHash!=null)try{if(File.Exists(InstalledExe)&&Digest(InstalledExe)==previousHash)OpenClient();}catch{}}}
+ }catch(Exception ex){working=false;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;start.Enabled=true;start.Text="Erneut versuchen";if(previous>0&&previousHash!=null)try{if(File.Exists(InstalledExe)&&Digest(InstalledExe)==previousHash&&!PreviousRunning())OpenClient();}catch{}}}
 
- static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);try {
+ bool PreviousRunning(){try{using(var p=Process.GetProcessById(previous))return !p.HasExited;}catch(ArgumentException){return false;}}
+ static bool OwnProcessesRemain(){foreach(var p in Process.GetProcessesByName(AppName))using(p){if(p.HasExited)continue;if(String.Equals(p.MainModule.FileName,InstalledExe,StringComparison.OrdinalIgnoreCase))return true;}return false;}
+ static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;bool stoppedByUs=false;try {
 
   if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
 
@@ -115,15 +127,26 @@ internal sealed class SetupForm:Form {
 
   var msi=Path.Combine(root,PackageName(source));string staged=Path.Combine(root,"candidate-"+Guid.NewGuid().ToString("N")+".msi");File.Copy(source,staged,false);if(Digest(staged)!=Hash){File.Delete(staged);return 13;}if(File.Exists(msi))File.Replace(staged,msi,null);else File.Move(staged,msi);
 
-  using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
-
-  // Before MSI validation, release every instance of this product in this session.
-
-  foreach(var old in Process.GetProcessesByName(AppName))using(old){if(old.HasExited)continue;if(!String.Equals(old.MainModule.FileName,InstalledExe,StringComparison.OrdinalIgnoreCase))continue;if(old.SessionId!=Process.GetCurrentProcess().SessionId)throw new InvalidOperationException("Dieser Client wird noch in einer anderen Windows-Sitzung verwendet.");old.CloseMainWindow();if(!old.WaitForExit(5000)){old.Kill();if(!old.WaitForExit(10000))throw new InvalidOperationException("Client konnte nicht beendet werden.");}}
+  string gatePath=Path.Combine(Path.GetDirectoryName(InstalledExe),"g3-update-session.lock");
+  string native=Path.Combine(Path.GetDirectoryName(InstalledExe),"librustdesk.dll");
+  bool compatible=File.Exists(native)&&Array.IndexOf(GateDllHashes.Split(';'),Digest(native))>=0;
+  if((!File.Exists(gatePath)||!compatible)&&OwnProcessesRemain())throw new UpdateBusyException();
+  if(!File.Exists(gatePath)){
+   // Legacy clients cannot prove absence of sessions. Never shut them down.
+   if(OwnProcessesRemain())throw new UpdateBusyException();
+   Directory.CreateDirectory(Path.GetDirectoryName(gatePath));
+   using(var f=new FileStream(gatePath,FileMode.CreateNew,FileAccess.Write,FileShare.None)){f.Flush();}
+  }
+  gate=new UpdateSessionGate(gatePath);
+  // Native GUI/tray processes exit voluntarily only while this exclusive
+  // lease is held. Incoming/outgoing session acquisition is now blocked.
+  using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();stoppedByUs=true;svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
+  var deadline=DateTime.UtcNow.AddSeconds(40);while(OwnProcessesRemain()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
+  if(OwnProcessesRemain())throw new UpdateBusyException();
 
   var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
 
- }catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}}}
+ }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_active_session: "+ex.Message);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}if(gate!=null)gate.Dispose();}}
 
  [STAThread]static int Main(string[] args){if(args.Length==2&&args[0]=="--g3-install-worker")return Worker(args[1]);int pid=0;if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new SetupForm(pid));return 0;}
 

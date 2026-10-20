@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_hbb/g3_enrollment.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 
-const g3ClientVersion = '1.5.0-g3.20';
+const g3ClientVersion = '1.5.0-g3.21';
 Future<void> showG3Update(BuildContext context) async {
   await showDialog<void>(
       context: context, builder: (_) => const _G3UpdateDialog());
@@ -52,7 +52,7 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
           release = newer(data['version']) ? data : null;
           message = release == null
               ? 'Dieser Client ist aktuell ($g3ClientVersion).'
-              : 'Version ${data['version']} ist verfügbar. Das Update beendet diesen Client und kann laufende Fernwartungen unterbrechen. Auf dem Zielgerät wird dessen eigener Client aktualisiert; diese Funktion aktualisiert diesen Rechner.';
+              : 'Version ${data['version']} ist verfügbar. Laufende Fernwartungen verhindern die Installation. Der Client bleibt bis zur sicheren Übergabe aktiv. Auf dem Zielgerät wird dessen eigener Client aktualisiert; diese Funktion aktualisiert diesen Rechner.';
           busy = false;
         });
     } catch (_) {
@@ -66,6 +66,10 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
   }
 
   Future<void> update() async {
+    if (g3IsAdhoc()) {
+      setState(() => message = 'Bitte die neue Soforthilfe separat herunterladen und erst nach Ende aller Fernwartungen öffnen. Dieser Client bleibt aktiv.');
+      return;
+    }
     setState(() {
       busy = true;
       message = 'Update wird heruntergeladen und geprüft …';
@@ -90,13 +94,13 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
       final folder = await Directory.systemTemp.createTemp('g3-update-');
       final file = File('${folder.path}${Platform.pathSeparator}$name');
       await file.writeAsBytes(r.bodyBytes, flush: true);
-      if (name.endsWith('.msi')) {
-        final windows = Platform.environment['SystemRoot'] ?? r'C:\Windows';
-        await Process.start('$windows\\System32\\msiexec.exe', ['/i', file.path, 'REBOOT=ReallySuppress', '/norestart'], mode: ProcessStartMode.detached);
-      } else {
-        await Process.start(file.path, ['--g3-wait-pid', pid.toString()], mode: ProcessStartMode.detached);
-      }
-      exit(0);
+      if (!name.endsWith('.exe')) throw Exception();
+      await Process.start(file.path, ['--g3-wait-pid', pid.toString()],
+          mode: ProcessStartMode.detached);
+      if (mounted) setState(() {
+        busy = false;
+        message = 'Das Installationsprogramm prüft laufende Sitzungen. Bei einer laufenden Fernwartung bleibt dieser Client unverändert aktiv.';
+      });
     } catch (_) {
       if (mounted)
         setState(() {

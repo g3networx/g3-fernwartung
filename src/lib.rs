@@ -79,3 +79,6 @@ mod g3_self_connection;
 mod g3_bootstrap;
 
 mod g3_passwords;
+
+#[cfg(windows)]
+mod g3_update_gate;

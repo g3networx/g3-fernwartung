@@ -47,6 +47,8 @@ Copy-Item LICENCE "$payload/LICENCE"
 Set-Content "$payload/SOURCE.txt" "https://github.com/g3networx/g3-fernwartung/tree/$env:GITHUB_SHA" -Encoding utf8
 python g3-build/package-msi.py; Check
 python g3-build/build-setup-launchers.py; Check
+python g3-build/test-update-session-gate.py; Check
+& "$PSScriptRoot/test-windows-update.ps1"
 Compress-Archive "$payload/*" outputs/g3-windows-unsigned.zip
 $provenance=@{source_commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
 $provenance|ConvertTo-Json|Set-Content outputs/build-provenance.json -Encoding utf8

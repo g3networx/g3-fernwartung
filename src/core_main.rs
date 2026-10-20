@@ -116,6 +116,8 @@ pub fn core_main() -> Option<Vec<String>> {
     if args.contains(&"--connect".to_string()) || args.contains(&"--view-camera".to_string()) {
         base::platform::windows::start_cpu_performance_monitor();
     }
+    #[cfg(windows)]
+    crate::g3_update_gate::watch_idle_process(&args);
     #[cfg(feature = "flutter")]
     if _is_flutter_invoke_new_connection {
         return core_main_invoke_new_connection(std::env::args());

@@ -10,23 +10,27 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.20'
+version='1.5.0-g3.21'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
+(payload/'g3-update-session.lock').touch(exist_ok=True)
 for kind,app,title in [('windows','g3Fernwartung','g3 NetworX Fernwartung'),('host','g3Host','g3 NetworX Host')]:
     folder=ROOT/'g3-build/msi'/kind;folder.mkdir(parents=True,exist_ok=True)
     exe=folder/(app+'.exe');shutil.copy2(payload/'rustdesk.exe',exe)
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=app,Language=1031,Version='1.5.20',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=app,Language=1031,Version='1.5.21',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')
     tag(product,'Property',Id='ARPCOMMENTS',Value=title+' – Installation, Reparatur und Entfernung über Windows Installer.')
     tag(product,'Property',Id='ARPURLINFOABOUT',Value='https://rust.g3nx.net/client')
     tag(product,'Property',Id='REBOOT',Value='ReallySuppress')
+    tag(product,'Property',Id='MSIRESTARTMANAGERCONTROL',Value='Disable')
+    tag(product,'Property',Id='G3_BOOTSTRAP_CLOSED',Secure='yes')
+    tag(product,'Condition',Message='Bitte das g3-Installationsprogramm (.exe) verwenden. Es schützt laufende Fernwartungen.').text='REMOVE~=\"ALL\" OR G3_BOOTSTRAP_CLOSED = 1'
+
     tag(product,'Property',Id='REINSTALLMODE',Value='amus')
-    E.SubElement(product,'{'+UTIL+'}CloseApplication',{'Id':'CloseOwnClient','Target':app+'.exe','CloseMessage':'yes','EndSessionMessage':'yes','ElevatedCloseMessage':'yes','ElevatedEndSessionMessage':'yes','Timeout':'15','RebootPrompt':'no','TerminateProcess':'0','Description':'Bitte laufende Fernwartungen beenden und den g3-Client schließen.'}).text='NOT REMOVE~="ALL" AND NOT G3_BOOTSTRAP_CLOSED'
     tag(product,'Condition',Message='64-Bit Windows erforderlich.').text='VersionNT64'
     target=tag(product,'Directory',Id='TARGETDIR',Name='SourceDir')
     pf=tag(target,'Directory',Id='ProgramFiles64Folder');install=tag(pf,'Directory',Id='INSTALLDIR',Name=app)
@@ -43,6 +47,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 NetworX Fernwartung'),('ho
         relative=file.relative_to(payload)
         cid='C'+hashlib.sha256((kind+'/'+relative.as_posix()).encode()).hexdigest()[:24]
         comp=tag(directory(relative.parent),'Component',Id=cid,Guid=guid(kind+'/file/'+relative.as_posix()),Win64='yes')
+        if file.name == 'g3-update-session.lock':comp.set('Permanent','yes');comp.set('NeverOverwrite','yes')
         tag(comp,'File',Id='F'+cid[1:],Source=str(file),KeyPath='yes')
         tag(feature,'ComponentRef',Id=cid)
     main=tag(install,'Component',Id='MainExe',Guid=guid(kind+'/main'),Win64='yes')
