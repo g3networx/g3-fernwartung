@@ -2,7 +2,7 @@
 No installed client, service, UI, network or customer system is touched.
 """
 from pathlib import Path
-import subprocess, json, time, sys, shutil, os
+import subprocess, json, time, sys, shutil, os, hashlib
 repo=Path(__file__).resolve().parents[1]; root=repo; folder=repo/'work/session-gate-test';folder.mkdir(parents=True,exist_ok=True)
 (folder/'g3-update-session.lock').write_bytes(b'')
 module=(repo/'src/g3_update_gate.rs').as_posix()
@@ -26,6 +26,18 @@ classes=source[source.index('internal sealed class UpdateBusyException'):source.
 }
 ''',encoding='utf-8')
 subprocess.run([str(Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),'/nologo','/target:exe','/out:'+str(folder/'gate.exe'),str(folder/'gate.cs')],check=True)
+# Exercise the exact production verifier while the installer lease is held.
+verification=source[source.index(' static string Digest'):source.index(' static void OpenClient')]
+(folder/'payload.txt').write_bytes(b'verified payload')
+(folder/'payload.tsv').write_text('g3-update-session.lock\t'+hashlib.sha256(b'').hexdigest()+'\npayload.txt\t'+hashlib.sha256(b'verified payload').hexdigest(),encoding='utf-8')
+(folder/'verify.cs').write_text('''using System;using System.IO;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;using System.Security.Cryptography;using System.Reflection;using System.ServiceProcess;using Microsoft.Win32;
+'''+classes+'''class TestPayload {
+ static string InstalledExe,AppName="unused-fixture-service";
+'''+verification+'''
+ static int Main(string[] args){InstalledExe=Path.Combine(Path.GetFullPath(args[0]),"fixture.exe");using(var gate=new UpdateSessionGate(Path.Combine(args[0],"g3-update-session.lock"))){if(!VerifiedInstallation(false))return 1;File.WriteAllText(Path.Combine(args[0],"payload.txt"),"tampered");return VerifiedInstallation(false)?2:0;}}
+}
+''',encoding='utf-8')
+subprocess.run([str(Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),'/nologo','/target:exe','/reference:System.ServiceProcess.dll','/resource:'+str(folder/'payload.tsv')+',g3.payload','/out:'+str(folder/'verify.exe'),str(folder/'verify.cs')],check=True)
 children=[]
 def launch(exe,*args):
  p=subprocess.Popen([str(folder/exe),*args],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True);children.append(p)
@@ -44,8 +56,8 @@ try:
  results.append({'case':'multiple_active_sessions_defer_update_without_closing_either','passed':True})
  gate=launch('gate.exe',str(folder/'g3-update-session.lock'),'hold')
  assert subprocess.run([str(folder/'session.exe'),'session'],capture_output=True).returncode==1618
- stop(gate);a=launch('session.exe','session');stop(a)
- results.append({'case':'exclusive_installation_blocks_new_sessions_and_releases_afterwards','passed':True})
+ stop(gate);subprocess.run([str(folder/'verify.exe'),str(folder)],check=True);a=launch('session.exe','session');stop(a)
+ results.append({'case':'exclusive_installation_blocks_sessions_and_verifies_payload_while_locked','passed':True})
  idle=launch('session.exe','idle');active=launch('session.exe','session')
  assert probe()==1618;time.sleep(.6);assert idle.poll() is None and active.poll() is None
  stop(active);gate=launch('gate.exe',str(folder/'g3-update-session.lock'),'hold');assert idle.wait(timeout=5)==0

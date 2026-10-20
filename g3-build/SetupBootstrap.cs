@@ -75,7 +75,8 @@ internal sealed class SetupForm:Form {
  static bool VerifiedInstallation(bool checkService=true){try{
   string folder=Path.GetDirectoryName(InstalledExe)+Path.DirectorySeparatorChar;int count=0;
   using(var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("g3.payload"))using(var reader=new StreamReader(stream)){
-   string line;while((line=reader.ReadLine())!=null){var item=line.Split('\t');if(item.Length!=2)return false;string file=Path.GetFullPath(Path.Combine(folder,item[0].Replace('/',Path.DirectorySeparatorChar)));if(!file.StartsWith(folder,StringComparison.OrdinalIgnoreCase)||!File.Exists(file)||Digest(file)!=item[1])return false;count++;}
+   // The coordination file cannot be read while our exclusive lease is held.
+   string line;while((line=reader.ReadLine())!=null){var item=line.Split('\t');if(item.Length!=2)return false;string file=Path.GetFullPath(Path.Combine(folder,item[0].Replace('/',Path.DirectorySeparatorChar)));if(!file.StartsWith(folder,StringComparison.OrdinalIgnoreCase)||!File.Exists(file))return false;if(item[0]!="g3-update-session.lock"&&Digest(file)!=item[1])return false;count++;}
   }
   using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager")){var moves=key==null?null:key.GetValue("PendingFileRenameOperations") as string[];if(moves!=null)foreach(string move in moves)if(move.IndexOf(folder,StringComparison.OrdinalIgnoreCase)>=0)return false;}
   if(checkService)using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Running)return false;}

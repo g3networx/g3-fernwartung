@@ -7,6 +7,15 @@ $msi=Join-Path $root "outputs/g3-Fernwartung-$version-install.msi"
 $install=Join-Path $env:ProgramFiles 'g3Fernwartung'
 function Worker {
     $p=Start-Process -FilePath $setup -ArgumentList @('--g3-install-worker',('"'+$msi+'"')) -PassThru -Wait -WindowStyle Hidden
+    if ($p.ExitCode -notin @(0,3010,1618)) {
+        $diag=Join-Path $env:ProgramData "g3-NetworX-Setup-g3Fernwartung-$version"
+        $target=Join-Path $root 'outputs/windows-installer-diagnostics'
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        foreach ($name in @('result.txt','update-error.txt','install.log')) {
+            $file=Join-Path $diag $name
+            if (Test-Path $file) { Copy-Item $file $target -Force;Write-Host "Installer diagnostic: $name";Get-Content $file -Tail 80 | Out-Host }
+        }
+    }
     return $p.ExitCode
 }
 function Ready {
