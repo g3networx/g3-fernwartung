@@ -1,10 +1,19 @@
 name: g3 macOS and Linux clients
 'on':
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_scope:
+        description: Platforms to build
+        type: choice
+        options:
+        - all
+        - macos
+        - linux
+        default: all
 permissions:
   contents: read
 concurrency:
-  group: g3-platforms-${{ github.ref }}
+  group: g3-platforms-${{ github.ref }}-${{ inputs.build_scope }}
   cancel-in-progress: false
 env:
   RUST_VERSION: '1.75'
@@ -154,6 +163,7 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     timeout-minutes: 360
+    if: ${{ inputs.build_scope != 'linux' }}
   build-rustdesk-linux:
     name: build rustdesk linux ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.on }}
@@ -164,15 +174,15 @@ jobs:
         - arch: x86_64
           target: x86_64-unknown-linux-gnu
           distro: ubuntu18.04
-          true: ubuntu-22.04
           deb_arch: amd64
           vcpkg-triplet: x64-linux
+          'on': ubuntu-22.04
         - arch: aarch64
           target: aarch64-unknown-linux-gnu
           distro: ubuntu18.04
-          true: ubuntu-22.04-arm
           deb_arch: arm64
           vcpkg-triplet: arm64-linux
+          'on': ubuntu-22.04-arm
     steps:
     - name: Checkout source code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -297,3 +307,4 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     timeout-minutes: 360
+    if: ${{ inputs.build_scope != 'macos' }}
