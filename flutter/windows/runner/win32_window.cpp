@@ -182,6 +182,17 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
     return false;
   }
 
+  // Assign both window icon sizes explicitly. Explorer must not inherit a
+  // stale class icon when a new client replaces an existing installation.
+  HINSTANCE module = GetModuleHandle(nullptr);
+  for (int kind : {ICON_SMALL, ICON_BIG}) {
+    const int cx = GetSystemMetrics(kind == ICON_SMALL ? SM_CXSMICON : SM_CXICON);
+    const int cy = GetSystemMetrics(kind == ICON_SMALL ? SM_CYSMICON : SM_CYICON);
+    HICON icon = static_cast<HICON>(LoadImageW(module, MAKEINTRESOURCEW(IDI_APP_ICON),
+        IMAGE_ICON, cx, cy, LR_SHARED));
+    if (icon) SendMessageW(window, WM_SETICON, kind, reinterpret_cast<LPARAM>(icon));
+  }
+
   if (!showOnTaskBar) {
     // hide from taskbar
     HRESULT hr;

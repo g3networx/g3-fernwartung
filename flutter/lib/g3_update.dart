@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_hbb/g3_enrollment.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 
-const g3ClientVersion = '1.5.0-g3.18';
+const g3ClientVersion = '1.5.0-g3.19';
 Future<void> showG3Update(BuildContext context) async {
   await showDialog<void>(
       context: context, builder: (_) => const _G3UpdateDialog());
@@ -72,7 +72,7 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
     });
     try {
       final variant = bind.mainGetAppNameSync()=='g3Host'?'host':'windows';
-      final kind = g3IsAdhoc() ? 'adhoc' : (release!.containsKey('${variant}_msi')?'${variant}_msi':variant);
+      final kind = g3IsAdhoc() ? 'adhoc' : variant;
       final item = release![kind] as Map<String, dynamic>;
       final expected = item['sha256'] as String;
       final size = item['size'] as int;
