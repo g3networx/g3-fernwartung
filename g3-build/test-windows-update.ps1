@@ -36,6 +36,7 @@ try {
     if (!$session.HasExited) { $session.StandardInput.WriteLine('');if (!$session.WaitForExit(10000)) { throw 'Disposable session failed to release its lease.' } }
     $session.Dispose()
 }
+Set-Content (Join-Path $install 'SOURCE.txt') 'deliberately altered disposable repair fixture' -Encoding utf8
 $code=Worker
 if ($code -notin @(0,3010)) { throw "Idle repair failed: $code" }
 Ready

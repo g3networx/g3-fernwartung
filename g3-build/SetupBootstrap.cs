@@ -44,7 +44,7 @@ internal sealed class UpdateSessionGate:IDisposable {
 }
 internal sealed class SetupForm:Form {
 
- const string Kind="@KIND@", Hash="@HASH@", FileName="@FILE@", Version="@VERSION@", ExeHash="@EXEHASH@", GateDllHashes="@GATE_DLL_HASHES@";
+ const string Kind="@KIND@", Hash="@HASH@", FileName="@FILE@", Version="@VERSION@", ExeHash="@EXEHASH@", GateDllHashes="@GATE_DLL_HASHES@", ProductCode="@PRODUCTCODE@";
 
  static string AppName {get{return Kind=="host_msi"?"g3Host":"g3Fernwartung";}}
 
@@ -144,7 +144,8 @@ internal sealed class SetupForm:Form {
   var deadline=DateTime.UtcNow.AddSeconds(40);while(OwnProcessesRemain()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
   if(OwnProcessesRemain())throw new UpdateBusyException();
 
-  var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
+  bool repair=String.Equals(Convert.ToString(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\"+AppName+@"\InstallState\"+AppName,"MsiProductCode",null)),ProductCode,StringComparison.OrdinalIgnoreCase);
+  var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn "+(repair?"REINSTALL=ALL ":"")+"REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
 
  }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_active_session: "+ex.Message);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}if(gate!=null)gate.Dispose();}}
 
