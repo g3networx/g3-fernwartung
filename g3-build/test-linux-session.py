@@ -8,10 +8,10 @@ print('::add-mask::'+password,flush=True)
 def run(args,**kwargs):return subprocess.run(args,check=True,**kwargs)
 def execute(container,args,**kwargs):return run(['docker','exec',*(['-i'] if 'input' in kwargs else []),container,*args],**kwargs)
 docker=root/'session-container';docker.mkdir(exist_ok=True)
-(docker/'Dockerfile').write_text("FROM ubuntu:22.04\nCOPY client.deb /tmp/client.deb\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/client.deb xvfb xauth dbus-x11 imagemagick x11-xserver-utils xdotool openbox libegl1-mesa libgles2-mesa && rm /tmp/client.deb\nENV DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/g3-runtime\nCOPY start.sh /start.sh\nCMD [\"bash\",\"/start.sh\"]\n")
+(docker/'Dockerfile').write_text("FROM ubuntu:22.04\nCOPY client.deb /tmp/client.deb\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/client.deb xvfb xauth dbus-x11 imagemagick x11-xserver-utils xdotool openbox libegl1-mesa libgles2-mesa && rm /tmp/client.deb\nENV DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus\nCOPY start.sh /start.sh\nCMD [\"bash\",\"/start.sh\"]\n")
 import shutil
 shutil.copy2(package,docker/'client.deb')
-(docker/'start.sh').write_text("#!/bin/bash\nset -e\nmkdir -p /tmp/g3-runtime; chmod 700 /tmp/g3-runtime\nXvfb :99 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &\nsleep 2\nexec dbus-run-session -- bash -ec 'openbox >/tmp/wm.log 2>&1 & /usr/bin/g3fernwartung >/tmp/gui.log 2>&1 & wait'\n")
+(docker/'start.sh').write_text("#!/bin/bash\nset -e\nmkdir -p /run/user/0; chmod 700 /run/user/0\nXvfb :0 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &\nsleep 2\ndbus-daemon --session --address=unix:path=/run/user/0/bus --fork\nexec bash -ec 'openbox >/tmp/wm.log 2>&1 & /usr/bin/g3fernwartung >/tmp/gui.log 2>&1 & wait'\n")
 result={'architecture':record['arch'],'package_sha256':record['files'][0]['sha256'],'passed':False,'customer_devices_used':False}
 try:
  run(['docker','build','-t',image,str(docker)],stdout=subprocess.DEVNULL)
@@ -38,7 +38,7 @@ finally:
  # Publish only sanitized error diagnostics; never UI screenshots or credentials.
  for container in [target,viewer]:
   try:
-   raw=execute(container,['bash','-c','cat /tmp/gui.log /tmp/connect.log 2>/dev/null; find /root -type f -name "*.log" -exec tail -80 {} \; 2>/dev/null'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=15).stdout
+   raw=execute(container,['bash','-c',r'cat /tmp/gui.log /tmp/connect.log 2>/dev/null; find /root -type f -name "*.log" -exec tail -80 {} \; 2>/dev/null'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=15).stdout
    errors=[]
    for line in raw.splitlines():
     if re.search(r'(wrong|invalid|incorrect).*password',line,re.I):errors.append('AUTHENTICATION_PASSWORD_REJECTED');continue
