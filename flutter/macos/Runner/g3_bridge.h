@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 bool rustdesk_core_main(void);
+void handle_applicationShouldOpenUntitledFile(void);
 #ifdef __cplusplus
 }
 #endif
