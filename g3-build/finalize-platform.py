@@ -1,6 +1,6 @@
 """Validate build provenance and finalize platform metadata on native runners."""
 from pathlib import Path
-import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct
+import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re
 kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.16');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
 source=json.loads(provenance[0].read_text());assert source['arch']==arch and source['platform']==kind
@@ -35,9 +35,25 @@ else:
    app=out/'g3Fernwartung.app';run(['ditto',str(apps[0]),str(app)])
   finally:run(['hdiutil','detach',str(mount)])
  info=app/'Contents/Info.plist';data=plistlib.loads(info.read_bytes());data['CFBundleIdentifier']='de.g3networx.fernwartung';data['G3BuildVersion']=version;data['CFBundleURLTypes']=[{'CFBundleTypeRole':'Editor','CFBundleURLName':'de.g3networx.fernwartung','CFBundleURLSchemes':['g3fernwartung']}];info.write_bytes(plistlib.dumps(data))
+ # Compile the menu against the renamed Swift module, not the upstream product name.
+ xib=out/'MainMenu.xib';xib.write_text((root/'flutter/macos/Runner/Base.lproj/MainMenu.xib').read_text().replace('customModule="RustDesk"','customModule="g3Fernwartung"'))
+ run(['ibtool','--module','g3Fernwartung','--compile',str(app/'Contents/Resources/Base.lproj/MainMenu.nib'),str(xib)]);xib.unlink()
  exe=app/'Contents/MacOS'/data['CFBundleExecutable'];machine=subprocess.check_output(['lipo','-archs',str(exe)],text=True).strip();assert {'x86_64':'x86_64','aarch64':'arm64'}[arch] in machine
+ # Verify every committed native wire export used by the generated Dart bridge.
+ native=app/'Contents/Frameworks/liblibrustdesk.dylib'
+ exports=subprocess.check_output(['nm','-gU',str(native)],text=True)
+ expected=re.findall(r'pub extern "C" fn (\w+)\(', (root/'src/bridge_generated.io.rs').read_text())
+ assert all('_'+name in exports for name in expected),'Native bridge export missing'
  run(['codesign','--force','--deep','--sign','-',str(app)]);run(['codesign','--verify','--deep','--strict',str(app)])
  result=subprocess.run([str(exe),'--version'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30);(out/'launch-smoke.log').write_text(result.stdout);assert result.returncode==0 and '1.5.0' in result.stdout,'Native macOS executable smoke failed'
+ with (out/'gui-smoke.log').open('w') as log:
+  gui=subprocess.Popen([str(exe)],stdout=log,stderr=subprocess.STDOUT)
+  try:
+   time.sleep(10);assert gui.poll() is None,'macOS GUI exited during startup'
+   run(['screencapture','-x',str(out/'client-preview.png')])
+  finally:
+   if gui.poll() is None:gui.terminate();gui.wait(timeout=15)
+ checks+=['native GUI stays running for 10 seconds; screenshot captured','all committed Rust wire symbols exported']
  dmg=out/f'g3-Fernwartung-{version}-macos-{arch}.dmg';stage=out/'dmg-stage';stage.mkdir();run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications');run(['hdiutil','create','-volname','g3 Fernwartung','-srcfolder',str(stage),'-ov','-format','UDZO',str(dmg)]);shutil.rmtree(stage);shutil.rmtree(app)
  checks+=['Mach-O native architecture','g3 URL registration','bundle identifier','local ad-hoc integrity signature (not Apple Developer ID/not notarized)','native --version launch']
 files=list(out.glob('*.deb' if kind=='linux' else '*.dmg'));assert len(files)==1
