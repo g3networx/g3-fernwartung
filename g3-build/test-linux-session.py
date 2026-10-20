@@ -11,12 +11,15 @@ docker=root/'session-container';docker.mkdir(exist_ok=True)
 (docker/'Dockerfile').write_text("FROM ubuntu:22.04\nCOPY client.deb /tmp/client.deb\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/client.deb xvfb xauth dbus-x11 imagemagick x11-xserver-utils xdotool openbox libegl1-mesa libgles2-mesa && rm /tmp/client.deb\nENV DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus\nCOPY start.sh /start.sh\nCMD [\"bash\",\"/start.sh\"]\n")
 import shutil
 shutil.copy2(package,docker/'client.deb')
-(docker/'start.sh').write_text("#!/bin/bash\nset -e\nmkdir -p /run/user/0; chmod 700 /run/user/0\nXvfb :0 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &\nsleep 2\ndbus-daemon --session --address=unix:path=/run/user/0/bus --fork\nexec bash -ec 'openbox >/tmp/wm.log 2>&1 & /usr/bin/g3fernwartung >/tmp/gui.log 2>&1 & wait'\n")
+(docker/'start.sh').write_text("#!/bin/bash\nset -e\ndbus-uuidgen > /etc/machine-id\nmkdir -p /var/lib/dbus; cp /etc/machine-id /var/lib/dbus/machine-id\nmkdir -p /run/user/0; chmod 700 /run/user/0\nXvfb :0 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &\nsleep 2\ndbus-daemon --session --address=unix:path=/run/user/0/bus --fork\nexec bash -ec 'openbox >/tmp/wm.log 2>&1 & /usr/bin/g3fernwartung >/tmp/gui.log 2>&1 & wait'\n")
 result={'architecture':record['arch'],'package_sha256':record['files'][0]['sha256'],'passed':False,'customer_devices_used':False}
 try:
  run(['docker','build','-t',image,str(docker)],stdout=subprocess.DEVNULL)
  for container in [target,viewer]:run(['docker','run','-d','--name',container,image],stdout=subprocess.DEVNULL)
  time.sleep(12)
+ identities=[execute(c,['cat','/etc/machine-id'],stdout=subprocess.PIPE,text=True).stdout.strip() for c in [target,viewer]]
+ assert len(set(identities))==2,'Test containers must have distinct native machine identities'
+ print('Distinct native machine identities verified (self-connection protection remains enabled)',flush=True)
  response=execute(target,['/usr/bin/g3fernwartung','--password-stdin'],input=password+'\n',text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30);assert 'confirmed' in response.stdout.lower(),'Permanent password confirmation missing'
  peer=execute(target,['/usr/bin/g3fernwartung','--get-id'],text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=30).stdout.strip();assert re.fullmatch(r'[0-9]{9,10}',peer),'Target ID unavailable';print('Target generated its own test identity',flush=True)
  # Hide the target's client window so the transmitted desktop contains no credentials.
@@ -43,7 +46,7 @@ finally:
    for line in raw.splitlines():
     if re.search(r'(wrong|invalid|incorrect).*password',line,re.I):errors.append('AUTHENTICATION_PASSWORD_REJECTED');continue
     if 'password' in line.lower():continue
-    if re.search(r'error|failed|denied|refused|display|connection|login|handshake',line,re.I):errors.append(re.sub(r'\b[0-9]{9,10}\b','<test-id>',line.replace(password,'<redacted>')))
+    if re.search(r'error|failed|denied|refused|display|connection|login|handshake|eigenen Rechner|self|authorized|permission',line,re.I):errors.append(re.sub(r'\b[0-9]{9,10}\b','<test-id>',line.replace(password,'<redacted>')))
    (out/(('target' if container==target else 'viewer')+'-diagnostics.txt')).write_text('\n'.join(errors[-100:]))
   except Exception:pass
  # Do not publish screenshots or test credentials, including temporary UI passwords.
