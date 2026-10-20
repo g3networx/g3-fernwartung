@@ -41,7 +41,7 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
   Future<void> check() async {
     try {
       final r = await http
-          .get(Uri.https('rust.g3nx.net', '/client/update.json'))
+          .get(Uri.https('rust.g3nx.net', '/client/update-v2.json'))
           .timeout(const Duration(seconds: 15));
       if (r.statusCode != 200) throw Exception();
       final data = jsonDecode(r.body) as Map<String, dynamic>;
