@@ -22,10 +22,16 @@ if kind=='linux':
   assert not (unpacked/'usr/share/rustdesk').exists()
  checks+=['Debian metadata/version/architecture','ELF machine architecture','maintainer script syntax','isolated namespace and URI registration']
  # Native container smoke test. This cannot alter a customer or runner host installation.
- cmd='apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/*.deb && timeout 20 /usr/bin/g3fernwartung --version'
- result=subprocess.run(['docker','run','--rm','-v',str(out)+':/packages:ro','ubuntu:22.04','bash','-ec',cmd],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+ cmd="""apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/*.deb xvfb xauth dbus-x11 imagemagick libegl1-mesa libgles2-mesa
+/usr/bin/g3fernwartung --version
+mkdir -p /tmp/g3-runtime; chmod 700 /tmp/g3-runtime
+export XDG_RUNTIME_DIR=/tmp/g3-runtime LIBGL_ALWAYS_SOFTWARE=1
+dbus-run-session -- xvfb-run -a bash -ec '/usr/bin/g3fernwartung > /evidence/gui-smoke.log 2>&1 & client_pid=$!; sleep 10; kill -0 "$client_pid"; import -window root /evidence/client-preview.png; kill "$client_pid"; wait "$client_pid" || true'
+"""
+ result=subprocess.run(['docker','run','--rm','-v',str(out)+':/packages:ro','-v',str(out)+':/evidence','ubuntu:22.04','bash','-ec',cmd],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
  (out/'install-smoke.log').write_text(result.stdout);assert result.returncode==0,'Container install/version smoke failed';assert '1.5.0' in result.stdout
- checks+=['Ubuntu 22.04 native container install and executable --version']
+ checks+=['Ubuntu 22.04 native container install and executable --version','native GUI stays running for 10 seconds in Xvfb; screenshot captured']
 else:
  packages=list(inputs.glob('*.dmg'));assert len(packages)==1
  with tempfile.TemporaryDirectory() as temp:
