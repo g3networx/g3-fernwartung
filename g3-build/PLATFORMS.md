@@ -18,10 +18,18 @@ The build uses an ad-hoc integrity signature. It is not an Apple Developer ID si
 
 ## Linux
 
-The Debian package is named `g3fernwartung`, version `1.5.0-g3.16`. The service, launcher, desktop files, protocol handler and application files use a g3 namespace. The existing upstream shared-library filename is retained for the generated FFI loader. Repackaging preserves program binary contents and sets the g3 maintainer, homepage and package version explicitly.
+The Debian package is named `g3fernwartung`, version `1.5.0-g3.17` for the corrected Linux UI build. The service, launcher, desktop files, protocol handler and application files use a g3 namespace. The existing upstream shared-library filename is retained for the generated FFI loader. Repackaging preserves program binary contents and sets the g3 maintainer, homepage and package version explicitly.
 
 Architectures are `amd64` / x86_64 and `arm64` / aarch64. The validation workflow installs each native package in an isolated Ubuntu 22.04 container, checks the executable version, and starts its GUI in a virtual display. Customer hosts and the runner host package database are not used for installation tests.
 
 ## Updates and disclosure
 
 These are FullClients. Non-Windows clients direct the user to the platform download page and never execute the Windows MSI updater. A source/build provenance record accompanies every package. No customer enrollment tokens, credentials or private signing keys belong in the source, artifacts or release manifests.
+
+## Native-library preserving UI rebuild and session acceptance
+
+`g3-linux-ui.yml` rebuilds Flutter/package layers using the verified native library from run 39380639746. It verifies the exact package digest and rejects changes to native source/build inputs before reusing that library. The source record includes the native source separately from the current UI source.
+
+`g3-linux-session.yml` accepts a successful package-validation run as input. Two disposable containers obtain distinct identities, use a random masked password, and establish a real remote session. The viewer must receive two changed target desktop colors, each covering more than 12% of the viewport. Matching package SHA-256, architecture, observed fractions and final result are recorded; no credentials or raw UI screenshots are published. Container cleanup runs even on failure.
+
+The g3.17 correction catches failures of the optional Linux screen-saver/keep-awake integration; a desktop without org.freedesktop.ScreenSaver must not lose its session. Installation/GUI smoke checks alone did not detect that issue, so g3.16 preview downloads were held pending the real-session retest. Promotion must match both package validation and successful session evidence to the exact package SHA-256.
