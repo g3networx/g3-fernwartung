@@ -10,7 +10,7 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.19'
+version='1.5.0-g3.20'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
@@ -18,7 +18,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 NetworX Fernwartung'),('ho
     folder=ROOT/'g3-build/msi'/kind;folder.mkdir(parents=True,exist_ok=True)
     exe=folder/(app+'.exe');shutil.copy2(payload/'rustdesk.exe',exe)
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=app,Language=1031,Version='1.5.19',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=app,Language=1031,Version='1.5.20',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')
@@ -26,7 +26,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 NetworX Fernwartung'),('ho
     tag(product,'Property',Id='ARPURLINFOABOUT',Value='https://rust.g3nx.net/client')
     tag(product,'Property',Id='REBOOT',Value='ReallySuppress')
     tag(product,'Property',Id='REINSTALLMODE',Value='amus')
-    E.SubElement(product,'{'+UTIL+'}CloseApplication',{'Id':'CloseOwnClient','Target':app+'.exe','CloseMessage':'yes','EndSessionMessage':'yes','ElevatedCloseMessage':'yes','ElevatedEndSessionMessage':'yes','Timeout':'15','RebootPrompt':'no','TerminateProcess':'0','Description':'Bitte laufende Fernwartungen beenden und den g3-Client schließen.'}).text='NOT REMOVE~="ALL"'
+    E.SubElement(product,'{'+UTIL+'}CloseApplication',{'Id':'CloseOwnClient','Target':app+'.exe','CloseMessage':'yes','EndSessionMessage':'yes','ElevatedCloseMessage':'yes','ElevatedEndSessionMessage':'yes','Timeout':'15','RebootPrompt':'no','TerminateProcess':'0','Description':'Bitte laufende Fernwartungen beenden und den g3-Client schließen.'}).text='NOT REMOVE~="ALL" AND NOT G3_BOOTSTRAP_CLOSED'
     tag(product,'Condition',Message='64-Bit Windows erforderlich.').text='VersionNT64'
     target=tag(product,'Directory',Id='TARGETDIR',Name='SourceDir')
     pf=tag(target,'Directory',Id='ProgramFiles64Folder');install=tag(pf,'Directory',Id='INSTALLDIR',Name=app)
