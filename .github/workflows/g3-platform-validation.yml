@@ -13,6 +13,7 @@ name: g3 platform package validation
   workflow_run:
     workflows:
     - g3 macOS and Linux clients
+    - g3 Linux client UI rebuild
     types:
     - completed
 permissions:

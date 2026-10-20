@@ -1,7 +1,8 @@
 """Build-only platform preparation. No customer credentials or enrollment codes."""
 from pathlib import Path
-import sys
+import sys,os
 p=Path('flutter/lib/g3_update.dart');s=p.read_text()
+s=s.replace("const g3ClientVersion = '1.5.0-g3.16';", "const g3ClientVersion = '"+os.environ.get('VERSION','1.5.0-g3.16')+"';")
 needle='  Future<void> check() async {\n'
 assert needle in s
 s=s.replace(needle,needle+"    if (!Platform.isWindows) {\n      setState(() { message = 'Updates für diese Plattform findest du unter https://rust.g3nx.net/client. Lade dort das passende Paket für dein Betriebssystem und deine Prozessorarchitektur herunter.'; busy = false; });\n      return;\n    }\n",1)

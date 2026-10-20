@@ -3,7 +3,7 @@ from pathlib import Path
 import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re
 kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.16');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
-source=json.loads(provenance[0].read_text());assert source['arch']==arch and source['platform']==kind
+source=json.loads(provenance[0].read_text());version=source.get('version',version);assert source['arch']==arch and source['platform']==kind
 assert str(source['run_id'])==os.environ['SOURCE_RUN'],'Wrong source run'
 for f in source['files']:
  p=inputs/f['file'];assert p.name==f['file'] and p.is_file();assert hashlib.sha256(p.read_bytes()).hexdigest()==f['sha256'],'Source artifact hash mismatch'
@@ -11,7 +11,7 @@ checks=[]
 def run(args,**kw):return subprocess.run(args,check=True,**kw)
 if kind=='linux':
  packages=list(inputs.glob('*.deb'));assert len(packages)==1
- run([sys.executable,str(root/'g3-build/repack-linux.py'),str(packages[0])],cwd=out)
+ run([sys.executable,str(root/'g3-build/repack-linux.py'),str(packages[0])],cwd=out,env=dict(os.environ,VERSION=version))
  package=next(out.glob('*.deb'))
  fields=subprocess.check_output(['dpkg-deb','-f',str(package),'Package','Version','Architecture'],text=True);assert 'g3fernwartung' in fields and version in fields and {'x86_64':'amd64','aarch64':'arm64'}[arch] in fields
  with tempfile.TemporaryDirectory() as temp:

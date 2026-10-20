@@ -2813,7 +2813,9 @@ class WakelockManager {
     }
     if (!_enabled) {
       _enabled = true;
-      WakelockPlus.enable();
+      WakelockPlus.enable().catchError((Object error) {
+        debugPrint('Keep-awake service unavailable; session remains active: $error');
+      });
     }
   }
 
@@ -2825,7 +2827,9 @@ class WakelockManager {
       }
     }
     if (_enabled) {
-      WakelockPlus.disable();
+      WakelockPlus.disable().catchError((Object error) {
+        debugPrint('Keep-awake release unavailable: $error');
+      });
       _enabled = false;
     }
   }
