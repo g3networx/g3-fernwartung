@@ -1,0 +1,84 @@
+name: g3 platform package validation
+'on':
+  workflow_dispatch:
+    inputs:
+      macos_run:
+        required: true
+        default: '39377062557'
+        type: string
+      linux_run:
+        required: true
+        default: '39377158897'
+        type: string
+  workflow_run:
+    workflows:
+    - g3 macOS and Linux clients
+    types:
+    - completed
+permissions:
+  contents: read
+  actions: read
+env:
+  VERSION: 1.5.0-g3.16
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+    - id: plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TRIGGER_RUN: ${{ github.event.workflow_run.id }}
+        MACOS_RUN: ${{ inputs.macos_run }}
+        LINUX_RUN: ${{ inputs.linux_run }}
+      run: "python3 - <<'PY'\nimport os,json,re,urllib.request\nruns=[os.environ['TRIGGER_RUN']] if os.environ['TRIGGER_RUN'] else [os.environ['MACOS_RUN'],os.environ['LINUX_RUN']]\n\
+        rows=[]\nfor rid in dict.fromkeys(runs):\n assert rid.isdigit()\n url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+rid+'/artifacts?per_page=100'\n\
+        \ req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})\n\
+        \ with urllib.request.urlopen(req,timeout=30) as response:data=json.load(response)\n for artifact in data.get('artifacts',[]):\n\
+        \  match=re.fullmatch(r'g3-(macos|linux)-(x86_64|aarch64)-[a-f0-9]{40}',artifact['name'])\n  if not match or artifact['expired']:continue\n\
+        \  kind,arch=match.groups();runner={('macos','x86_64'):'macos-15-intel',('macos','aarch64'):'macos-14',('linux','x86_64'):'ubuntu-22.04',('linux','aarch64'):'ubuntu-22.04-arm'}[(kind,arch)]\n\
+        \  rows.append(dict(platform=kind,arch=arch,runner=runner,source_run=rid,artifact=artifact['name']))\nwith open(os.environ['GITHUB_OUTPUT'],'a')\
+        \ as out:\n out.write('ready='+str(bool(rows)).lower()+'\\n');out.write('matrix='+json.dumps({'include':rows})+'\\n')\nprint('Architecture\
+        \ packages found:',len(rows))\nPY\n"
+  validate:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    timeout-minutes: 45
+    steps:
+    - name: Checkout packaging code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        persist-credentials: false
+    - name: Download exact architecture build
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ env.SOURCE_RUN }}
+        path: input
+        name: ${{ matrix.artifact }}
+    - name: Finalize package and run native smoke checks
+      shell: bash
+      run: python3 g3-build/finalize-platform.py "${{ matrix.platform }}" "${{ matrix.arch }}"
+    - name: Upload verified platform package
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-verified-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
+        path: verified/
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload diagnostics
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: diagnostics-${{ matrix.platform }}-${{ matrix.arch }}
+        path: verified/*.log
+        if-no-files-found: ignore
+        retention-days: 14
+    needs: plan
+    if: ${{ needs.plan.outputs.ready == 'true' }}
+    env:
+      SOURCE_RUN: ${{ matrix.source_run }}

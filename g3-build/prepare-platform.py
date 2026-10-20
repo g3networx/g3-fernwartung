@@ -9,3 +9,5 @@ p.write_text(s)
 if sys.platform=='darwin':
  p=Path('flutter/macos/Runner/Configs/AppInfo.xcconfig');s=p.read_text().replace('PRODUCT_NAME = RustDesk','PRODUCT_NAME = g3Fernwartung').replace('PRODUCT_BUNDLE_IDENTIFIER = com.carriez.flutterHbb','PRODUCT_BUNDLE_IDENTIFIER = de.g3networx.fernwartung');p.write_text(s)
  p=Path('build.py');p.write_text(p.read_text().replace('RustDesk.app','g3Fernwartung.app'))
+
+ p=Path('flutter/macos/Runner/Info.plist');s=p.read_text();s=s.replace('<string>com.carriez.rustdesk</string>','<string>de.g3networx.fernwartung</string>').replace('<string>rustdesk</string>','<string>g3fernwartung</string>');p.write_text(s)
