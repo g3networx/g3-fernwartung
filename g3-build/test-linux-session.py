@@ -6,7 +6,7 @@ record=json.loads((inputs/'validation.json').read_text());package=inputs/record[
 name='g3-session-'+secrets.token_hex(5);image=name+'-image';target=name+'-target';viewer=name+'-viewer';password=secrets.token_urlsafe(24)
 print('::add-mask::'+password,flush=True)
 def run(args,**kwargs):return subprocess.run(args,check=True,**kwargs)
-def execute(container,args,**kwargs):return run(['docker','exec',container,*args],**kwargs)
+def execute(container,args,**kwargs):return run(['docker','exec',*(['-i'] if 'input' in kwargs else []),container,*args],**kwargs)
 docker=root/'session-container';docker.mkdir(exist_ok=True)
 (docker/'Dockerfile').write_text("FROM ubuntu:22.04\nCOPY client.deb /tmp/client.deb\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/client.deb xvfb xauth dbus-x11 imagemagick x11-xserver-utils xdotool openbox libegl1-mesa libgles2-mesa && rm /tmp/client.deb\nENV DISPLAY=:99 XDG_RUNTIME_DIR=/tmp/g3-runtime\nCOPY start.sh /start.sh\nCMD [\"bash\",\"/start.sh\"]\n")
 import shutil
