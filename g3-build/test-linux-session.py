@@ -31,10 +31,21 @@ try:
   for attempt in range(18):
    time.sleep(3);fraction=color_fraction(color)
    if fraction>.12:break
-  fractions.append(round(fraction,4));assert fraction>.12,'Authenticated live desktop frame not received'
+  fractions.append(round(fraction,4));result['observed_frame_fractions']=fractions;assert fraction>.12,'Authenticated live desktop frame not received'
  result.update(passed=True,checks=['separate native clients and identities','permanent password confirmed by target service','authenticated connection via configured rendezvous','two changed desktop frames received'],frame_fractions=fractions)
  print('PASS: authenticated connection and two live desktop changes',flush=True)
 finally:
+ # Publish only sanitized error diagnostics; never UI screenshots or credentials.
+ for container in [target,viewer]:
+  try:
+   raw=execute(container,['bash','-c','cat /tmp/gui.log /tmp/connect.log 2>/dev/null; find /root -type f -name "*.log" -exec tail -80 {} \; 2>/dev/null'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=15).stdout
+   errors=[]
+   for line in raw.splitlines():
+    if re.search(r'(wrong|invalid|incorrect).*password',line,re.I):errors.append('AUTHENTICATION_PASSWORD_REJECTED');continue
+    if 'password' in line.lower():continue
+    if re.search(r'error|failed|denied|refused|display|connection|login|handshake',line,re.I):errors.append(re.sub(r'\b[0-9]{9,10}\b','<test-id>',line.replace(password,'<redacted>')))
+   (out/(('target' if container==target else 'viewer')+'-diagnostics.txt')).write_text('\n'.join(errors[-100:]))
+  except Exception:pass
  # Do not publish screenshots or test credentials, including temporary UI passwords.
  (out/'frame.png').unlink(missing_ok=True)
  (out/'session-result.json').write_text(json.dumps(result,indent=2))

@@ -6,6 +6,13 @@ name: g3 Linux live session validation
         type: string
         required: true
         default: '39380639746'
+      architecture:
+        type: choice
+        options:
+        - all
+        - x86_64
+        - aarch64
+        default: all
 permissions:
   contents: read
   actions: read
@@ -13,12 +20,9 @@ jobs:
   session:
     strategy:
       fail-fast: false
-      matrix:
-        include:
-        - arch: x86_64
-          runner: ubuntu-22.04
-        - arch: aarch64
-          runner: ubuntu-22.04-arm
+      matrix: '${{ fromJSON(inputs.architecture == ''x86_64'' && ''{"include": [{"arch": "x86_64", "runner": "ubuntu-22.04"}]}'' ||
+        inputs.architecture == ''aarch64'' && ''{"include": [{"arch": "aarch64", "runner": "ubuntu-22.04-arm"}]}'' || ''{"include":
+        [{"arch": "x86_64", "runner": "ubuntu-22.04"}, {"arch": "aarch64", "runner": "ubuntu-22.04-arm"}]}'') }}'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -40,6 +44,8 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: g3-linux-session-${{ matrix.arch }}
-        path: session-evidence/session-result.json
+        path: 'session-evidence/session-result.json
+
+          session-evidence/*-diagnostics.txt'
         if-no-files-found: error
         retention-days: 30
