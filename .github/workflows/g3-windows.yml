@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: g3-windows-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +23,9 @@ jobs:
           version: '15.0.6'
       - name: Build from committed source
         shell: pwsh
-        run: ./g3-build/build.ps1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./g3-build/build-windows-paths.ps1
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

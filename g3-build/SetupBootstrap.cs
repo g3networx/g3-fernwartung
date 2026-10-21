@@ -32,7 +32,7 @@ using Microsoft.Win32.SafeHandles;
 
 [assembly:AssemblyCompany("g3 NetworX UG & Co. KG")]
 
-[assembly:AssemblyVersion("1.5.21.0")]
+[assembly:AssemblyVersion("1.5.22.0")]
 
 internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
 internal sealed class UpdateSessionGate:IDisposable {
@@ -88,7 +88,7 @@ internal sealed class SetupForm:Form {
 
   if(File.Exists(InstalledExe))previousHash=Digest(InstalledExe);
 
-  var dir=Path.Combine(Path.GetTempPath(),"g3-setup-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(dir);var msi=Path.Combine(dir,PackageName(Application.ExecutablePath));
+  var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"g3NetworX","Fernwartung","Downloads","setup-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(dir);var msi=Path.Combine(dir,PackageName(Application.ExecutablePath));
 
   status.Text="Update wird heruntergeladen und vollständig geprüft …";ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
 

@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_hbb/g3_enrollment.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import 'g3_update_paths.dart';
 
-const g3ClientVersion = '1.5.0-g3.21';
+const g3ClientVersion = '1.5.0-g3.22';
 Future<void> showG3Update(BuildContext context) async {
   await showDialog<void>(
       context: context, builder: (_) => const _G3UpdateDialog());
@@ -91,7 +92,7 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
       if (r.statusCode != 200 ||
           r.bodyBytes.length != size ||
           sha256.convert(r.bodyBytes).toString() != expected) throw Exception();
-      final folder = await Directory.systemTemp.createTemp('g3-update-');
+      final folder = await g3UpdateDownloadDirectory();
       final file = File('${folder.path}${Platform.pathSeparator}$name');
       await file.writeAsBytes(r.bodyBytes, flush: true);
       if (!name.endsWith('.exe')) throw Exception();
