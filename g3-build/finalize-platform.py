@@ -7,7 +7,7 @@ source=json.loads(provenance[0].read_text());version=source.get('version',versio
 assert str(source['run_id'])==os.environ['SOURCE_RUN'],'Wrong source run'
 for f in source['files']:
  p=inputs/f['file'];assert p.name==f['file'] and p.is_file();assert hashlib.sha256(p.read_bytes()).hexdigest()==f['sha256'],'Source artifact hash mismatch'
-checks=[]
+checks=[];packaging_adjustments=[]
 def run(args,**kw):return subprocess.run(args,check=True,**kw)
 if kind=='linux':
  packages=list(inputs.glob('*.deb'));assert len(packages)==1
@@ -42,7 +42,11 @@ else:
   finally:run(['hdiutil','detach',str(mount)])
  info=app/'Contents/Info.plist';data=plistlib.loads(info.read_bytes());data['CFBundleIdentifier']='de.g3networx.fernwartung';data['G3BuildVersion']=version;data['CFBundleURLTypes']=[{'CFBundleTypeRole':'Editor','CFBundleURLName':'de.g3networx.fernwartung','CFBundleURLSchemes':['g3fernwartung']}];info.write_bytes(plistlib.dumps(data))
  from runpy import run_path
+ packaging_adjustments=run_path(str(root/'g3-build/macos-prune-swift.py'))['prune'](app,arch)
  minimum=run_path(str(root/'g3-build/macos-minimum.py'))['bundle_minimum'](app,arch)
+ if packaging_adjustments:
+  assert tuple(map(int,minimum.split('.'))) >= (11,0), 'ARM system Swift runtime baseline required'
+  checks+=['Removed only dependency-verified unreferenced x86_64 Swift back-deployment shims from ARM package']
  data['LSMinimumSystemVersion']=minimum;info.write_bytes(plistlib.dumps(data))
  checks+=['Bundle minimum aligned with all Mach-O deployment targets (not an older-OS runtime test)']
  # Compile the menu against the renamed Swift module, not the upstream product name.
@@ -67,5 +71,5 @@ else:
  dmg=out/f'g3-Fernwartung-{version}-macos-{arch}.dmg';stage=out/'dmg-stage';stage.mkdir();run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications');run(['hdiutil','create','-volname','g3 Fernwartung','-srcfolder',str(stage),'-ov','-format','UDZO',str(dmg)]);shutil.rmtree(stage);shutil.rmtree(app)
  checks+=['Mach-O native architecture','g3 URL registration','bundle identifier','local ad-hoc integrity signature (not Apple Developer ID/not notarized)','native --version launch']
 files=list(out.glob('*.deb' if kind=='linux' else '*.dmg'));assert len(files)==1
-record={'version':version,'platform':kind,'arch':arch,'source':source,'finalization_commit':os.environ['GITHUB_SHA'],'finalization_run':os.environ['GITHUB_RUN_ID'],'checks':checks,'publicly_trusted_signature':False,'interactive_connection_acceptance':False,'tested_os':('Ubuntu 22.04' if kind=='linux' else 'macOS '+pyplatform.mac_ver()[0]),'configured_minimum_os':(data.get('LSMinimumSystemVersion') if kind=='macos' else None),'files':[{'file':p.name,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}for p in files]}
+record={'version':version,'platform':kind,'arch':arch,'source':source,'finalization_commit':os.environ['GITHUB_SHA'],'finalization_run':os.environ['GITHUB_RUN_ID'],'checks':checks,'packaging_adjustments':packaging_adjustments,'publicly_trusted_signature':False,'interactive_connection_acceptance':False,'tested_os':('Ubuntu 22.04' if kind=='linux' else 'macOS '+pyplatform.mac_ver()[0]),'configured_minimum_os':(data.get('LSMinimumSystemVersion') if kind=='macos' else None),'files':[{'file':p.name,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}for p in files]}
 (out/'validation.json').write_text(json.dumps(record,indent=2));(out/'SHA256SUMS').write_text(''.join(f"{f['sha256']}  {f['file']}\n" for f in record['files']))
