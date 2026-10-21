@@ -36,6 +36,8 @@ Copy-Item $native.FullName target/release/librustdesk.dll
 $changed=git diff dfb1b5690dda9a4107c6fe377c054f412eca43b5 HEAD -- src libs Cargo.toml Cargo.lock
 Check
 if ($changed) {throw 'Native source changed: native reuse forbidden'}
+# Packaging reads this normally Rust-generated metadata file; no Rust build runs here.
+Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39503924730";' -Encoding utf8
 Push-Location flutter
 flutter test test/g3_update_paths_test.dart; Check
 flutter build windows --release; Check
