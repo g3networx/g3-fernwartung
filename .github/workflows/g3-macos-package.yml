@@ -43,6 +43,8 @@ jobs:
           source=dict(version=r['version'],source_commit=r['source']['source_commit'],run_id='39540544030',platform='macos',arch=r['arch'],files=r['files'],native_origin=r['source']['native_origin'],accepted_ui_package=r)
           (p/('platform-provenance-macos-'+r['arch']+'.json')).write_text(json.dumps(source,indent=2))
           PY
+      - name: Inspect native architecture and actual Swift dependencies
+        run: python3 g3-build/diagnose-macos-bundle.py
       - name: Align minimum metadata, resign integrity and repeat native startup checks
         env:
           SOURCE_RUN: '39540544030'
