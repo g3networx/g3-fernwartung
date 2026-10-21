@@ -41,6 +41,10 @@ else:
    app=out/'g3Fernwartung.app';run(['ditto',str(apps[0]),str(app)])
   finally:run(['hdiutil','detach',str(mount)])
  info=app/'Contents/Info.plist';data=plistlib.loads(info.read_bytes());data['CFBundleIdentifier']='de.g3networx.fernwartung';data['G3BuildVersion']=version;data['CFBundleURLTypes']=[{'CFBundleTypeRole':'Editor','CFBundleURLName':'de.g3networx.fernwartung','CFBundleURLSchemes':['g3fernwartung']}];info.write_bytes(plistlib.dumps(data))
+ from runpy import run_path
+ minimum=run_path(str(root/'g3-build/macos-minimum.py'))['bundle_minimum'](app,arch)
+ data['LSMinimumSystemVersion']=minimum;info.write_bytes(plistlib.dumps(data))
+ checks+=['Bundle minimum aligned with all Mach-O deployment targets (not an older-OS runtime test)']
  # Compile the menu against the renamed Swift module, not the upstream product name.
  xib=out/'MainMenu.xib';xib.write_text((root/'flutter/macos/Runner/Base.lproj/MainMenu.xib').read_text().replace('customModule="RustDesk"','customModule="g3Fernwartung"'))
  run(['ibtool','--module','g3Fernwartung','--compile',str(app/'Contents/Resources/Base.lproj/MainMenu.nib'),str(xib)]);xib.unlink()
