@@ -9,7 +9,9 @@ on:
         type: string
         required: true
 permissions:
-  contents: read
+  # GitHub exposes draft release assets only to push-capable identities. The
+  # short-lived job token is used only for this pinned private candidate fetch.
+  contents: write
 jobs:
   validate:
     runs-on: windows-2022

@@ -5,5 +5,11 @@
     "src/lib.rs": "995c982dc040eeacf57f7c7fcf8993061e05c070d6a71520f61471bb787c6bd1",
     "src/server/connection.rs": "f444dc5b4ba53e9ea8d133504b8885756c30d3838ae84bd24a4c495817843a7d",
     "src/ui_session_interface.rs": "af0c8cde3971b7a8aded38e772a0dded6d74370b94adc8837370ccee179f7d32"
+  },
+  "reviewed_windows_only_files": {
+    "src/core_main.rs": "9c60e2256dc8551458fae62d3ed68d0f0b78e426b3a860ca92150caf0dae4cb9",
+    "src/lib.rs": "6d305fb724a9bc54e1fd9e3cfc0d435e7e942bfcf3c8a0407452f2fc4118908c",
+    "src/server/connection.rs": "ae1283e05f9cffee00415f68b0d00ccf63eb7afad2d57973576a00ef50528638",
+    "src/ui_session_interface.rs": "59d6651419dc21de5d6fce96d8a6bb4205fe565f5cfe5bfac43c80176cf56ff5"
   }
 }

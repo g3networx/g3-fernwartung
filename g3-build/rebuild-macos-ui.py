@@ -14,10 +14,10 @@ def unsigned_hash(path):
 review=json.loads((root/'g3-build/macos-native-reuse.json').read_text())
 base=review['native_commit']
 changed=git('diff','--name-only',base,'HEAD','--','src','libs','Cargo.toml','Cargo.lock','build.rs').decode().splitlines()
-allowed=set(review['reviewed_windows_only_diffs'])|{'src/g3_update_gate.rs','src/platform/windows.rs'}
+allowed=set(review['reviewed_windows_only_files'])|{'src/g3_update_gate.rs','src/platform/windows.rs'}
 assert set(changed)<=allowed, 'Unreviewed native change; full native rebuild required'
-for name,digest in review['reviewed_windows_only_diffs'].items():
- assert hashlib.sha256(git('diff',base,'HEAD','--',name)).hexdigest()==digest, 'Native diff changed: '+name
+for name,digest in review['reviewed_windows_only_files'].items():
+ assert hashlib.sha256(git('show','HEAD:'+name)).hexdigest()==digest, 'Reviewed native input changed: '+name
 for name in ('flutter/lib/generated_bridge.dart','src/bridge_generated.rs'):
  if Path(name).exists(): assert git('show',base+':'+name)==Path(name).read_bytes(), 'FFI ABI changed'
 records=list((root/'input').glob('platform-provenance-*.json'));assert len(records)==1
