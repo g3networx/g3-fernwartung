@@ -14,7 +14,7 @@ def bundle_minimum(app:Path,arch:str):
   if selected not in slices:
    # Apple's bundled Swift compatibility shims may contain the arm64e
    # subtype. Inspect that slice explicitly instead of skipping the library.
-   assert machine=='arm64' and 'arm64e' in slices, 'Foreign architecture in bundle: '+str(file)
+   assert machine=='arm64' and 'arm64e' in slices, 'Foreign architecture in bundle: '+str(file)+' slices='+repr(slices)
    selected='arm64e'
   result=subprocess.run(['vtool','-arch',selected,'-show-build',str(file)],check=True,stdout=subprocess.PIPE,text=True)
   legacy=False
