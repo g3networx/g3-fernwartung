@@ -1,6 +1,11 @@
 name: g3 macOS package finalization
 on:
   workflow_dispatch:
+    inputs:
+      arch:
+        type: choice
+        options: [all, aarch64]
+        default: all
 permissions:
   contents: read
   actions: read
@@ -11,11 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x86_64
-            runner: macos-15-intel
-          - arch: aarch64
-            runner: macos-14
+        include: ${{ fromJSON(inputs.arch == 'aarch64' && '[{"arch":"aarch64","runner":"macos-14"}]' || '[{"arch":"x86_64","runner":"macos-15-intel"},{"arch":"aarch64","runner":"macos-14"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:

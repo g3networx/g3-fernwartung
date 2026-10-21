@@ -9,7 +9,14 @@ def bundle_minimum(app:Path,arch:str):
   if not file.is_file() or file.is_symlink():continue
   with file.open('rb') as stream:magic=stream.read(4)
   if magic not in (b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf',b'\xca\xfe\xba\xbe',b'\xbe\xba\xfe\xca'):continue
-  result=subprocess.run(['vtool','-arch',machine,'-show-build',str(file)],check=True,stdout=subprocess.PIPE,text=True)
+  slices=subprocess.check_output(['lipo','-archs',str(file)],text=True).split()
+  selected=machine
+  if selected not in slices:
+   # Apple's bundled Swift compatibility shims may contain the arm64e
+   # subtype. Inspect that slice explicitly instead of skipping the library.
+   assert machine=='arm64' and 'arm64e' in slices, 'Foreign architecture in bundle: '+str(file)
+   selected='arm64e'
+  result=subprocess.run(['vtool','-arch',selected,'-show-build',str(file)],check=True,stdout=subprocess.PIPE,text=True)
   legacy=False
   for line in result.stdout.splitlines():
    if re.match(r'\s*cmd\s+',line):legacy='LC_VERSION_MIN_MACOSX' in line
