@@ -25,6 +25,7 @@ $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+j
 Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12305703512/zip' -Headers $headers -OutFile "$tools/base.zip"
 if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne '8603c4fe6e69ce6b560c2815d9109e0491bc6f90b0f0b82c7cc505fc86e64b6f') {throw 'Native acceptance artifact digest mismatch'}
 Expand-Archive "$tools/base.zip" "$tools/base"
+$env:G3_ACCEPTED_BASE="$tools/base"
 Expand-Archive "$tools/base/g3-windows-unsigned.zip" "$tools/native"
 $native=Get-ChildItem "$tools/native" -Recurse -Filter librustdesk.dll
 if (@($native).Count -ne 1) {throw 'Unexpected native payload'}

@@ -49,4 +49,14 @@ Set-Content (Join-Path $install 'SOURCE.txt') 'deliberately altered disposable r
 $code=Worker
 if ($code -notin @(0,3010)) { throw "Idle repair failed: $code" }
 Ready
-@{version=$version;clean_install=$true;active_session_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;fullclient_only=$true;scope='disposable GitHub Windows runner'} | ConvertTo-Json | Set-Content "$root/outputs/windows-update-installation-test.json" -Encoding utf8
+if (!$env:G3_ACCEPTED_BASE) { throw 'Accepted baseline package location is required.' }
+$remove=Start-Process msiexec.exe -ArgumentList @('/x',('"'+$msi+'"'),'/qn','REBOOT=ReallySuppress','/norestart') -PassThru -Wait -WindowStyle Hidden
+if ($remove.ExitCode -notin @(0,3010)) { throw "Disposable removal failed: $($remove.ExitCode)" }
+$baselineSetup=Join-Path $env:G3_ACCEPTED_BASE 'g3-Fernwartung-1.5.0-g3.21-install.exe'
+$baselineMsi=Join-Path $env:G3_ACCEPTED_BASE 'g3-Fernwartung-1.5.0-g3.21-install.msi'
+$baseline=Start-Process $baselineSetup -ArgumentList @('--g3-install-worker',('"'+$baselineMsi+'"')) -PassThru -Wait -WindowStyle Hidden
+if ($baseline.ExitCode -notin @(0,3010)) { throw "Accepted baseline install failed: $($baseline.ExitCode)" }
+$code=Worker
+if ($code -notin @(0,3010)) { throw "Baseline upgrade failed: $code" }
+Ready
+@{version=$version;clean_install=$true;active_session_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;baseline_upgrade=$true;baseline_version='1.5.0-g3.21';fullclient_only=$true;scope='disposable GitHub Windows runner'} | ConvertTo-Json | Set-Content "$root/outputs/windows-update-installation-test.json" -Encoding utf8
