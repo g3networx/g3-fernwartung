@@ -1,0 +1,65 @@
+name: g3 macOS client UI rebuild
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  VERSION: 1.5.0-g3.22
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+jobs:
+  macos-ui:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+          - arch: aarch64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          github-token: ${{ github.token }}
+          run-id: '39383565494'
+          pattern: g3-macos-${{ matrix.arch }}-*
+          path: input
+          merge-multiple: true
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+      - name: Prepare platform and rebuild UI with accepted core
+        run: |
+          python3 g3-build/check-macos-bridge.py
+          python3 g3-build/prepare-platform.py
+          python3 g3-build/rebuild-macos-ui.py '${{ matrix.arch }}'
+      - name: Validate exact package on native macOS
+        env:
+          SOURCE_RUN: ${{ github.run_id }}
+        run: |
+          mkdir -p validation-input
+          cp g3-Fernwartung-*.dmg platform-provenance-*.json validation-input/
+          mv input native-input
+          mv validation-input input
+          python3 g3-build/finalize-platform.py macos '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: g3-verified-macos-${{ matrix.arch }}-${{ github.sha }}
+          path: verified/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure()
+        with:
+          name: macos-ui-diagnostics-${{ matrix.arch }}
+          path: |
+            verified/*.log
+            flutter/build/macos/Logs/
+          if-no-files-found: ignore

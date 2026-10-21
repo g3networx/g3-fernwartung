@@ -1,0 +1,9 @@
+{
+  "native_commit": "302c38723245484a9f13b04785b4e3fcc4232a99",
+  "reviewed_windows_only_diffs": {
+    "src/core_main.rs": "f3fe31996f42cd623e0b43d212f070c996ed82f47ef57534252905cbfe55994a",
+    "src/lib.rs": "995c982dc040eeacf57f7c7fcf8993061e05c070d6a71520f61471bb787c6bd1",
+    "src/server/connection.rs": "f444dc5b4ba53e9ea8d133504b8885756c30d3838ae84bd24a4c495817843a7d",
+    "src/ui_session_interface.rs": "af0c8cde3971b7a8aded38e772a0dded6d74370b94adc8837370ccee179f7d32"
+  }
+}

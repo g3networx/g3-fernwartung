@@ -951,11 +951,25 @@ async fn send_close_async(postfix: &str) -> ResultType<()> {
 // https://docs.microsoft.com/en-us/windows/win32/api/sas/nf-sas-sendsas
 // https://www.cnblogs.com/doutu/p/4892726.html
 pub fn send_sas() {
-    #[link(name = "sas")]
-    extern "system" {
-        pub fn SendSAS(AsUser: BOOL);
-    }
     unsafe {
+        // Server Core can omit SAS.dll. Absence must not prevent the host
+        // service from loading, and must never change policy as a side effect.
+        let module = LoadLibraryExA(b"sas.dll\0".as_ptr() as _, null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if module.is_null() {
+            log::warn!("Secure attention is unavailable on this Windows installation");
+            return;
+        }
+        struct SasModule(HMODULE);
+        impl Drop for SasModule {
+            fn drop(&mut self) { unsafe { winapi::um::libloaderapi::FreeLibrary(self.0); } }
+        }
+        let _module = SasModule(module);
+        let address = GetProcAddress(module, b"SendSAS\0".as_ptr() as _);
+        if address.is_null() {
+            log::warn!("Secure attention API is unavailable");
+            return;
+        }
+        let sas: unsafe extern "system" fn(BOOL) = std::mem::transmute(address);
         log::info!("SAS received");
 
         // Check and temporarily set SoftwareSASGeneration if needed
@@ -1001,7 +1015,7 @@ pub fn send_sas() {
         }
 
         // Send SAS
-        SendSAS(FALSE);
+        sas(FALSE);
 
         // Restore original value if we changed it
         if let Some(original) = original_value {
