@@ -3,6 +3,19 @@ function Check { if ($LASTEXITCODE -ne 0) { throw "Build command failed: $LASTEX
 $source=(Resolve-Path "$PSScriptRoot/..").Path
 $tools=Join-Path $env:RUNNER_TEMP 'g3-tools'
 New-Item -ItemType Directory -Path $tools -Force | Out-Null
+$headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'}
+Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12305703512/zip' -Headers $headers -OutFile "$tools/base.zip"
+if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne '8603c4fe6e69ce6b560c2815d9109e0491bc6f90b0f0b82c7cc505fc86e64b6f') {throw 'Native acceptance artifact digest mismatch'}
+Expand-Archive "$tools/base.zip" "$tools/base"
+$env:G3_ACCEPTED_BASE="$tools/base"
+# Reuse only when the exact native source tree matches the accepted build.
+$changed=git -C $source diff dfb1b5690dda9a4107c6fe377c054f412eca43b5 HEAD -- src libs Cargo.toml Cargo.lock
+Check
+if ($changed) {
+ Write-Output 'Native source changed: selecting the complete native build and acceptance pipeline.'
+ & "$PSScriptRoot/build.ps1"
+ return
+}
 $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 Import-Module "$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
 Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
@@ -21,21 +34,12 @@ Expand-Archive "$tools/engine.zip" "$tools/engine"
 Copy-Item "$tools/engine/*" "$tools/flutter/bin/cache/artifacts/engine/windows-x64-release" -Recurse -Force
 rustup toolchain install 1.75.0 --profile minimal; Check
 $env:RUSTUP_TOOLCHAIN='1.75.0'
-$headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'}
-Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12305703512/zip' -Headers $headers -OutFile "$tools/base.zip"
-if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne '8603c4fe6e69ce6b560c2815d9109e0491bc6f90b0f0b82c7cc505fc86e64b6f') {throw 'Native acceptance artifact digest mismatch'}
-Expand-Archive "$tools/base.zip" "$tools/base"
-$env:G3_ACCEPTED_BASE="$tools/base"
 Expand-Archive "$tools/base/g3-windows-unsigned.zip" "$tools/native"
 $native=Get-ChildItem "$tools/native" -Recurse -Filter librustdesk.dll
 if (@($native).Count -ne 1) {throw 'Unexpected native payload'}
 $nativeHash=(Get-FileHash $native.FullName).Hash.ToLowerInvariant()
 New-Item -ItemType Directory -Path target/release -Force | Out-Null
 Copy-Item $native.FullName target/release/librustdesk.dll
-# Verify that no native source changed relative to the accepted build.
-$changed=git diff dfb1b5690dda9a4107c6fe377c054f412eca43b5 HEAD -- src libs Cargo.toml Cargo.lock
-Check
-if ($changed) {throw 'Native source changed: native reuse forbidden'}
 # Packaging reads this normally Rust-generated metadata file; no Rust build runs here.
 Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39503924730";' -Encoding utf8
 Push-Location flutter

@@ -34,6 +34,7 @@ $env:VCPKG_ROOT="$tools/vcpkg"
 python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Check
 Push-Location flutter
 flutter test --no-pub test/g3_legal_notices_test.dart; Check
+flutter test --no-pub test/g3_update_paths_test.dart; Check
 Pop-Location
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
@@ -49,6 +50,7 @@ python g3-build/package-msi.py; Check
 python g3-build/build-setup-launchers.py; Check
 python g3-build/test-update-session-gate.py; Check
 & "$PSScriptRoot/test-windows-update.ps1"
+python g3-build/test-download-bootstrap.py; Check
 Compress-Archive "$payload/*" outputs/g3-windows-unsigned.zip
 $provenance=@{source_commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
 $provenance|ConvertTo-Json|Set-Content outputs/build-provenance.json -Encoding utf8

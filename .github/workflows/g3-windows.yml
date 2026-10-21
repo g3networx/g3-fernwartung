@@ -2,6 +2,10 @@ name: g3 Windows verified build
 on:
   push:
     branches: [g3-verified-build]
+    paths-ignore:
+      - '**/*.md'
+      - 'g3-build/*macos*'
+      - '.github/workflows/g3-macos*.yml'
   workflow_dispatch:
 permissions:
   contents: read
