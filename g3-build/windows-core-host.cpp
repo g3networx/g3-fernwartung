@@ -37,9 +37,9 @@ int wmain(int argc, wchar_t** argv) {
     if (args) {
         release(args, count);
         std::fputs("This operation requires a graphical client.\n", stderr);
-        FreeLibrary(core);
         return 5;
     }
-    FreeLibrary(core);
+    // Native administrative commands can start worker/watch threads. Keep the
+    // module alive until process shutdown rather than unloading their code.
     return 0;
 }
