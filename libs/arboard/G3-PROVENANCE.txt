@@ -1,0 +1,5 @@
+Upstream: https://github.com/rustdesk-org/arboard
+Commit: c7d5781f563176df9efd8df6287e823fb1b9bed5
+Version: 3.4.0
+Local Windows-only change: accept and publish registered PNG alongside image/png.
+Upstream MIT and Apache licenses retained.

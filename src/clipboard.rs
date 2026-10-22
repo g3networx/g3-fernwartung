@@ -41,7 +41,9 @@ lazy_static::lazy_static! {
     static ref CLIPBOARD_CTX: Arc<Mutex<Option<ClipboardContext>>> = Arc::new(Mutex::new(None));
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_os = "windows")]
+const CLIPBOARD_GET_MAX_RETRY: usize = 12;
+#[cfg(not(any(target_os = "android", target_os = "windows")))]
 const CLIPBOARD_GET_MAX_RETRY: usize = 3;
 #[cfg(not(target_os = "android"))]
 const CLIPBOARD_GET_RETRY_INTERVAL_DUR: Duration = Duration::from_millis(33);
@@ -370,7 +372,7 @@ impl ClipboardContext {
                 }
                 Err(e) => match e {
                     arboard::Error::ClipboardOccupied => {
-                        log::debug!("Failed to get clipboard formats, clipboard is occupied, retrying... {}", i + 1);
+                        log::trace!("Failed to get clipboard formats, clipboard is occupied, retrying... {}", i + 1);
                         std::thread::sleep(CLIPBOARD_GET_RETRY_INTERVAL_DUR);
                     }
                     _ => {
