@@ -1,0 +1,34 @@
+name: Isolated security installer acceptance
+on:
+  push:
+    branches: [security-installation-20261022083821]
+permissions:
+  contents: write
+jobs:
+  installation:
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [one, two]
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Fetch pinned private candidate
+        shell: pwsh
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/releases/assets/665209822' -Headers @{Authorization=('Bearer '+$env:TOKEN);Accept='application/octet-stream'} -OutFile candidate.zip
+          if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne '5a227c34ecbe55a28d76695c86006960da7f3406e93ab001f30799debd4cb876'){throw 'Archive digest mismatch'}
+          Expand-Archive candidate.zip . -Force
+      - name: Install and test isolated server boundaries
+        shell: pwsh
+        env:
+          TEST_SLOT: ${{ matrix.slot }}
+        run: ./work/security-fix-20261022/test-two-installations.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: security-installation-${{ matrix.slot }}
+          path: installation-evidence.json
+          if-no-files-found: warn
