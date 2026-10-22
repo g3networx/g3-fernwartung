@@ -1,0 +1,7 @@
+[package]
+name = "g3-clipboard-format-qa"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arboard = { git = "https://github.com/rustdesk-org/arboard", rev = "c7d5781f563176df9efd8df6287e823fb1b9bed5" }

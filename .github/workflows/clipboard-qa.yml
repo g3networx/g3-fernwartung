@@ -1,0 +1,23 @@
+name: Isolated Windows clipboard formats
+on:
+  push:
+    branches: [clipboard-qa-20261022144648]
+permissions:
+  contents: read
+jobs:
+  formats:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Build and run isolated native clipboard probe
+        shell: pwsh
+        run: cargo run --manifest-path clipboard-qa/Cargo.toml --release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: clipboard-format-evidence
+          path: clipboard-format-evidence.json
+          if-no-files-found: warn
