@@ -1,0 +1,36 @@
+name: Isolated service credential rotation acceptance
+on:
+  push:
+    branches: [service-rotation-20261022092504]
+permissions:
+  contents: write
+jobs:
+  installation:
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [one, two]
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Fetch pinned private candidate
+        shell: pwsh
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/releases/assets/665324922' -Headers @{Authorization=('Bearer '+$env:TOKEN);Accept='application/octet-stream'} -OutFile candidate.zip
+          if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne 'e43bee8182effed34baee1e5c7fb1eeb36ade47a3fc992a075479e102231cc5b'){throw 'Archive digest mismatch'}
+          Expand-Archive candidate.zip . -Force
+      - name: Install and test isolated server boundaries
+        shell: pwsh
+        env:
+          TEST_SLOT: ${{ matrix.slot }}
+        run: ./work/service-rotation-20261022/test-two-installations.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: service-rotation-${{ matrix.slot }}
+          path: |
+            installation-evidence.json
+            native-rotation-evidence.json
+          if-no-files-found: warn
