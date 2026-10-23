@@ -66,4 +66,4 @@ python g3-build/test-download-bootstrap.py; Check
 Compress-Archive "$payload/*" outputs/g3-windows-unsigned.zip
 $provenance=@{source_commit=$env:GITHUB_SHA;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
 $provenance|ConvertTo-Json|Set-Content outputs/build-provenance.json -Encoding utf8
-Get-ChildItem outputs -File | Get-FileHash -Algorithm SHA256 | Select-Object @{n='file';e={Split-Path $_.Path -Leaf}},Hash | ConvertTo-Json | Set-Content outputs/SHA256.json -Encoding utf8
+Get-ChildItem outputs -File | Where-Object { $_.Name -notin @('build-diagnostics.txt','build-failure.txt') } | Get-FileHash -Algorithm SHA256 | Select-Object @{n='file';e={Split-Path $_.Path -Leaf}},Hash | ConvertTo-Json | Set-Content outputs/SHA256.json -Encoding utf8
