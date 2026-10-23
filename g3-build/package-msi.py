@@ -10,7 +10,7 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.22'
+version='1.5.0-g3.23'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}

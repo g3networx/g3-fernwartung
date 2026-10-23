@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "win32_desktop.h"
+#include "resource.h"
 
 namespace {
 
@@ -148,6 +149,20 @@ bool FlutterWindow::OnCreate() {
   DesktopMultiWindowSetWindowCreatedCallback([](void *controller) {
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
+    HWND session_window =
+        GetParent(flutter_view_controller->view()->GetNativeWindow());
+    if (session_window) {
+      for (int kind : {ICON_SMALL, ICON_BIG}) {
+        const int cx = GetSystemMetrics(kind == ICON_SMALL ? SM_CXSMICON : SM_CXICON);
+        const int cy = GetSystemMetrics(kind == ICON_SMALL ? SM_CYSMICON : SM_CYICON);
+        HICON icon = static_cast<HICON>(LoadImageW(GetModuleHandle(nullptr),
+            MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, cx, cy, LR_SHARED));
+        if (icon) {
+          SendMessageW(session_window, WM_SETICON, kind,
+                       reinterpret_cast<LPARAM>(icon));
+        }
+      }
+    }
     auto *registry = flutter_view_controller->engine();
     TextureRgbaRendererPluginCApiRegisterWithRegistrar(
         registry->GetRegistrarForPlugin("TextureRgbaRendererPlugin"));
