@@ -32,7 +32,7 @@ using Microsoft.Win32.SafeHandles;
 
 [assembly:AssemblyCompany("g3 NetworX UG & Co. KG")]
 
-[assembly:AssemblyVersion("1.5.26.0")]
+[assembly:AssemblyVersion("1.5.27.0")]
 
 internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
 internal sealed class UpdateSessionGate:IDisposable {

@@ -9,15 +9,15 @@ void main() {
    requests++;
    expect(request.url.toString(), 'https://rust.g3nx.net/client/update-v2.json');
    expect(request.method, 'GET');
-   return http.Response('{"version":"1.5.0-g3.26"}', 200);
+   return http.Response('{"version":"1.5.0-g3.27"}', 200);
   });
-  expect(await g3AvailableUpdate(current:'1.5.0-g3.24',client:client), '1.5.0-g3.26');
+  expect(await g3AvailableUpdate(current:'1.5.0-g3.24',client:client), '1.5.0-g3.27');
   expect(requests,1);
  });
  test('current, older and malformed versions do not offer an update', () {
   expect(g3VersionNewer('1.5.0-g3.24','1.5.0-g3.24'),false);
   expect(g3VersionNewer('1.5.0-g3.23','1.5.0-g3.24'),false);
-  expect(g3VersionNewer('1.5.0-g3.26-evil','1.5.0-g3.24'),false);
+  expect(g3VersionNewer('1.5.0-g3.27-evil','1.5.0-g3.24'),false);
  });
  test('unavailable or invalid feed leaves client startup usable', () async {
   expect(await g3AvailableUpdate(client:MockClient((_) async => http.Response('offline',503))),isNull);

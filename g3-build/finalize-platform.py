@@ -1,7 +1,7 @@
 """Validate build provenance and finalize platform metadata on native runners."""
 from pathlib import Path
 import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re,platform as pyplatform
-kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.26');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
+kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.27');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
 source=json.loads(provenance[0].read_text());version=source.get('version',version);assert source['arch']==arch and source['platform']==kind
 assert str(source['run_id'])==os.environ['SOURCE_RUN'],'Wrong source run'

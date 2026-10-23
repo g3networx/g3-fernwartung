@@ -4,7 +4,7 @@ import '../lib/g3_update_metadata.dart';
 void main() {
   final digest = List.filled(64, 'a').join();
 
-  test('accepts the published 82,432-byte Windows bootstrapper', () {
+  test('accepts the published FullClient bootstrapper', () {
     expect(
       g3UpdateArtifactMetadataIsValid(
         sha256: digest,
@@ -15,9 +15,20 @@ void main() {
     );
   });
 
-  test('rejects undersized, oversized, malformed, or path-like metadata', () {
+  test('accepts small host bootstrapper metadata without a size floor', () {
+    expect(
+      g3UpdateArtifactMetadataIsValid(
+        sha256: digest,
+        size: 1024,
+        filename: 'g3-OpsLinX-Host-install.exe',
+      ),
+      isTrue,
+    );
+  });
+
+  test('rejects empty, oversized, malformed, or path-like metadata', () {
     expect(g3UpdateArtifactMetadataIsValid(
-      sha256: digest, size: 16383, filename: 'setup.exe'), isFalse);
+      sha256: digest, size: 0, filename: 'setup.exe'), isFalse);
     expect(g3UpdateArtifactMetadataIsValid(
       sha256: digest, size: 150000001, filename: 'setup.exe'), isFalse);
     expect(g3UpdateArtifactMetadataIsValid(

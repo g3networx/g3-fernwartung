@@ -15,11 +15,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "g3 NetworX UG & Co. KG\0"
       VALUE "FileDescription", "g3 OpsLinX Host\0"
-      VALUE "FileVersion", "1.5.26.0\0"
+      VALUE "FileVersion", "1.5.27.0\0"
       VALUE "InternalName", "g3Host\0"
       VALUE "OriginalFilename", "g3Host.exe\0"
       VALUE "ProductName", "g3 OpsLinX Host\0"
-      VALUE "ProductVersion", "1.5.26.0\0"
+      VALUE "ProductVersion", "1.5.27.0\0"
     END
   END
   BLOCK "VarFileInfo"

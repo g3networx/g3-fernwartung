@@ -7,7 +7,7 @@ assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub runner req
 root = pathlib.Path(__file__).resolve().parents[1]
 folder = root/'work/download-acceptance'
 folder.mkdir(parents=True, exist_ok=True)
-version = '1.5.0-g3.26'
+version = '1.5.0-g3.27'
 msi = root/'outputs'/f'g3-OpsLinX-{version}-install.msi'
 payload = msi.read_bytes()
 class Handler(http.server.BaseHTTPRequestHandler):

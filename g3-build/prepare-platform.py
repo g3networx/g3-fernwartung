@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys,os,re
 p=Path('flutter/lib/g3_update_check.dart');s=p.read_text()
-s,n=re.subn(r"const g3ClientVersion = '[^']+';", "const g3ClientVersion = '"+os.environ.get('VERSION','1.5.0-g3.26')+"';",s)
+s,n=re.subn(r"const g3ClientVersion = '[^']+';", "const g3ClientVersion = '"+os.environ.get('VERSION','1.5.0-g3.27')+"';",s)
 assert n==1, 'Expected exactly one client version declaration'
 p.write_text(s)
 p=Path('flutter/lib/g3_update.dart');s=p.read_text()

@@ -2,12 +2,12 @@ import pathlib,json,hashlib,subprocess,uuid
 
 root=pathlib.Path.cwd();out=root/'outputs';items={}
 
-for kind,name in [('windows','g3-OpsLinX-1.5.0-g3.26-install'),('host','g3-OpsLinX-Host-1.5.0-g3.26-host-install')]:
+for kind,name in [('windows','g3-OpsLinX-1.5.0-g3.27-install'),('host','g3-OpsLinX-Host-1.5.0-g3.27-host-install')]:
 
  msi=out/(name+'.msi');digest=hashlib.sha256(msi.read_bytes()).hexdigest();items[kind+'_msi']={'file':msi.name,'sha256':digest,'size':msi.stat().st_size}
 
  exe_source=root/'outputs/g3Host.exe' if kind=='host' else root/'flutter/build/windows/x64/runner/Release/rustdesk.exe'
- source=(root/'g3-build/SetupBootstrap.cs').read_text(encoding='utf-8').replace('@GATE_DLL_HASHES@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/librustdesk.dll').read_bytes()).hexdigest()+(';'+(root/'g3-build/update-gate-native-hashes.txt').read_text(encoding='utf-8').strip().replace('\n',';') if (root/'g3-build/update-gate-native-hashes.txt').exists() else '')).replace('@PRODUCTCODE@','{'+str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+kind+'/1.5.0-g3.26')).upper()+'}').replace('@KIND@',kind+'_msi').replace('@HASH@',digest).replace('@FILE@',msi.name).replace('@VERSION@','1.5.0-g3.26').replace('@EXEHASH@',hashlib.sha256(exe_source.read_bytes()).hexdigest());code=root/'g3-build/msi'/kind/'SetupBootstrap.cs';code.write_text(source,encoding='utf-8')
+ source=(root/'g3-build/SetupBootstrap.cs').read_text(encoding='utf-8').replace('@GATE_DLL_HASHES@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/librustdesk.dll').read_bytes()).hexdigest()+(';'+(root/'g3-build/update-gate-native-hashes.txt').read_text(encoding='utf-8').strip().replace('\n',';') if (root/'g3-build/update-gate-native-hashes.txt').exists() else '')).replace('@PRODUCTCODE@','{'+str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+kind+'/1.5.0-g3.27')).upper()+'}').replace('@KIND@',kind+'_msi').replace('@HASH@',digest).replace('@FILE@',msi.name).replace('@VERSION@','1.5.0-g3.27').replace('@EXEHASH@',hashlib.sha256(exe_source.read_bytes()).hexdigest());code=root/'g3-build/msi'/kind/'SetupBootstrap.cs';code.write_text(source,encoding='utf-8')
 
  payload=(root/'flutter/build/windows/x64/runner/Release')
  entries=[]

@@ -12,7 +12,7 @@ foreach($item in $outputs){
   if((Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant() -ne $item.Hash.ToLowerInvariant()){throw "Artifact file hash mismatch: $($item.file)"}
 }
 $items=Get-Content (Join-Path $artifact 'msi-items.json') -Raw | ConvertFrom-Json
-$version='1.5.0-g3.26'
+$version='1.5.0-g3.27'
 foreach($key in @('host_msi')){
   $entry=$items.$key
   $source=Join-Path $artifact $entry.file
@@ -20,7 +20,7 @@ foreach($key in @('host_msi')){
   if((Get-FileHash -LiteralPath $source).Hash.ToLowerInvariant() -ne $entry.sha256.ToLowerInvariant()){throw 'Host MSI hash mismatch'}
   Copy-Item -LiteralPath $source -Destination $package
 }
-$setup=Get-ChildItem -LiteralPath $artifact -Filter 'g3-OpsLinX-Host-1.5.0-g3.26-host-install.exe' -File
+$setup=Get-ChildItem -LiteralPath $artifact -Filter 'g3-OpsLinX-Host-1.5.0-g3.27-host-install.exe' -File
 if(!$setup){throw 'Host bootstrapper missing'}
 Copy-Item -LiteralPath $setup.FullName -Destination $package
 $payloadZip=Join-Path $artifact 'g3-windows-unsigned.zip'
