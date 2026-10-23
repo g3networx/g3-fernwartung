@@ -17,7 +17,7 @@ function Ready {
  if(Test-Path (Join-Path $root 'flutter_windows.dll')){throw 'Unexpected Flutter dependency'}
 }
 $code=Worker;if($code -notin @(0,3010)){throw "Clean install failed: $code"};Ready
-$version=(& $exe --version | Out-String).Trim();if($version -ne '1.5.0'){throw 'Native CLI version failed'}
+$version=(& $exe --version | Out-String).Trim();if($version -ne $proof.version){throw "Native CLI version failed: expected $($proof.version), got $version"}
 $id=(& $exe --get-id | Out-String).Trim();if($id -notmatch '^\d{6,12}$'){throw 'Native service identity unavailable'}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"

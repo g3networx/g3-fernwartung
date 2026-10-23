@@ -1,0 +1,53 @@
+name: g3 OpsLinX Host candidate validation
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: Exact Actions artifact ID
+        type: string
+        required: true
+      artifact_sha256:
+        description: SHA256 of the complete Actions artifact ZIP
+        type: string
+        required: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  validate-host:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - name: Fetch and verify exact Windows build artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.artifact_id }}
+          EXPECTED_SHA256: ${{ inputs.artifact_sha256 }}
+        run: |
+          if($env:ARTIFACT_ID -notmatch '^\d+$' -or $env:EXPECTED_SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid pinned artifact identity'}
+          $headers=@{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          $metadata=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/actions/artifacts/'+$env:ARTIFACT_ID) -Headers $headers
+          if($metadata.expired -or $metadata.name -ne 'g3-windows-unsigned-0be9026f6f3fdf65d80e77edeba25dfdf201ad0c'){throw 'Unexpected or expired artifact'}
+          Invoke-WebRequest -Uri $metadata.archive_download_url -Headers $headers -OutFile candidate.zip
+          if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne $env:EXPECTED_SHA256){throw 'Pinned artifact digest mismatch'}
+          Expand-Archive candidate.zip artifact
+          ./g3-build/prepare-host-validation.ps1 -ArtifactDirectory (Resolve-Path artifact) -PackageDirectory (Join-Path (Get-Location) 'candidate')
+      - name: Validate clean Host install, session lease, repair, identity and removal
+        shell: pwsh
+        run: ./g3-build/test-windows-core.ps1 -PackageDirectory (Resolve-Path candidate)
+      - name: Upload isolated validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: g3-opslinx-host-candidate-validation
+          path: candidate/core-installation-acceptance.json
+          if-no-files-found: warn
+          retention-days: 30
