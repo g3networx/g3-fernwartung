@@ -51,6 +51,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   var watchIsCanRecordAudio = false;
   Timer? _updateTimer;
   bool isCardClosed = false;
+  String? _g3AvailableVersion;
 
   final RxBool _editHover = false.obs;
   final RxBool _block = false.obs;
@@ -126,6 +127,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   () => showG3Enrollment(context), primary: true),
               const SizedBox(height: 8),
             ],
+            if (_g3AvailableVersion != null) Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('Update $_g3AvailableVersion verfügbar', style: TextStyle(color: MyTheme.accent, fontWeight: FontWeight.w600)),
+            ),
             _g3Action(context, Icons.system_update_alt_rounded, 'Updates',
                 () => showG3Update(context)),
             const SizedBox(height: 10),
@@ -514,10 +519,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         return buildInstallCard(
             "Status", "Your installation is lower version.", "Click to upgrade",
             () async {
-          await rustDeskWinManager.closeAllSubWindows();
           if (bind.mainGetAppNameSync().startsWith('g3')) {
             await showG3Update(context);
           } else {
+            await rustDeskWinManager.closeAllSubWindows();
             bind.mainUpdateMe();
           }
         });
@@ -743,6 +748,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   void initState() {
     super.initState();
+    if (isWindows && bind.mainGetAppNameSync().startsWith('g3')) {
+      g3AvailableUpdate().then((version) {
+        if (mounted && version != null) setState(() => _g3AvailableVersion = version);
+      });
+    }
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
       await gFFI.serverModel.fetchID();
       final error = await bind.mainGetError();

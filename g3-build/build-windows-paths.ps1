@@ -4,12 +4,12 @@ $source=(Resolve-Path "$PSScriptRoot/..").Path
 $tools=Join-Path $env:RUNNER_TEMP 'g3-tools'
 New-Item -ItemType Directory -Path $tools -Force | Out-Null
 $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'}
-Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12305703512/zip' -Headers $headers -OutFile "$tools/base.zip"
-if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne '8603c4fe6e69ce6b560c2815d9109e0491bc6f90b0f0b82c7cc505fc86e64b6f') {throw 'Native acceptance artifact digest mismatch'}
+Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12477693931/zip' -Headers $headers -OutFile "$tools/base.zip"
+if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne 'e6fc1f920c6ca6d129d798dfc1b6b365ce0e2261f8d6eb1e1e52e29a510e6b57') {throw 'Native acceptance artifact digest mismatch'}
 Expand-Archive "$tools/base.zip" "$tools/base"
 $env:G3_ACCEPTED_BASE="$tools/base"
 # Reuse only when the exact native source tree matches the accepted build.
-$changed=git -C $source diff dfb1b5690dda9a4107c6fe377c054f412eca43b5 HEAD -- src libs Cargo.toml Cargo.lock
+$changed=git -C $source diff c7ec02f0c471d6f88700544552b1e5b81f411551 HEAD -- src libs Cargo.toml Cargo.lock
 Check
 if ($changed) {
  Write-Output 'Native source changed: selecting the complete native build and acceptance pipeline.'
@@ -41,9 +41,9 @@ $nativeHash=(Get-FileHash $native.FullName).Hash.ToLowerInvariant()
 New-Item -ItemType Directory -Path target/release -Force | Out-Null
 Copy-Item $native.FullName target/release/librustdesk.dll
 # Packaging reads this normally Rust-generated metadata file; no Rust build runs here.
-Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39503924730";' -Encoding utf8
+Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39893124138";' -Encoding utf8
 Push-Location flutter
-flutter test test/g3_update_paths_test.dart; Check
+flutter test test/g3_update_paths_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart; Check
 flutter build windows --release; Check
 Pop-Location
 $payload="$source/flutter/build/windows/x64/runner/Release"
@@ -62,6 +62,6 @@ python g3-build/test-update-session-gate.py; Check
 & "$PSScriptRoot/test-windows-update.ps1"
 python g3-build/test-download-bootstrap.py; Check
 Compress-Archive "$payload/*" outputs/g3-windows-unsigned.zip
-$provenance=@{source_commit=$env:GITHUB_SHA;native_source_commit='dfb1b5690dda9a4107c6fe377c054f412eca43b5';native_artifact_id=12305703512;native_sha256=$nativeHash;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
+$provenance=@{source_commit=$env:GITHUB_SHA;native_source_commit='c7ec02f0c471d6f88700544552b1e5b81f411551';native_artifact_id=12477693931;native_sha256=$nativeHash;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
 $provenance|ConvertTo-Json|Set-Content outputs/build-provenance.json -Encoding utf8
 Get-ChildItem outputs -File | Get-FileHash -Algorithm SHA256 | Select-Object @{n='file';e={Split-Path $_.Path -Leaf}},Hash | ConvertTo-Json | Set-Content outputs/SHA256.json -Encoding utf8

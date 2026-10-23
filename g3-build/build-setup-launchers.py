@@ -2,11 +2,11 @@ import pathlib,json,hashlib,subprocess,uuid
 
 root=pathlib.Path.cwd();out=root/'outputs';items={}
 
-for kind,name in [('windows','g3-Fernwartung-1.5.0-g3.23-install'),('host','g3-Host-1.5.0-g3.23-host-install')]:
+for kind,name in [('windows','g3-Fernwartung-1.5.0-g3.24-install'),('host','g3-Host-1.5.0-g3.24-host-install')]:
 
  msi=out/(name+'.msi');digest=hashlib.sha256(msi.read_bytes()).hexdigest();items[kind+'_msi']={'file':msi.name,'sha256':digest,'size':msi.stat().st_size}
 
- source=(root/'g3-build/SetupBootstrap.cs').read_text(encoding='utf-8').replace('@GATE_DLL_HASHES@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/librustdesk.dll').read_bytes()).hexdigest()+(';'+(root/'g3-build/update-gate-native-hashes.txt').read_text(encoding='utf-8').strip().replace('\n',';') if (root/'g3-build/update-gate-native-hashes.txt').exists() else '')).replace('@PRODUCTCODE@','{'+str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+kind+'/1.5.0-g3.23')).upper()+'}').replace('@KIND@',kind+'_msi').replace('@HASH@',digest).replace('@FILE@',msi.name).replace('@VERSION@','1.5.0-g3.23').replace('@EXEHASH@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/rustdesk.exe').read_bytes()).hexdigest());code=root/'g3-build/msi'/kind/'SetupBootstrap.cs';code.write_text(source,encoding='utf-8')
+ source=(root/'g3-build/SetupBootstrap.cs').read_text(encoding='utf-8').replace('@GATE_DLL_HASHES@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/librustdesk.dll').read_bytes()).hexdigest()+(';'+(root/'g3-build/update-gate-native-hashes.txt').read_text(encoding='utf-8').strip().replace('\n',';') if (root/'g3-build/update-gate-native-hashes.txt').exists() else '')).replace('@PRODUCTCODE@','{'+str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+kind+'/1.5.0-g3.24')).upper()+'}').replace('@KIND@',kind+'_msi').replace('@HASH@',digest).replace('@FILE@',msi.name).replace('@VERSION@','1.5.0-g3.24').replace('@EXEHASH@',hashlib.sha256((root/'flutter/build/windows/x64/runner/Release/rustdesk.exe').read_bytes()).hexdigest());code=root/'g3-build/msi'/kind/'SetupBootstrap.cs';code.write_text(source,encoding='utf-8')
 
  payload=(root/'flutter/build/windows/x64/runner/Release')
  entries=[]

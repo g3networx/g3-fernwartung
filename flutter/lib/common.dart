@@ -1,3 +1,4 @@
+import 'g3_handoff_uri.dart';
 import 'package:http/http.dart' as g3Http;
 import 'dart:async';
 import 'dart:convert';
@@ -2290,6 +2291,9 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   bool? forceRelay;
   for (int i = 0; i < args.length; i++) {
     switch (args[i]) {
+      case '--g3-session':
+        if (i + 1 < args.length) redeemG3Session(args[i + 1]);
+        return true;
       case '--connect':
       case '--play':
         type = UriLinkType.remoteDesktop;
@@ -2392,6 +2396,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
 
 Future<void> redeemG3Session(String token) async {
   if (!RegExp(r'^[A-Za-z0-9_-]{54}$').hasMatch(token)) return;
+  var redeemed = false;
   try {
     final client = g3Http.Client();
     try {
@@ -2411,28 +2416,31 @@ Future<void> redeemG3Session(String token) async {
           password is! String ||
           !RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id)) return;
       // Credentials stay in-process; never route through CLI or a password-bearing URI.
-      for (var attempt = 0; attempt < 50 && Get.context == null; attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+      redeemed = true;
+      if (isDesktop) {
+        await rustDeskWinManager.newRemoteDesktop(id, password: password, forceRelay: true);
+      } else {
+        for (var attempt = 0; attempt < 50 && Get.context == null; attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        final context = Get.context;
+        if (context == null) throw Exception('Window not ready');
+        await connect(context, id, password: password, forceRelay: true);
       }
-      final context = Get.context;
-      if (context == null) throw Exception('Window not ready');
-      connect(context, id, password: password, forceRelay: true);
     } finally {
       client.close();
     }
   } catch (_) {
     showToast(
-        'Verbindungsfreigabe abgelaufen. Bitte in der Web-Konsole erneut starten.');
+        redeemed
+            ? 'Freigabe empfangen, aber Sitzungsfenster konnte nicht geöffnet werden. Bitte im Client erneut verbinden.'
+            : 'Verbindungsfreigabe nicht verfügbar. Bitte in der Web-Konsole erneut starten.');
   }
 }
 
 List<String>? urlLinkToCmdArgs(Uri uri) {
-  if (uri.scheme == 'g3fernwartung' &&
-      uri.authority == 'g3-session' &&
-      uri.pathSegments.length == 1) {
-    redeemG3Session(uri.pathSegments.single);
-    return null;
-  }
+  final handoff = g3HandoffArguments(uri);
+  if (handoff != null) return handoff;
   String? command;
   String? id;
   final options = [
