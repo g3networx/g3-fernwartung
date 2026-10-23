@@ -60,7 +60,7 @@ internal sealed class SetupForm:Form {
 
   BackColor=Color.FromArgb(4,25,37);ForeColor=Color.White;Font=new Font("Segoe UI",11);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
-  status.SetBounds(25,25,630,115);status.Text="Geprüftes Installationspaket laden und "+(Kind=="host_msi"?"das Host-Modul":"den Client")+" anschließend automatisch öffnen. Ein Windows-Neustart wird nicht ausgelöst.";
+  status.SetBounds(25,25,630,115);status.Text=Kind=="host_msi"?"Geprüftes Paket für das Host-Modul laden. Der Windows-Dienst wird gestartet; ein Windows-Neustart wird nicht ausgelöst.":"Geprüftes Installationspaket laden und den Client anschließend automatisch öffnen. Ein Windows-Neustart wird nicht ausgelöst.";
 
   progress.SetBounds(25,150,630,22);start.SetBounds(405,190,250,35);start.Text="Installation starten";start.BackColor=Color.FromArgb(0,180,215);start.ForeColor=BackColor;start.Click+=async(s,e)=>await Install();Controls.AddRange(new Control[]{status,progress,start});
 
@@ -84,7 +84,7 @@ internal sealed class SetupForm:Form {
   if(checkService)using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Running)return false;}
   return count>0;
  }catch{return false;}}
- static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
+ static void OpenClient(){if(Kind!="host_msi"&&File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
 
  async Task Install(){working=true;start.Enabled=false;string previousHash=null;try {
 

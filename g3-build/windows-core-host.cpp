@@ -9,7 +9,7 @@
 // core; this launcher neither impersonates users nor implements a new server.
 int wmain(int argc, wchar_t** argv) {
     if (argc < 2 || wcscmp(argv[1], L"--tray") == 0 || wcscmp(argv[1], L"--cm") == 0) {
-        std::puts("g3 Host Server Core: background service and administrative CLI only.");
+        std::puts("g3 OpsLinX Host Server Core: background service and administrative CLI only.");
         return 0;
     }
     wchar_t path[32768];

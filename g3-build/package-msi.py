@@ -80,16 +80,18 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     sas=tag(install,'Component',Id='SecureAttention',Guid=guid(kind+'/sas'),Win64='yes',NeverOverwrite='yes',Permanent='yes')
     tag(sas,'RegistryValue',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',Name='SoftwareSASGeneration',Type='integer',Value=1,KeyPath='yes')
     tag(feature,'ComponentRef',Id='SecureAttention')
-    tray=tag(startup,'Component',Id='TrayStartup',Guid=guid(kind+'/tray'),Win64='yes')
-    tag(tray,'Shortcut',Id='TrayShortcut',Name=title+' Status',Target='[INSTALLDIR]'+app+'.exe',Arguments='--tray',WorkingDirectory='INSTALLDIR')
-    tag(tray,'RegistryValue',Root='HKLM',Key=state,Name='TrayShortcut',Type='integer',Value=1,KeyPath='yes');tag(feature,'ComponentRef',Id='TrayStartup')
+    if kind!='host':
+        tray=tag(startup,'Component',Id='TrayStartup',Guid=guid(kind+'/tray'),Win64='yes')
+        tag(tray,'Shortcut',Id='TrayShortcut',Name=title+' Status',Target='[INSTALLDIR]'+app+'.exe',Arguments='--tray',WorkingDirectory='INSTALLDIR')
+        tag(tray,'RegistryValue',Root='HKLM',Key=state,Name='TrayShortcut',Type='integer',Value=1,KeyPath='yes');tag(feature,'ComponentRef',Id='TrayStartup')
     tag(product,'UIRef',Id='WixUI_InstallDir');tag(product,'Property',Id='WIXUI_INSTALLDIR',Value='INSTALLDIR')
     tag(product,'WixVariable',Id='WixUILicenseRtf',Value=str(ROOT/'g3-build/msi/license.rtf'))
-    tag(product,'Property',Id='WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT',Value='Fernwartungsclient öffnen')
-    tag(product,'Property',Id='WIXUI_EXITDIALOGOPTIONALCHECKBOX',Value=1)
-    tag(product,'Property',Id='WixShellExecTarget',Value='[#MainExeFile]')
-    tag(product,'CustomAction',Id='LaunchClient',BinaryKey='WixCA',DllEntry='WixShellExec',Impersonate='yes')
-    ui=tag(product,'UI');tag(ui,'Publish',Dialog='ExitDialog',Control='Finish',Event='DoAction',Value='LaunchClient').text='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed'
+    if kind!='host':
+        tag(product,'Property',Id='WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT',Value='g3 OpsLinX öffnen')
+        tag(product,'Property',Id='WIXUI_EXITDIALOGOPTIONALCHECKBOX',Value=1)
+        tag(product,'Property',Id='WixShellExecTarget',Value='[#MainExeFile]')
+        tag(product,'CustomAction',Id='LaunchClient',BinaryKey='WixCA',DllEntry='WixShellExec',Impersonate='yes')
+        ui=tag(product,'UI');tag(ui,'Publish',Dialog='ExitDialog',Control='Finish',Event='DoAction',Value='LaunchClient').text='WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed'
     (ROOT/'g3-build/msi/license.rtf').write_text(r'{\rtf1\ansi\deff0 {\fonttbl {\f0 Segoe UI;}}\f0\fs20 g3 OpsLinX\par\par Client: GNU Affero General Public License v3.\par Der vollstaendige Lizenztext liegt der Installation als LICENCE bei.\par Quellcode und weitere Lizenzen: https://rust.g3nx.net/licenses\par}',encoding='ascii')
     wxs=folder/'Product.wxs';E.ElementTree(wix).write(wxs,encoding='utf-8',xml_declaration=True)
     obj=folder/'Product.wixobj';output=ROOT/'outputs'/('g3-OpsLinX-Host-'+version+'-host-install.msi' if kind=='host' else 'g3-OpsLinX-'+version+'-install.msi')
