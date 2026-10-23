@@ -1,7 +1,7 @@
 """Validate build provenance and finalize platform metadata on native runners."""
 from pathlib import Path
 import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re,platform as pyplatform
-kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.18');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
+kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.25');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
 source=json.loads(provenance[0].read_text());version=source.get('version',version);assert source['arch']==arch and source['platform']==kind
 assert str(source['run_id'])==os.environ['SOURCE_RUN'],'Wrong source run'
@@ -18,9 +18,10 @@ if kind=='linux':
   unpacked=Path(temp);run(['dpkg-deb','-R',str(package),temp]);exe=unpacked/'usr/share/g3fernwartung/g3fernwartung';data=exe.read_bytes();assert data[:4]==b'\x7fELF' and data[4]==2 and struct.unpack('<H',data[18:20])[0]=={'x86_64':62,'aarch64':183}[arch]
   for p in (unpacked/'DEBIAN').iterdir():
    if p.name in ['postinst','prerm','postrm','preinst']:run(['bash','-n',str(p)])
-  assert 'g3fernwartung' in (unpacked/'usr/share/applications/g3fernwartung-link.desktop').read_text()
+  desktop=(unpacked/'usr/share/applications/g3fernwartung-link.desktop').read_text()
+  assert 'g3fernwartung' in desktop and 'Name=g3 OpsLinX' in desktop
   assert not (unpacked/'usr/share/rustdesk').exists()
- checks+=['Debian metadata/version/architecture','ELF machine architecture','maintainer script syntax','isolated namespace and URI registration']
+ checks+=['Debian metadata/version/architecture','ELF machine architecture','maintainer script syntax','g3 OpsLinX launcher branding','isolated namespace and URI registration']
  # Native container smoke test. This cannot alter a customer or runner host installation.
  cmd="""apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/*.deb xvfb xauth dbus-x11 imagemagick libegl1-mesa libgles2-mesa
@@ -40,7 +41,7 @@ else:
    apps=list(mount.glob('*.app'));assert len(apps)==1
    app=out/'g3Fernwartung.app';run(['ditto',str(apps[0]),str(app)])
   finally:run(['hdiutil','detach',str(mount)])
- info=app/'Contents/Info.plist';data=plistlib.loads(info.read_bytes());data['CFBundleIdentifier']='de.g3networx.fernwartung';data['G3BuildVersion']=version;data['CFBundleURLTypes']=[{'CFBundleTypeRole':'Editor','CFBundleURLName':'de.g3networx.fernwartung','CFBundleURLSchemes':['g3fernwartung']}];info.write_bytes(plistlib.dumps(data))
+ info=app/'Contents/Info.plist';data=plistlib.loads(info.read_bytes());data['CFBundleIdentifier']='de.g3networx.fernwartung';data['CFBundleName']='g3 OpsLinX';data['CFBundleDisplayName']='g3 OpsLinX';data['G3BuildVersion']=version;data['CFBundleURLTypes']=[{'CFBundleTypeRole':'Editor','CFBundleURLName':'de.g3networx.fernwartung','CFBundleURLSchemes':['g3fernwartung']}];info.write_bytes(plistlib.dumps(data))
  from runpy import run_path
  packaging_adjustments=run_path(str(root/'g3-build/macos-prune-swift.py'))['prune'](app,arch)
  minimum=run_path(str(root/'g3-build/macos-minimum.py'))['bundle_minimum'](app,arch)
@@ -48,7 +49,8 @@ else:
   assert tuple(map(int,minimum.split('.'))) >= (11,0), 'ARM system Swift runtime baseline required'
   checks+=['Removed only dependency-verified unreferenced x86_64 Swift back-deployment shims from ARM package']
  data['LSMinimumSystemVersion']=minimum;info.write_bytes(plistlib.dumps(data))
- checks+=['Bundle minimum aligned with all Mach-O deployment targets (not an older-OS runtime test)']
+ assert data['CFBundleName']=='g3 OpsLinX' and data['CFBundleDisplayName']=='g3 OpsLinX'
+ checks+=['g3 OpsLinX Finder bundle branding','Bundle minimum aligned with all Mach-O deployment targets (not an older-OS runtime test)']
  # Compile the menu against the renamed Swift module, not the upstream product name.
  xib=out/'MainMenu.xib';xib.write_text((root/'flutter/macos/Runner/Base.lproj/MainMenu.xib').read_text().replace('customModule="RustDesk"','customModule="g3Fernwartung"'))
  run(['ibtool','--module','g3Fernwartung','--compile',str(app/'Contents/Resources/Base.lproj/MainMenu.nib'),str(xib)]);xib.unlink()
@@ -68,7 +70,7 @@ else:
   finally:
    if gui.poll() is None:gui.terminate();gui.wait(timeout=15)
  checks+=['native GUI stays running for 10 seconds; screenshot captured','all committed Rust wire symbols exported']
- dmg=out/f'g3-Fernwartung-{version}-macos-{arch}.dmg';stage=out/'dmg-stage';stage.mkdir();run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications');run(['hdiutil','create','-volname','g3 Fernwartung','-srcfolder',str(stage),'-ov','-format','UDZO',str(dmg)]);shutil.rmtree(stage);shutil.rmtree(app)
+ dmg=out/f'g3-OpsLinX-{version}-macos-{arch}.dmg';stage=out/'dmg-stage';stage.mkdir();run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications');run(['hdiutil','create','-volname','g3 OpsLinX','-srcfolder',str(stage),'-ov','-format','UDZO',str(dmg)]);shutil.rmtree(stage);shutil.rmtree(app)
  checks+=['Mach-O native architecture','g3 URL registration','bundle identifier','local ad-hoc integrity signature (not Apple Developer ID/not notarized)','native --version launch']
 files=list(out.glob('*.deb' if kind=='linux' else '*.dmg'));assert len(files)==1
 record={'version':version,'platform':kind,'arch':arch,'source':source,'finalization_commit':os.environ['GITHUB_SHA'],'finalization_run':os.environ['GITHUB_RUN_ID'],'checks':checks,'packaging_adjustments':packaging_adjustments,'publicly_trusted_signature':False,'interactive_connection_acceptance':False,'tested_os':('Ubuntu 22.04' if kind=='linux' else 'macOS '+pyplatform.mac_ver()[0]),'configured_minimum_os':(data.get('LSMinimumSystemVersion') if kind=='macos' else None),'files':[{'file':p.name,'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}for p in files]}

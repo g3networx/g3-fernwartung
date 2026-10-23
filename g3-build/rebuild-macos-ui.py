@@ -48,9 +48,9 @@ assert app.exists()
 if (target/'service').exists():shutil.copy2(target/'service',app/'Contents/MacOS/service')
 assert unsigned_hash(app/'Contents/Frameworks/liblibrustdesk.dylib')==native_unsigned, 'Native core changed beyond ad-hoc signature'
 run(['codesign','--force','--deep','--sign','-',str(app)])
-version=os.environ['VERSION'];out=root/f'g3-Fernwartung-{version}-macos-{arch}.dmg'
+version=os.environ['VERSION'];out=root/f'g3-OpsLinX-{version}-macos-{arch}.dmg'
 with tempfile.TemporaryDirectory() as t:
  stage=Path(t);run(['ditto',str(app),str(stage/app.name)]);(stage/'Applications').symlink_to('/Applications')
- run(['hdiutil','create','-volname','g3 Fernwartung','-srcfolder',str(stage),'-ov','-format','UDZO',str(out)])
+ run(['hdiutil','create','-volname','g3 OpsLinX','-srcfolder',str(stage),'-ov','-format','UDZO',str(out)])
 (root/'g3-native-source.json').write_text(json.dumps(dict(native,library_sha256=native_hash,unsigned_library_sha256=native_unsigned,reviewed_windows_only_diffs=review['reviewed_windows_only_diffs']),indent=2))
 run([sys.executable,'g3-build/platform-provenance.py','macos',arch])

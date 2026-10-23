@@ -5,12 +5,11 @@ name: g3 Linux client UI rebuild
       native_validation_run:
         type: string
         required: true
-        default: '39380639746'
 permissions:
   contents: read
   actions: read
 env:
-  VERSION: 1.5.0-g3.18
+  VERSION: 1.5.0-g3.25
   FLUTTER_VERSION: 3.24.5
 jobs:
   linux-ui:
@@ -92,7 +91,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: g3-linux-${{ matrix.job.arch }}-${{ github.sha }}
-        path: 'g3-Fernwartung-*.deb
+        path: 'g3-OpsLinX-*.deb
 
           platform-provenance-*.json'
         if-no-files-found: error

@@ -1,4 +1,4 @@
-name: g3 macOS and Linux clients
+name: g3 OpsLinX g3.25 Linux and macOS build
 'on':
   workflow_dispatch:
     inputs:
@@ -23,7 +23,7 @@ env:
   VCPKG_COMMIT_ID: 9e593bb18ea69cc5095e012465dcd675a822ed0d
   VCPKG_CMAKE_VERSION: 4.3.0
   UPLOAD_ARTIFACT: 'true'
-  VERSION: 1.5.0-g3.18
+  VERSION: 1.5.0-g3.25
   CARGO_BUILD_JOBS: '2'
   VCPKG_MAX_CONCURRENCY: '2'
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
@@ -152,7 +152,7 @@ jobs:
         sed -i -e ''s/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/'' "$CREATE_DMG"
 
         create-dmg --icon "g3Fernwartung.app" 200 190 --hide-extension "g3Fernwartung.app" --window-size 800 400 --app-drop-link 600
-        185 g3-Fernwartung-${{ env.VERSION }}-macos-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/g3Fernwartung.app
+        185 g3-OpsLinX-${{ env.VERSION }}-macos-${{ matrix.job.arch }}.dmg ./flutter/build/macos/Build/Products/Release/g3Fernwartung.app
 
         '
     - name: Record macOS provenance
@@ -162,7 +162,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: g3-macos-${{ matrix.job.arch }}-${{ github.sha }}
-        path: 'g3-Fernwartung-*.dmg
+        path: 'g3-OpsLinX-*.dmg
 
           platform-provenance-*.json'
         if-no-files-found: error
@@ -319,7 +319,7 @@ jobs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: g3-linux-${{ matrix.job.arch }}-${{ github.sha }}
-        path: 'g3-Fernwartung-*.deb
+        path: 'g3-OpsLinX-*.deb
 
           platform-provenance-*.json'
         if-no-files-found: error

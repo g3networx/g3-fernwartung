@@ -66,7 +66,7 @@ internal sealed class SetupForm:Form {
 
  }
 
- static string PackageName(string source){var m=Regex.Match(Path.GetFileName(source),@"kunde_([A-Za-z0-9_-]{32})(?:-host)?-install",RegexOptions.IgnoreCase);return m.Success?(Kind=="host_msi"?"g3-Host-kunde_":"g3-Fernwartung-kunde_")+m.Groups[1].Value+(Kind=="host_msi"?"-host-install.msi":"-install.msi"):FileName;}
+ static string PackageName(string source){var m=Regex.Match(Path.GetFileName(source),@"kunde_([A-Za-z0-9_-]{32})(?:-host)?-install",RegexOptions.IgnoreCase);return m.Success?(Kind=="host_msi"?"g3-OpsLinX-Host-kunde_":"g3-OpsLinX-kunde_")+m.Groups[1].Value+(Kind=="host_msi"?"-host-install.msi":"-install.msi"):FileName;}
 
  static string Quote(string s){if(s.IndexOf('"')>=0)throw new InvalidDataException();return "\""+s+"\"";}
 

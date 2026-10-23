@@ -1,24 +1,30 @@
-name: g3 macOS package finalization
+name: g3 OpsLinX macOS g3.25 package finalization
 on:
   workflow_dispatch:
     inputs:
+      source_run:
+        type: string
+        required: true
+      source_commit:
+        type: string
+        required: true
       arch:
         type: choice
-        options: [all, aarch64]
+        options: [all, x86_64, aarch64]
         default: all
 permissions:
   contents: read
   actions: read
 env:
-  VERSION: 1.5.0-g3.22
+  VERSION: 1.5.0-g3.25
 jobs:
   finalize:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.arch == 'aarch64' && '[{"arch":"aarch64","runner":"macos-14"}]' || '[{"arch":"x86_64","runner":"macos-15-intel"},{"arch":"aarch64","runner":"macos-14"}]') }}
+        include: ${{ fromJSON(inputs.arch == 'x86_64' && '[{"arch":"x86_64","runner":"macos-15-intel"}]' || inputs.arch == 'aarch64' && '[{"arch":"aarch64","runner":"macos-14"}]' || '[{"arch":"x86_64","runner":"macos-15-intel"},{"arch":"aarch64","runner":"macos-14"}]') }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -26,28 +32,32 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           github-token: ${{ github.token }}
-          run-id: '39540544030'
-          name: g3-verified-macos-${{ matrix.arch }}-14c503ab638cfcfde642dd8bbfe9053b8fb1e8de
+          run-id: ${{ inputs.source_run }}
+          name: g3-macos-${{ matrix.arch }}-${{ inputs.source_commit }}
           path: input
-      - name: Verify accepted input and record package provenance
+      - name: Verify exact g3.25 source artifact
         env:
           ARCH: ${{ matrix.arch }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: |
           python3 - <<'PY'
           import json,hashlib,os
           from pathlib import Path
-          p=Path('input');r=json.loads((p/'validation.json').read_text())
-          assert str(r['finalization_run'])=='39540544030' and r['finalization_commit']=='14c503ab638cfcfde642dd8bbfe9053b8fb1e8de'
-          assert r['arch']==os.environ['ARCH'] and r['version']=='1.5.0-g3.22' and len(r['files'])==1
-          f=r['files'][0];assert hashlib.sha256((p/f['file']).read_bytes()).hexdigest()==f['sha256']
-          source=dict(version=r['version'],source_commit=r['source']['source_commit'],run_id='39540544030',platform='macos',arch=r['arch'],files=r['files'],native_origin=r['source']['native_origin'],accepted_ui_package=r)
-          (p/('platform-provenance-macos-'+r['arch']+'.json')).write_text(json.dumps(source,indent=2))
+          p=Path('input'); rows=list(p.glob('platform-provenance-macos-*.json'))
+          assert len(rows)==1
+          r=json.loads(rows[0].read_text())
+          assert str(r['run_id'])==os.environ['SOURCE_RUN']
+          assert r['source_commit']==os.environ['SOURCE_COMMIT']
+          assert r['arch']==os.environ['ARCH'] and r['platform']=='macos' and r['version']=='1.5.0-g3.25'
+          assert len(r['files'])==1
+          for f in r['files']:
+            q=p/f['file']; assert q.is_file() and q.stat().st_size==f['size']
+            assert hashlib.sha256(q.read_bytes()).hexdigest()==f['sha256']
           PY
-      - name: Inspect native architecture and actual Swift dependencies
-        run: python3 g3-build/diagnose-macos-bundle.py
-      - name: Align minimum metadata, resign integrity and repeat native startup checks
+      - name: Inspect and finalize the OpsLinX package
         env:
-          SOURCE_RUN: '39540544030'
+          SOURCE_RUN: ${{ inputs.source_run }}
         run: python3 g3-build/finalize-platform.py macos '${{ matrix.arch }}'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

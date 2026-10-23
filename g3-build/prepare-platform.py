@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys,os,re
 p=Path('flutter/lib/g3_update.dart');s=p.read_text()
-s=re.sub(r"const g3ClientVersion = '[^']+';", "const g3ClientVersion = '"+os.environ.get('VERSION','1.5.0-g3.18')+"';",s)
+s=re.sub(r"const g3ClientVersion = '[^']+';", "const g3ClientVersion = '"+os.environ.get('VERSION','1.5.0-g3.25')+"';",s)
 needle='  Future<void> check() async {\n'
 assert needle in s
 s=s.replace(needle,needle+"    if (!Platform.isWindows) {\n      setState(() { message = 'Updates für diese Plattform findest du unter https://rust.g3nx.net/client. Lade dort das passende Paket für dein Betriebssystem und deine Prozessorarchitektur herunter.'; busy = false; });\n      return;\n    }\n",1)
