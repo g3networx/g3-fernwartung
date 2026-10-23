@@ -70,6 +70,6 @@ finally:
    try:p.communicate('\n',timeout=5)
    except subprocess.TimeoutExpired:p.terminate();p.wait(timeout=5)
 (root/'outputs').mkdir(exist_ok=True)
-proof={'version':'1.5.0-g3.22','scope':'isolated disposable test processes; real Rust/C# production gate code','installed_client_touched':False,'tests':results}
-(root/'outputs/FullClient-g3.22-Sitzungssperre-Regression.json').write_text(json.dumps(proof,indent=2),encoding='utf-8')
+proof={'version':'1.5.0-g3.23','scope':'isolated disposable test processes; real Rust/C# production gate code','installed_client_touched':False,'tests':results}
+(root/'outputs/FullClient-g3.23-Sitzungssperre-Regression.json').write_text(json.dumps(proof,indent=2),encoding='utf-8')
 print(json.dumps(proof))

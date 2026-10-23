@@ -7,7 +7,7 @@ import 'package:flutter_hbb/g3_enrollment.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'g3_update_paths.dart';
 
-const g3ClientVersion = '1.5.0-g3.22';
+const g3ClientVersion = '1.5.0-g3.23';
 Future<void> showG3Update(BuildContext context) async {
   await showDialog<void>(
       context: context, builder: (_) => const _G3UpdateDialog());
