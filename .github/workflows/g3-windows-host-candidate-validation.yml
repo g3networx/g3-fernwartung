@@ -1,5 +1,11 @@
 name: g3 OpsLinX Host candidate validation
 on:
+  push:
+    branches: [g3-opslinx-20261023]
+    paths:
+      - '.github/workflows/g3-windows-host-candidate-validation.yml'
+      - 'g3-build/prepare-host-validation.ps1'
+      - 'g3-build/test-windows-core.ps1'
   workflow_dispatch:
     inputs:
       artifact_id:
@@ -31,7 +37,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ inputs.artifact_id }}
           EXPECTED_SHA256: ${{ inputs.artifact_sha256 }}
+          CANDIDATE_ARTIFACT_ID: '12500977640'
+          CANDIDATE_SHA256: '87bed85e1158263d58d14d7b8371a65fefabfb14bbf9af959c01bf7d83032188'
         run: |
+          if(!$env:ARTIFACT_ID){$env:ARTIFACT_ID=$env:CANDIDATE_ARTIFACT_ID}
+          if(!$env:EXPECTED_SHA256){$env:EXPECTED_SHA256=$env:CANDIDATE_SHA256}
           if($env:ARTIFACT_ID -notmatch '^\d+$' -or $env:EXPECTED_SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid pinned artifact identity'}
           $headers=@{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
           $metadata=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/actions/artifacts/'+$env:ARTIFACT_ID) -Headers $headers
