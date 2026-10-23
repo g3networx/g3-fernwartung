@@ -8,9 +8,9 @@ Start-Transcript -Path $diagnostics -Force | Out-Null
 trap {
  $failure=($_ | Out-String).Trim() -replace '[\r\n]+',' '
  $line="Windows build failed during '$script:BuildStage': $failure (native exit=$LASTEXITCODE)"
- Add-Content -Path $diagnostics -Value $line
+ Set-Content -Path (Join-Path $outputRoot 'build-failure.txt') -Value $line -Encoding utf8
  $annotation=$line.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A').Replace(':','%3A').Replace(',','%2C')
- Write-Output "::error title=Windows build failure::$annotation"
+ [Console]::Out.WriteLine("::error title=Windows build failure::$annotation")
  try { Stop-Transcript | Out-Null } catch {}
  exit 1
 }

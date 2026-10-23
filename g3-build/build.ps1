@@ -1,5 +1,7 @@
 $ErrorActionPreference='Stop'
-function Check { if ($LASTEXITCODE -ne 0) { throw "Build command failed: $LASTEXITCODE" } }
+function Check { if ($LASTEXITCODE -ne 0) { throw "Build command failed during '$script:BuildStage': $LASTEXITCODE" } }
+function Stage([string]$name) { $script:BuildStage=$name; Write-Output "BUILD STAGE: $name" }
+Stage 'Initialize native build'
 $source=(Resolve-Path "$PSScriptRoot/..").Path
 $tools=Join-Path $env:RUNNER_TEMP 'g3-tools'
 New-Item -ItemType Directory -Path $tools -Force | Out-Null
@@ -9,6 +11,7 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 Set-Location $source
 git -C libs/hbb_common apply --check "$PSScriptRoot/hbb-common.patch"; Check
 git -C libs/hbb_common apply "$PSScriptRoot/hbb-common.patch"; Check
+Stage 'Install pinned Rust, Flutter and native dependencies'
 rustup toolchain install 1.75.0 --profile minimal; Check
 $env:RUSTUP_TOOLCHAIN='1.75.0'
 $env:CARGO_BUILD_JOBS='2'
@@ -31,6 +34,7 @@ git -C "$tools/vcpkg" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d; Check
 & "$tools/vcpkg/bootstrap-vcpkg.bat" -disableMetrics; Check
 $env:VCPKG_ROOT="$tools/vcpkg"
 & "$tools/vcpkg/vcpkg.exe" install --triplet x64-windows-static --host-triplet x64-windows-static "--x-install-root=$tools/vcpkg/installed"; Check
+Stage 'Compile native core and Flutter client'
 python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Check
 Push-Location flutter
 flutter test --no-pub test/g3_legal_notices_test.dart; Check
@@ -38,6 +42,7 @@ flutter test --no-pub test/g3_update_paths_test.dart; Check
 Pop-Location
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
+Stage 'Run client identity and native acceptance tests'
 New-Item -ItemType Directory -Path outputs,g3-build/msi -Force | Out-Null
 Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
 if ((Get-FileHash "$tools/wix.zip").Hash -ne '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31') { throw 'WiX SHA256 mismatch' }
@@ -46,6 +51,13 @@ $env:WIX="$tools/wix"
 $payload="$source/flutter/build/windows/x64/runner/Release"
 Copy-Item LICENCE "$payload/LICENCE"
 Set-Content "$payload/SOURCE.txt" "https://github.com/g3networx/g3-fernwartung/tree/$env:GITHUB_SHA" -Encoding utf8
+Stage 'Compile native g3 OpsLinX Host launcher'
+$rc="$source/g3-build/windows-core-host.rc"
+& rc.exe /nologo "/fo$source/outputs/windows-core-host.res" $rc
+Check
+& cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link "$source/outputs/windows-core-host.res" /SUBSYSTEM:CONSOLE "/OUT:$source/outputs/g3Host.exe"
+Check
+Stage 'Package FullClient and Host MSIs and bootstrappers'
 python g3-build/package-msi.py; Check
 python g3-build/build-setup-launchers.py; Check
 python g3-build/test-update-session-gate.py; Check
