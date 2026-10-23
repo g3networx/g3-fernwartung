@@ -7,6 +7,10 @@ $msi=(Get-ChildItem $PackageDirectory -Filter '*.msi').FullName
 $proof=Get-Content (Join-Path $PackageDirectory 'package.json') -Raw | ConvertFrom-Json
 foreach($item in $proof.packages.PSObject.Properties){if((Get-FileHash (Join-Path $PackageDirectory $item.Name)).Hash.ToLowerInvariant() -ne $item.Value){throw 'Candidate hash mismatch'}}
 $root=Join-Path $env:ProgramFiles 'g3Host';$exe=Join-Path $root 'g3Host.exe'
+$cargo=Get-Content (Join-Path $PSScriptRoot '../Cargo.toml') -Raw
+$packageSection=[regex]::Match($cargo,'(?ms)^\[package\]\s*(.*?)(?=^\[|\z)').Groups[1].Value
+$coreVersion=[regex]::Match($packageSection,'(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
+if(!$coreVersion){throw 'Native core version missing from Cargo package metadata'}
 function Worker {
  $p=Start-Process $setup -ArgumentList ('--g3-install-worker "'+$msi+'"') -WindowStyle Hidden -Wait -PassThru
  return $p.ExitCode
@@ -17,7 +21,7 @@ function Ready {
  if(Test-Path (Join-Path $root 'flutter_windows.dll')){throw 'Unexpected Flutter dependency'}
 }
 $code=Worker;if($code -notin @(0,3010)){throw "Clean install failed: $code"};Ready
-$version=(& $exe --version | Out-String).Trim();if($version -ne $proof.version){throw "Native CLI version failed: expected $($proof.version), got $version"}
+$version=(& $exe --version | Out-String).Trim();if($version -ne $coreVersion){throw "Native CLI version failed: expected Cargo package $coreVersion, got $version"}
 $id=(& $exe --get-id | Out-String).Trim();if($id -notmatch '^\d{6,12}$'){throw 'Native service identity unavailable'}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"
@@ -45,4 +49,4 @@ $remove=Start-Process msiexec.exe -ArgumentList ('/x "'+$msi+'" /qn REBOOT=Reall
 if($remove.ExitCode -notin @(0,3010)){throw 'Disposable removal failed'}
 if(Get-Service g3Host -ErrorAction SilentlyContinue){throw 'Service not removed'}
 if((Get-CimInstance Win32_OperatingSystem).LastBootUpTime -ne $boot){throw 'Runner rebooted'}
-@{version=$proof.version;clean_install=$true;native_cli=$true;active_lease_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;identity_preserved=$true;uninstall=$true;no_reboot=$true;actual_server_core_runtime='requires separate target preflight';scope='disposable GitHub-hosted Windows runner'} | ConvertTo-Json | Set-Content (Join-Path $PackageDirectory 'core-installation-acceptance.json') -Encoding utf8
+@{version=$proof.version;native_core_version=$version;clean_install=$true;native_cli=$true;active_lease_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;identity_preserved=$true;uninstall=$true;no_reboot=$true;actual_server_core_runtime='requires separate target preflight';scope='disposable GitHub-hosted Windows runner'} | ConvertTo-Json | Set-Content (Join-Path $PackageDirectory 'core-installation-acceptance.json') -Encoding utf8
