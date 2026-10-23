@@ -37,15 +37,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ inputs.artifact_id }}
           EXPECTED_SHA256: ${{ inputs.artifact_sha256 }}
-          CANDIDATE_ARTIFACT_ID: '12500977640'
-          CANDIDATE_SHA256: '87bed85e1158263d58d14d7b8371a65fefabfb14bbf9af959c01bf7d83032188'
+          CANDIDATE_ARTIFACT_ID: '12522358934'
+          CANDIDATE_SHA256: '379f6cfc3a487bc31b1a03fa7dbb131b9c0dd95fc4de685242638c5d2953c264'
         run: |
           if(!$env:ARTIFACT_ID){$env:ARTIFACT_ID=$env:CANDIDATE_ARTIFACT_ID}
           if(!$env:EXPECTED_SHA256){$env:EXPECTED_SHA256=$env:CANDIDATE_SHA256}
           if($env:ARTIFACT_ID -notmatch '^\d+$' -or $env:EXPECTED_SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid pinned artifact identity'}
           $headers=@{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
           $metadata=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/actions/artifacts/'+$env:ARTIFACT_ID) -Headers $headers
-          if($metadata.expired -or $metadata.name -ne 'g3-windows-unsigned-0be9026f6f3fdf65d80e77edeba25dfdf201ad0c'){throw 'Unexpected or expired artifact'}
+          if($metadata.expired -or $metadata.name -ne 'g3-windows-unsigned-4c2488ad2611215546d72008a90e9e31eb162f0d'){throw 'Unexpected or expired artifact'}
           Invoke-WebRequest -Uri $metadata.archive_download_url -Headers $headers -OutFile candidate.zip
           if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne $env:EXPECTED_SHA256){throw 'Pinned artifact digest mismatch'}
           Expand-Archive candidate.zip artifact
