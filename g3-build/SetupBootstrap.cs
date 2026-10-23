@@ -48,17 +48,19 @@ internal sealed class SetupForm:Form {
 
  static string AppName {get{return Kind=="host_msi"?"g3Host":"g3Fernwartung";}}
 
+ static string ProductTitle {get{return Kind=="host_msi"?"g3 OpsLinX Host":"g3 OpsLinX";}}
+
  static string InstalledExe {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),AppName,AppName+".exe");}}
 
  readonly Label status=new Label(); readonly Button start=new Button(); readonly ProgressBar progress=new ProgressBar();readonly int previous;bool working;
 
  public SetupForm(int pid) {
 
-  previous=pid;Text="g3 OpsLinX – "+(pid>0?"Client aktualisieren":"Installation");Width=700;Height=280;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
+  previous=pid;Text=ProductTitle+" – "+(pid>0?"aktualisieren":"Installation");Width=700;Height=280;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
 
   BackColor=Color.FromArgb(4,25,37);ForeColor=Color.White;Font=new Font("Segoe UI",11);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
-  status.SetBounds(25,25,630,115);status.Text="Geprüftes Installationspaket laden und den Client anschließend automatisch öffnen. Ein Windows-Neustart wird nicht ausgelöst.";
+  status.SetBounds(25,25,630,115);status.Text="Geprüftes Installationspaket laden und "+(Kind=="host_msi"?"das Host-Modul":"den Client")+" anschließend automatisch öffnen. Ein Windows-Neustart wird nicht ausgelöst.";
 
   progress.SetBounds(25,150,630,22);start.SetBounds(405,190,250,35);start.Text="Installation starten";start.BackColor=Color.FromArgb(0,180,215);start.ForeColor=BackColor;start.Click+=async(s,e)=>await Install();Controls.AddRange(new Control[]{status,progress,start});
 
