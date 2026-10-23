@@ -7,8 +7,8 @@ assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub runner req
 root = pathlib.Path(__file__).resolve().parents[1]
 folder = root/'work/download-acceptance'
 folder.mkdir(parents=True, exist_ok=True)
-version = '1.5.0-g3.24'
-msi = root/'outputs'/f'g3-Fernwartung-{version}-install.msi'
+version = '1.5.0-g3.25'
+msi = root/'outputs'/f'g3-OpsLinX-{version}-install.msi'
 payload = msi.read_bytes()
 class Handler(http.server.BaseHTTPRequestHandler):
     corrupt = False

@@ -28,11 +28,11 @@ using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-[assembly:AssemblyTitle("g3 NetworX Installation")]
+[assembly:AssemblyTitle("g3 OpsLinX Installation")]
 
 [assembly:AssemblyCompany("g3 NetworX UG & Co. KG")]
 
-[assembly:AssemblyVersion("1.5.22.0")]
+[assembly:AssemblyVersion("1.5.25.0")]
 
 internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
 internal sealed class UpdateSessionGate:IDisposable {
@@ -54,7 +54,7 @@ internal sealed class SetupForm:Form {
 
  public SetupForm(int pid) {
 
-  previous=pid;Text="g3 NetworX – "+(pid>0?"Client aktualisieren":"Installation");Width=700;Height=280;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
+  previous=pid;Text="g3 OpsLinX – "+(pid>0?"Client aktualisieren":"Installation");Width=700;Height=280;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
 
   BackColor=Color.FromArgb(4,25,37);ForeColor=Color.White;Font=new Font("Segoe UI",11);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 

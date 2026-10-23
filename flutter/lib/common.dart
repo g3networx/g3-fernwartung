@@ -3787,7 +3787,8 @@ Color? disabledTextColor(BuildContext context, bool enabled) {
 }
 
 Widget loadPowered(BuildContext context) {
-  if (bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y') {
+  if (bind.isCustomClient() ||
+      bind.mainGetBuildinOption(key: "hide-powered-by-me") == 'Y') {
     return SizedBox.shrink();
   }
   return MouseRegion(
@@ -3877,7 +3878,7 @@ class _LogoState extends State<_Logo> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('g3 NetworX',
+                    Text('g3 OpsLinX',
                         style: TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800)),
                     Text('FERNWARTUNG',

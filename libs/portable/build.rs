@@ -5,8 +5,8 @@ fn main() {
         let mut res = winres::WindowsResource::new();
         res.set_icon("../../res/icon.ico")
             .set("CompanyName", "g3 NetworX UG & Co. KG")
-            .set("ProductName", "g3 Fernwartung")
-            .set("FileDescription", "g3 Fernwartung Setup")
+            .set("ProductName", "g3 OpsLinX")
+            .set("FileDescription", "g3 OpsLinX Setup")
             .set_language(winapi::um::winnt::MAKELANGID(
                 winapi::um::winnt::LANG_ENGLISH,
                 winapi::um::winnt::SUBLANG_ENGLISH_US,
