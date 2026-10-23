@@ -56,6 +56,8 @@ $env:WIX="$tools/wix"
 $payload="$source/flutter/build/windows/x64/runner/Release"
 Copy-Item LICENCE "$payload/LICENCE"
 Set-Content "$payload/SOURCE.txt" "https://github.com/g3networx/g3-fernwartung/tree/$env:GITHUB_SHA" -Encoding utf8
+& cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link /SUBSYSTEM:CONSOLE "/OUT:$source/outputs/g3Host.exe"
+Check
 python g3-build/package-msi.py; Check
 python g3-build/build-setup-launchers.py; Check
 python g3-build/test-update-session-gate.py; Check

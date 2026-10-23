@@ -27,10 +27,12 @@ $payloadZip=Join-Path $artifact 'g3-windows-unsigned.zip'
 $payloadRoot=Join-Path $package 'payload'
 Expand-Archive -LiteralPath $payloadZip -DestinationPath $payloadRoot -Force
 $payload=@{}
-Get-ChildItem -LiteralPath $payloadRoot -Recurse -File | ForEach-Object {
-  $relative=$_.FullName.Substring($payloadRoot.Length+1).Replace('\','/')
-  if($relative -eq 'rustdesk.exe'){$relative='g3Host.exe'}
-  $payload[$relative]=(Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+if(!(Test-Path -LiteralPath (Join-Path $artifact 'g3Host.exe'))){throw 'Native Host launcher missing from candidate'}
+Copy-Item -LiteralPath (Join-Path $artifact 'g3Host.exe') -Destination (Join-Path $payloadRoot 'g3Host.exe')
+foreach($name in @('g3Host.exe','librustdesk.dll','g3-update-session.lock','LICENCE','SOURCE.txt')){
+  $file=Join-Path $payloadRoot $name
+  if(!(Test-Path -LiteralPath $file)){throw "Host payload missing: $name"}
+  $payload[$name]=(Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant()
 }
 $bootstrapName=$setup.Name
 $msiName=$items.host_msi.file

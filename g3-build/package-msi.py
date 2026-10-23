@@ -17,7 +17,8 @@ results={}
 (payload/'g3-update-session.lock').touch(exist_ok=True)
 for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host','g3 OpsLinX Host')]:
     folder=ROOT/'g3-build/msi'/kind;folder.mkdir(parents=True,exist_ok=True)
-    exe=folder/(app+'.exe');shutil.copy2(payload/'rustdesk.exe',exe)
+    exe=folder/(app+'.exe')
+    shutil.copy2(ROOT/'outputs/g3Host.exe' if kind=='host' else payload/'rustdesk.exe',exe)
     wix=E.Element('{'+NS+'}Wix')
     product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.25',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
@@ -45,6 +46,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     for file in sorted(payload.rglob('*')):
         if not file.is_file() or file.suffix.lower() in ('.pdb','.exp','.lib') or file.name in ('rustdesk.exe','meta.toml'):continue
         relative=file.relative_to(payload)
+        if kind=='host' and relative.as_posix() not in {'librustdesk.dll','g3-update-session.lock','LICENCE','SOURCE.txt'}:continue
         cid='C'+hashlib.sha256((kind+'/'+relative.as_posix()).encode()).hexdigest()[:24]
         comp=tag(directory(relative.parent),'Component',Id=cid,Guid=guid(kind+'/file/'+relative.as_posix()),Win64='yes')
         if file.name == 'g3-update-session.lock':comp.set('Permanent','yes');comp.set('NeverOverwrite','yes')
