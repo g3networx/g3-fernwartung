@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_hbb/g3_enrollment.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'g3_update_paths.dart';
+import 'g3_update_metadata.dart';
 
 import 'g3_update_check.dart';
 export 'g3_update_check.dart';
@@ -84,10 +85,8 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
       final expected = item['sha256'] as String;
       final size = item['size'] as int;
       final name = item['file'] as String;
-      if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(expected) ||
-          size < 100000 ||
-          size > 150000000 ||
-          !RegExp(r'^[A-Za-z0-9._-]+\.(exe|msi)$').hasMatch(name)) throw Exception();
+      if (!g3UpdateArtifactMetadataIsValid(
+          sha256: expected, size: size, filename: name)) throw Exception();
       final r = await http
           .get(Uri.https('rust.g3nx.net', '/client/download/$kind'))
           .timeout(const Duration(minutes: 3));

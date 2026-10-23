@@ -1,4 +1,4 @@
-name: g3 OpsLinX macOS g3.25 package finalization
+name: g3 OpsLinX macOS g3.26 package finalization
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +16,7 @@ permissions:
   contents: read
   actions: read
 env:
-  VERSION: 1.5.0-g3.25
+  VERSION: 1.5.0-g3.26
 jobs:
   finalize:
     strategy:
@@ -35,7 +35,7 @@ jobs:
           run-id: ${{ inputs.source_run }}
           name: g3-macos-${{ matrix.arch }}-${{ inputs.source_commit }}
           path: input
-      - name: Verify exact g3.25 source artifact
+      - name: Verify exact g3.26 source artifact
         env:
           ARCH: ${{ matrix.arch }}
           SOURCE_RUN: ${{ inputs.source_run }}
@@ -49,7 +49,7 @@ jobs:
           r=json.loads(rows[0].read_text())
           assert str(r['run_id'])==os.environ['SOURCE_RUN']
           assert r['source_commit']==os.environ['SOURCE_COMMIT']
-          assert r['arch']==os.environ['ARCH'] and r['platform']=='macos' and r['version']=='1.5.0-g3.25'
+          assert r['arch']==os.environ['ARCH'] and r['platform']=='macos' and r['version']=='1.5.0-g3.26'
           assert len(r['files'])==1
           for f in r['files']:
             q=p/f['file']; assert q.is_file() and q.stat().st_size==f['size']

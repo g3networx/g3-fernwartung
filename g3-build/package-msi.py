@@ -10,7 +10,7 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.25'
+version='1.5.0-g3.26'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
@@ -20,7 +20,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     exe=folder/(app+'.exe')
     shutil.copy2(ROOT/'outputs/g3Host.exe' if kind=='host' else payload/'rustdesk.exe',exe)
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.25',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.26',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')

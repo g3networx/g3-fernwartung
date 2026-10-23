@@ -1,7 +1,7 @@
 $ErrorActionPreference='Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Installation test may run only on a disposable GitHub Windows runner.' }
 $root=(Resolve-Path "$PSScriptRoot/..").Path
-$version='1.5.0-g3.25'
+$version='1.5.0-g3.26'
 $setup=Join-Path $root "outputs/g3-OpsLinX-$version-install.exe"
 $msi=Join-Path $root "outputs/g3-OpsLinX-$version-install.msi"
 $install=Join-Path $env:ProgramFiles 'g3Fernwartung'

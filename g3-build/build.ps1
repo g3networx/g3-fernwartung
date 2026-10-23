@@ -39,6 +39,7 @@ python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Chec
 Push-Location flutter
 flutter test --no-pub test/g3_legal_notices_test.dart; Check
 flutter test --no-pub test/g3_update_paths_test.dart; Check
+flutter test --no-pub test/g3_update_metadata_test.dart; Check
 Pop-Location
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check

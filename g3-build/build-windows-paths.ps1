@@ -62,7 +62,7 @@ Copy-Item $native.FullName target/release/librustdesk.dll
 Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39893124138";' -Encoding utf8
 Stage 'Run focused Flutter tests and compile FullClient'
 Push-Location flutter
-flutter test test/g3_update_paths_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart; Check
+flutter test test/g3_update_paths_test.dart test/g3_update_metadata_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart; Check
 flutter build windows --release; Check
 Pop-Location
 Stage 'Prepare native OpsLinX Host and MSI packaging tools'

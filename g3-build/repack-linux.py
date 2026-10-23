@@ -1,7 +1,7 @@
 """Create an independently named g3 Debian package without rebuilding binaries."""
 from pathlib import Path
 import subprocess,tempfile,os,re,sys
-version=os.environ.get('VERSION','1.5.0-g3.25')
+version=os.environ.get('VERSION','1.5.0-g3.26')
 assert re.fullmatch(r'[0-9][A-Za-z0-9.+:~-]*',version),'Invalid Debian version'
 packages=[Path(p) for p in sys.argv[1:]] or list(Path('.').glob('rustdesk-*.deb'))
 assert packages,'No Debian input package'
