@@ -37,7 +37,6 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     pf=tag(target,'Directory',Id='ProgramFiles64Folder');install=tag(pf,'Directory',Id='INSTALLDIR',Name=app)
     tag(target,'Directory',Id='System64Folder')
     programs=tag(target,'Directory',Id='ProgramMenuFolder');menu=tag(programs,'Directory',Id='ApplicationProgramsFolder',Name=title)
-    startup=tag(target,'Directory',Id='StartupFolder')
     feature=tag(product,'Feature',Id='Complete',Title=title,Level=1)
     dirs={Path('.'):install}
     def directory(rel):
@@ -73,6 +72,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     tag(protocol,'RegistryValue',Name='URL Protocol',Type='string',Value='')
     command=tag(protocol,'RegistryKey',Key='shell\\open\\command');tag(command,'RegistryValue',Type='string',Value='"[INSTALLDIR]'+app+'.exe" "%1"')
     tag(registry,'CopyFile',Id='BrokerCopy',SourceDirectory='System64Folder',SourceName='RuntimeBroker.exe',DestinationDirectory='INSTALLDIR',DestinationName='RuntimeBroker_rustdesk.exe')
+    tag(registry,'RegistryValue',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Run',Name=app+'Tray',Type='string',Value='"[INSTALLDIR]'+app+'.exe" --tray')
     tag(registry,'RemoveFile',Id='BrokerRemove',Name='RuntimeBroker_rustdesk.exe',On='uninstall')
     tag(feature,'ComponentRef',Id='InstallRegistration')
     enrollment=tag(install,'Component',Id='EnrollmentSource',Guid=guid(kind+'/source'),Win64='yes',NeverOverwrite='yes')
@@ -81,9 +81,6 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     sas=tag(install,'Component',Id='SecureAttention',Guid=guid(kind+'/sas'),Win64='yes',NeverOverwrite='yes',Permanent='yes')
     tag(sas,'RegistryValue',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',Name='SoftwareSASGeneration',Type='integer',Value=1,KeyPath='yes')
     tag(feature,'ComponentRef',Id='SecureAttention')
-    tray=tag(startup,'Component',Id='TrayStartup',Guid=guid(kind+'/tray'),Win64='yes')
-    tag(tray,'Shortcut',Id='TrayShortcut',Name=title+' Status',Target='[INSTALLDIR]'+app+'.exe',Arguments='--tray',WorkingDirectory='INSTALLDIR')
-    tag(tray,'RegistryValue',Root='HKLM',Key=state,Name='TrayShortcut',Type='integer',Value=1,KeyPath='yes');tag(feature,'ComponentRef',Id='TrayStartup')
     tag(product,'UIRef',Id='WixUI_InstallDir');tag(product,'Property',Id='WIXUI_INSTALLDIR',Value='INSTALLDIR')
     tag(product,'WixVariable',Id='WixUILicenseRtf',Value=str(ROOT/'g3-build/msi/license.rtf'))
     if kind!='host':
