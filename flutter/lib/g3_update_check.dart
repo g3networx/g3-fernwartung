@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const g3ClientVersion = '1.5.0-g3.29';
+const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.29');
 bool g3VersionNewer(String candidate, String current) {
   final valid = RegExp(r'^\d+\.\d+\.\d+-g3\.\d+$');
   if (!valid.hasMatch(candidate) || !valid.hasMatch(current)) return false;

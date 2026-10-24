@@ -1,0 +1,51 @@
+name: g3 FullClient address book installer acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      asset_id:
+        type: string
+        required: true
+      sha256:
+        type: string
+        required: true
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Fetch exact private candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ inputs.asset_id }}
+          SHA256: ${{ inputs.sha256 }}
+        run: |
+          if($env:ASSET -notmatch '^\d+$' -or $env:SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid candidate pins'}
+          Invoke-WebRequest ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/releases/assets/'+$env:ASSET) -Headers @{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/octet-stream';'X-GitHub-Api-Version'='2022-11-28'} -OutFile candidate.zip
+          if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne $env:SHA256){throw 'Candidate digest differs'}
+          Expand-Archive candidate.zip candidate
+          $proof=Get-Content candidate/candidate.json -Raw|ConvertFrom-Json
+          if($proof.source_commit -ne $env:GITHUB_SHA){throw 'Candidate/validator source commit mismatch'}
+      - name: Native session lease regression
+        shell: pwsh
+        run: python g3-build/test-update-session-gate.py
+      - name: Installed FullClient UI, session safety, repair and upgrade
+        shell: pwsh
+        run: ./g3-build/test-fullclient-addressbook-install.ps1 -PackageDirectory (Resolve-Path candidate)
+      - name: Collect sanitized evidence and installer diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          if(Test-Path candidate/acceptance.json){Copy-Item candidate/acceptance.json evidence/}
+          if(Test-Path outputs/update-session-gate-test.json){Copy-Item outputs/update-session-gate-test.json evidence/}
+          Get-ChildItem C:/ProgramData/g3-NetworX-Setup-g3Fernwartung-1.5.0-g3.30 -File -ErrorAction SilentlyContinue | Where-Object {$_.Name -in @('result.txt','update-error.txt','install.log')} | Copy-Item -Destination evidence/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: fullclient-addressbook-acceptance
+          path: evidence/
+          if-no-files-found: error

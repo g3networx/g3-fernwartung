@@ -1,5 +1,5 @@
 """Declarative Windows Installer packages; no shell/script installation actions."""
-import hashlib,json,re,shutil,subprocess,uuid,os
+import hashlib,json,re,shutil,subprocess,uuid,os,argparse
 from pathlib import Path
 import xml.etree.ElementTree as E
 
@@ -10,18 +10,22 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.29'
+parser=argparse.ArgumentParser();parser.add_argument('--kind',choices=['windows','host']);parser.add_argument('--version',default='1.5.0-g3.29');options=parser.parse_args()
+version=options.version
+if not re.fullmatch(r'1\.5\.0-g3\.\d{1,3}',version):raise ValueError('Invalid package version')
+msi_version='1.5.'+version.rsplit('.',1)[1]
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
 (payload/'g3-update-session.lock').touch(exist_ok=True)
 for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host','g3 OpsLinX Host')]:
+    if options.kind and kind!=options.kind:continue
     folder=ROOT/'g3-build/msi'/kind;folder.mkdir(parents=True,exist_ok=True)
     exe=folder/(app+'.exe')
     shutil.copy2(ROOT/'outputs/g3Host.exe' if kind=='host' else payload/'rustdesk.exe',exe)
     if kind=='host':shutil.copy2(payload/'rustdesk.exe',folder/'g3Host-ui.exe')
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.29',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version=msi_version,Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')
