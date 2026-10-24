@@ -31,9 +31,6 @@ function RemoveNew {
 if((Worker) -notin @(0,3010)){throw 'Clean install failed'}
 Ready;$id=Identity
 Start-Process $exe | Out-Null
-$deadline=(Get-Date).AddSeconds(45)
-do {Start-Sleep -Milliseconds 500;$gui=Get-Process g3Fernwartung -ErrorAction SilentlyContinue|Where-Object {$_.Path -eq $exe -and $_.MainWindowHandle -ne 0}|Select-Object -First 1}while(!$gui -and (Get-Date) -lt $deadline)
-if(!$gui){throw 'Installed FullClient window missing'}
 Add-Type -AssemblyName Accessibility
 Add-Type -ReferencedAssemblies @(([Accessibility.IAccessible].Assembly.Location),(Join-Path $PSHOME 'ref/System.Collections.dll')) -CompilerOptions '/nowarn:1701' -TypeDefinition @'
 using System;using System.Runtime.InteropServices;using System.Collections.Generic;
@@ -42,18 +39,31 @@ public static class FullClientAccessibility {
  public delegate bool EnumChild(IntPtr child,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr w,EnumChild cb,IntPtr state);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr w,System.Text.StringBuilder text,int count);
+ [DllImport("user32.dll")] static extern bool EnumWindows(EnumChild cb,IntPtr state);
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr w,out uint pid);
+ [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr w);
+ public static int Owner(IntPtr w){uint pid;GetWindowThreadProcessId(w,out pid);return (int)pid;}
+ public static IntPtr[] FlutterWindows(int[] pids){var result=new List<IntPtr>();EnumWindows((w,state)=>{uint pid;GetWindowThreadProcessId(w,out pid);if(Array.IndexOf(pids,(int)pid)>=0 && IsWindowVisible(w) && IsFlutter(w))result.Add(w);return true;},IntPtr.Zero);return result.ToArray();}
  public static bool IsFlutter(IntPtr w){var text=new System.Text.StringBuilder(256);GetClassName(w,text,256);return text.ToString()=="FLUTTER_RUNNER_WIN32_WINDOW";}
  static void Fields(Accessibility.IAccessible n,object child,List<string> text){try{var v=n.get_accName(child);if(!String.IsNullOrEmpty(v))text.Add(v);}catch(COMException){}try{var v=n.get_accDescription(child);if(!String.IsNullOrEmpty(v))text.Add(v);}catch(COMException){}try{var v=n.get_accValue(child);if(!String.IsNullOrEmpty(v))text.Add(v);}catch(COMException){}try{var v=n.get_accHelp(child);if(!String.IsNullOrEmpty(v))text.Add(v);}catch(COMException){}}
  static void Read(Accessibility.IAccessible n,List<string> text,int depth){if(depth>64||text.Count>2000)return;Fields(n,0,text);int count=0;try{count=n.accChildCount;}catch(COMException){return;}for(int i=1;i<=count;i++){object child=null;try{child=n.get_accChild(i);}catch(COMException){}if(child is Accessibility.IAccessible)Read((Accessibility.IAccessible)child,text,depth+1);else Fields(n,i,text);}}
- public static int ChildCount(IntPtr window){int count=0;EnumChildWindows(window,(child,state)=>{count++;return true;},IntPtr.Zero);return count;}
+ public static int ChildCount(IntPtr window){if(window==IntPtr.Zero)return 0;int count=0;EnumChildWindows(window,(child,state)=>{count++;return true;},IntPtr.Zero);return count;}
  public static string[] Labels(IntPtr window){var text=new List<string>();object outer;var outerIid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");if(AccessibleObjectFromWindow(window,4294967292,ref outerIid,out outer)==0&&outer is Accessibility.IAccessible)Read((Accessibility.IAccessible)outer,text,0);EnumChildWindows(window,(child,state)=>{object a;var iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");if(AccessibleObjectFromWindow(child,4294967292,ref iid,out a)==0&&a is Accessibility.IAccessible)Read((Accessibility.IAccessible)a,text,0);return true;},IntPtr.Zero);return text.ToArray();}
 }
 '@
 $deadline=(Get-Date).AddSeconds(45)
 do {
  Start-Sleep -Milliseconds 500
- $gui.Refresh()
- $labels=[FullClientAccessibility]::Labels($gui.MainWindowHandle)
+ $processes=@(Get-Process g3Fernwartung -ErrorAction SilentlyContinue|Where-Object {$_.Path -eq $exe})
+ $windows=@([FullClientAccessibility]::FlutterWindows([int[]]@($processes|ForEach-Object Id)))
+ $labels=@();$gui=$null;$guiWindow=[IntPtr]::Zero
+ foreach($window in $windows){
+  $observed=[FullClientAccessibility]::Labels($window)
+  if($observed -match 'g3-Adressbuch'){$labels=$observed;$guiWindow=$window;break}
+  if($observed.Count -gt $labels.Count){$labels=$observed;$guiWindow=$window}
+ }
+ if($guiWindow -ne [IntPtr]::Zero){$gui=$processes|Where-Object { $_.Id -eq [FullClientAccessibility]::Owner($guiWindow)}|Select-Object -First 1}
+
  $versionPresent=[bool]($labels -match '1\.5\.0-g3\.30')
  $addressbookPresent=[bool]($labels -match 'g3-Adressbuch')
  $loginPresent=[bool]($labels -match 'Mit g3 anmelden')
@@ -61,9 +71,10 @@ do {
 if(!$versionPresent -or !$addressbookPresent -or !$loginPresent){
  $dllNames=@(Get-ChildItem $root -Filter '*.dll' -File|ForEach-Object Name)+@('VCRUNTIME140.dll','VCRUNTIME140_1.dll','MSVCP140.dll','KERNEL32.dll')
  $presentDllNames=@($dllNames|Where-Object {($labels -join ' ').IndexOf($_,[StringComparison]::OrdinalIgnoreCase) -ge 0})
- @{versionPresent=$versionPresent;addressbookPresent=$addressbookPresent;loginPresent=$loginPresent;labelCount=$labels.Count;embeddedWindows=[FullClientAccessibility]::ChildCount($gui.MainWindowHandle);isFlutterWindow=[FullClientAccessibility]::IsFlutter($gui.MainWindowHandle);mainTitleMatches=($gui.MainWindowTitle -eq 'g3Fernwartung');knownDependencyNames=$presentDllNames;systemErrorPresent=[bool]($labels -match 'entry point|System Error|Einsprungpunkt|could not be located|was not found')}|ConvertTo-Json|Set-Content (Join-Path $package 'ui-diagnostic.json') -Encoding utf8
- throw ('Installed UI flags: version='+$versionPresent+'; addressbook='+$addressbookPresent+'; login='+$loginPresent+'; labels='+$labels.Count+'; children='+[FullClientAccessibility]::ChildCount($gui.MainWindowHandle))
+ @{versionPresent=$versionPresent;addressbookPresent=$addressbookPresent;loginPresent=$loginPresent;labelCount=$labels.Count;embeddedWindows=[FullClientAccessibility]::ChildCount($guiWindow);isFlutterWindow=[FullClientAccessibility]::IsFlutter($guiWindow);visibleFlutterWindows=$windows.Count;installedProcesses=$processes.Count;guiOwnerResolved=[bool]$gui;knownDependencyNames=$presentDllNames;systemErrorPresent=[bool]($labels -match 'entry point|System Error|Einsprungpunkt|could not be located|was not found')}|ConvertTo-Json|Set-Content (Join-Path $package 'ui-diagnostic.json') -Encoding utf8
+ throw ('Installed UI flags: version='+$versionPresent+'; addressbook='+$addressbookPresent+'; login='+$loginPresent+'; labels='+$labels.Count+'; children='+[FullClientAccessibility]::ChildCount($guiWindow))
 }
+if(!$gui){throw 'Visible installed Flutter UI owner not resolved'}
 $sessionExe=Join-Path $root 'g3-gate-regression.exe';Copy-Item (Join-Path $PSScriptRoot '../work/session-gate-test/session.exe') $sessionExe
 $psi=[Diagnostics.ProcessStartInfo]::new($sessionExe,'session');$psi.UseShellExecute=$false;$psi.CreateNoWindow=$true;$psi.RedirectStandardInput=$true;$psi.RedirectStandardOutput=$true
 $session=[Diagnostics.Process]::Start($psi)
