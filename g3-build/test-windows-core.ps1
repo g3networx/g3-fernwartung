@@ -36,9 +36,8 @@ do {
 }while(!$gui -and (Get-Date) -lt $deadline)
 if(!$gui){throw 'Host interface did not open from the installed native launcher'}
 if($gui.Path -ne (Join-Path $root 'g3Host-ui.exe')){throw 'Host interface launched outside the installed payload'}
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-Add-Type -TypeDefinition @'
+Add-Type -AssemblyName Accessibility
+Add-Type -ReferencedAssemblies @(([Accessibility.IAccessible].Assembly.Location),(Join-Path $PSHOME 'ref/System.Collections.dll')) -CompilerOptions '/nowarn:1701' -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class HostAccessibility {
@@ -50,23 +49,36 @@ public static class HostAccessibility {
   EnumChildWindows(window,(child,state)=>{handles.Add(child);return true;},IntPtr.Zero);
   return handles.ToArray();
  }
+ static void Read(Accessibility.IAccessible node,System.Collections.Generic.List<string> labels,int depth) {
+  if(depth>64 || labels.Count>2000)return;
+  labels.Add(node.get_accName(0)??"");
+  if(Convert.ToInt32(node.get_accRole(0))==42)labels.Add(node.get_accValue(0)??"");
+  int count=Math.Min(node.accChildCount,500);
+  for(int i=1;i<=count;i++) {
+   object child=node.get_accChild(i);
+   if(child is Accessibility.IAccessible)Read((Accessibility.IAccessible)child,labels,depth+1);
+   else {labels.Add(node.get_accName(i)??"");if(Convert.ToInt32(node.get_accRole(i))==42)labels.Add(node.get_accValue(i)??"");}
+  }
+ }
+ public static string[] Labels(IntPtr window) {
+  var labels=new System.Collections.Generic.List<string>();object accessible;
+  Guid iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
+  if(AccessibleObjectFromWindow(window,4294967292,ref iid,out accessible)==0 && accessible is Accessibility.IAccessible)
+   Read((Accessibility.IAccessible)accessible,labels,0);
+  return labels.ToArray();
+ }
 }
 '@
-$accessible=$null;$accessibleId=[guid]'618736E0-3C3D-11CF-810C-00AA00389B71'
-$accessibilityResult=[HostAccessibility]::AccessibleObjectFromWindow($gui.MainWindowHandle,[uint32]4294967292,[ref]$accessibleId,[ref]$accessible)
 $childWindows=@([HostAccessibility]::Children($gui.MainWindowHandle))
-foreach($child in $childWindows){$childAccessible=$null;[void][HostAccessibility]::AccessibleObjectFromWindow($child,[uint32]4294967292,[ref]$accessibleId,[ref]$childAccessible)}
-$window=[Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
 $deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
 do {
- $nodes=$window.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
- $labels=@($nodes | ForEach-Object {$_.Current.Name})
+ $labels=@(foreach($child in $childWindows){[HostAccessibility]::Labels($child)})
  $plain=($labels -join ' ') -replace '\s',''
  $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '^Settings$|^Einstellungen$')
  if(!$interfaceReady){Start-Sleep -Milliseconds 500}
 }while(!$interfaceReady -and (Get-Date) -lt $deadline)
 if(!$interfaceReady){
- @{nodes=$nodes.Count;embeddedWindows=$childWindows.Count;accessibilityResult=$accessibilityResult;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
+ @{labelCount=$labels.Count;embeddedWindows=$childWindows.Count;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
  throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'
 }
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
