@@ -38,6 +38,15 @@ if(!$gui){throw 'Host interface did not open from the installed native launcher'
 if($gui.Path -ne (Join-Path $root 'g3Host-ui.exe')){throw 'Host interface launched outside the installed payload'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class HostAccessibility {
+ [DllImport("oleacc.dll")] public static extern int AccessibleObjectFromWindow(IntPtr window,uint id,ref Guid iid,[MarshalAs(UnmanagedType.Interface)] out object accessible);
+}
+'@
+$accessible=$null;$accessibleId=[guid]'618736E0-3C3D-11CF-810C-00AA00389B71'
+$accessibilityResult=[HostAccessibility]::AccessibleObjectFromWindow($gui.MainWindowHandle,0xfffffffc,[ref]$accessibleId,[ref]$accessible)
 $window=[Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
 $deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
 do {
@@ -47,7 +56,10 @@ do {
  $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '^Settings$|^Einstellungen$')
  if(!$interfaceReady){Start-Sleep -Milliseconds 500}
 }while(!$interfaceReady -and (Get-Date) -lt $deadline)
-if(!$interfaceReady){throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'}
+if(!$interfaceReady){
+ @{nodes=$nodes.Count;accessibilityResult=$accessibilityResult;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
+ throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'
+}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"
 extern crate self as hbb_common;
