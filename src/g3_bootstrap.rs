@@ -55,8 +55,8 @@ fn refresh()->Result<(),()> {
     let data:Value=client.post(url).json(&serde_json::json!({"id":id,"challenge":nonce,"signature":signature}))
         .send().map_err(|_|())?.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
     if data["registered"]!=true{return Err(())}
-    if crate::get_app_name()=="g3Host" && Config::get_option("g3-host-password-ui".to_owned()).is_empty() {
-        if Config::get_option("verification-method".to_owned())=="use-permanent-password" {
+    if crate::get_app_name()=="g3Host" && Config::get_option("g3-host-password-ui").is_empty() {
+        if Config::get_option("verification-method")=="use-permanent-password" {
             Config::set_option("verification-method".to_owned(),"use-both-passwords".to_owned());
         }
         Config::set_option("g3-host-password-ui".to_owned(),"1".to_owned());
