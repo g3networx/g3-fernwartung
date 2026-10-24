@@ -25,7 +25,7 @@ if ((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne 'e6fc1f920c6ca6
 Expand-Archive "$tools/base.zip" "$tools/base"
 $env:G3_ACCEPTED_BASE="$tools/base"
 # Reuse only when the exact native source tree matches the accepted build.
-$changed=git -C $source diff c7ec02f0c471d6f88700544552b1e5b81f411551 HEAD -- src libs Cargo.toml Cargo.lock
+$changed=git -C $source diff 80454bd115ec27849b3299f594d245ecdfa6e23c HEAD -- src libs Cargo.toml Cargo.lock
 Check
 if ($changed) {
  Write-Output 'Native source changed: selecting the complete native build and acceptance pipeline.'
@@ -52,14 +52,19 @@ Expand-Archive "$tools/engine.zip" "$tools/engine"
 Copy-Item "$tools/engine/*" "$tools/flutter/bin/cache/artifacts/engine/windows-x64-release" -Recurse -Force
 rustup toolchain install 1.75.0 --profile minimal; Check
 $env:RUSTUP_TOOLCHAIN='1.75.0'
-Expand-Archive "$tools/base/g3-windows-unsigned.zip" "$tools/native"
+Stage 'Verify accepted g3.27 native core for unchanged native source'
+Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12534279045/zip' -Headers $headers -OutFile "$tools/native-g327.zip"
+if((Get-FileHash "$tools/native-g327.zip").Hash.ToLowerInvariant() -ne '2d47b98e0778a482ca62b59c7407c01b347735194d0ad5b7c918db5f792eed44'){throw 'Accepted g3.27 artifact digest mismatch'}
+Expand-Archive "$tools/native-g327.zip" "$tools/native-g327"
+Expand-Archive "$tools/native-g327/g3-windows-unsigned.zip" "$tools/native"
 $native=Get-ChildItem "$tools/native" -Recurse -Filter librustdesk.dll
 if (@($native).Count -ne 1) {throw 'Unexpected native payload'}
 $nativeHash=(Get-FileHash $native.FullName).Hash.ToLowerInvariant()
+if($nativeHash -ne '24ef22f906f787b46230c5b2efac13a5d32943463cdae914de44cdb90280dbf9'){throw 'Accepted g3.27 native DLL mismatch'}
 New-Item -ItemType Directory -Path target/release -Force | Out-Null
 Copy-Item $native.FullName target/release/librustdesk.dll
 # Packaging reads this normally Rust-generated metadata file; no Rust build runs here.
-Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 39893124138";' -Encoding utf8
+Set-Content src/version.rs 'pub const BUILD_DATE: &str = "native reused from accepted run 40023211640";' -Encoding utf8
 Stage 'Run focused Flutter tests and compile FullClient'
 Push-Location flutter
 flutter test test/g3_update_paths_test.dart test/g3_update_metadata_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart; Check
@@ -89,7 +94,7 @@ python g3-build/test-update-session-gate.py; Check
 & "$PSScriptRoot/test-windows-update.ps1"
 python g3-build/test-download-bootstrap.py; Check
 Compress-Archive "$payload/*" outputs/g3-windows-unsigned.zip
-$provenance=@{source_commit=$env:GITHUB_SHA;native_source_commit='c7ec02f0c471d6f88700544552b1e5b81f411551';native_artifact_id=12477693931;native_sha256=$nativeHash;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
+$provenance=@{source_commit=$env:GITHUB_SHA;native_source_commit='80454bd115ec27849b3299f594d245ecdfa6e23c';native_artifact_id=12534279045;native_sha256=$nativeHash;run_id=$env:GITHUB_RUN_ID;rust=(rustc --version);flutter_commit='dec2ee5c1f98f8e84a7d5380c05eb8a3d0a81668';vcpkg_commit='9e593bb18ea69cc5095e012465dcd675a822ed0d';engine_sha256=$engine.sha256;publicly_trusted_signature=$false}
 $provenance|ConvertTo-Json|Set-Content outputs/build-provenance.json -Encoding utf8
 Get-ChildItem outputs -File | Where-Object { $_.Name -notin @('build-diagnostics.txt','build-failure.txt') } | Get-FileHash -Algorithm SHA256 | Select-Object @{n='file';e={Split-Path $_.Path -Leaf}},Hash | ConvertTo-Json | Set-Content outputs/SHA256.json -Encoding utf8
 Stage 'Windows package build completed'
