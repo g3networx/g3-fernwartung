@@ -169,6 +169,13 @@ void runMainApp(bool startService) async {
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     // Restore the location of the main window before window hide or show.
     await restoreWindowPosition(WindowType.Main);
+    if (bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()) {
+      await windowManager.setMinimumSize(const Size(820, 620));
+      if (bind.getLocalFlutterOption(k: windowFramePrefix + WindowType.Main.name).isEmpty) {
+        await windowManager.setSize(const Size(1080, 780));
+        await windowManager.center();
+      }
+    }
     // Check the startup argument, if we successfully handle the argument, we keep the main window hidden.
     final handledByUniLinks = await initUniLinks();
     debugPrint("handled by uni links: $handledByUniLinks");

@@ -15,6 +15,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 
 import '../../common.dart';
+import '../../g3_addressbook.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
@@ -316,7 +317,18 @@ class _ConnectionPageState extends State<ConnectionPage>
             ).marginOnly(top: 22),
             SizedBox(height: 12),
             Divider().paddingOnly(right: 12),
-            const Expanded(child: SizedBox.shrink()),
+            Expanded(child: bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()
+                ? G3AddressBook(onConnect: (value) async {
+                    final uri = Uri.parse(value);
+                    if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
+                      await redeemG3Session(uri.path.substring(1));
+                    } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
+                      await connect(context, uri.host, forceRelay: true);
+                    } else {
+                      throw Exception('Ungültige Verbindungsfreigabe');
+                    }
+                  })
+                : const SizedBox.shrink()),
           ],
         ).paddingOnly(left: 12.0)),
         if (!isOutgoingOnly) const Divider(height: 1),

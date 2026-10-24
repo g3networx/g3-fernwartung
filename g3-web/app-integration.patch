@@ -1,0 +1,29 @@
+--- a/app.py
++++ b/app.py
+@@ -52,7 +52,7 @@
+                 g.user=dict(s if checked is True else checked)
+                 if g.user['central_admin']:g.user['role']='admin'
+                 run('UPDATE sessions SET seen=? WHERE token=?',(now,g.sid))
+-    if request.method=='POST' and request.endpoint and request.endpoint not in ('enroll_register','customer_enroll_register','provision_confirm','client_activity','client_bootstrap','client_session'):
++    if request.method=='POST' and request.endpoint and request.endpoint not in ('enroll_register','customer_enroll_register','provision_confirm','client_activity','client_bootstrap','client_session','native_ab_start','native_ab_poll','native_ab_connect','native_ab_logout'):
+         if request.headers.get('Origin') not in (None,'null','https://rust.g3nx.net','https://opslinx.g3nx.net','https://opslinx.g3networx.de'):
+             app.logger.warning('Request origin rejected: %r',request.headers.get('Origin'));abort(403)
+         if not secrets.compare_digest(request.form.get('csrf',''),csrf()):
+@@ -122,7 +122,7 @@
+     run('INSERT INTO attempts(k,ts) VALUES(?,?)',(key,now))
+ def create_session(u,central_token=''):
+     session.clear();sid=secrets.token_urlsafe(48);now=int(time.time())
+-    run('DELETE FROM sessions WHERE expires<? OR seen<?',(now,now-1800))
++    run('DELETE FROM sessions WHERE expires<? OR (seen<? AND token NOT IN (SELECT token FROM native_ab_sessions))',(now,now-1800))
+     run('INSERT INTO sessions(token,uid,expires,seen,central_token,central_checked) VALUES(?,?,?,?,?,?)',(hashlib.sha256(sid.encode()).hexdigest(),u['id'],now+28800,now,enc(central_token),now if central_token else 0))
+     r=redirect('/setup' if u['setup'] else '/')
+     r.set_cookie('__Host-rdab',sid,secure=True,httponly=True,samesite='Strict',max_age=28800,path='/')
+@@ -388,6 +388,8 @@
+ install_security_gate(app,__import__(__name__))
+ from service_rotation import install as install_service_rotation
+ install_service_rotation(app,__import__(__name__))
++from native_addressbook import install as install_native_addressbook
++install_native_addressbook(app,__import__(__name__))
+ if __name__=='__main__':
+     import argparse
+     p=argparse.ArgumentParser();p.add_argument('action',choices=['init','bootstrap']);args=p.parse_args();init()
