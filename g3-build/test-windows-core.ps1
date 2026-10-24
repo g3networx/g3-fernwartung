@@ -43,6 +43,9 @@ Add-Type -ReferencedAssemblies @(([Accessibility.IAccessible].Assembly.Location)
 using System;
 using System.Runtime.InteropServices;
 public static class HostAccessibility {
+ [StructLayout(LayoutKind.Sequential)] public struct Point {public int X;public int Y;}
+ [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr window,ref Point point);
+ [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window,uint message,IntPtr wparam,IntPtr lparam);
  [DllImport("oleacc.dll")] public static extern int AccessibleObjectFromWindow(IntPtr window,uint id,ref Guid iid,[MarshalAs(UnmanagedType.Interface)] out object accessible);
  public delegate bool EnumChild(IntPtr child,IntPtr state);
  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr window,EnumChild callback,IntPtr state);
@@ -97,7 +100,21 @@ public static class HostAccessibility {
     if(button!=null)return false;button=node;
    }
   }
-  if(button==null)return false;button.accDoDefaultAction(0);return true;
+  if(button!=null){button.accDoDefaultAction(0);return true;}
+  // This Flutter InkWell has no MSAA node. Its existing source places a
+  // 30px Settings action at the right of the ID heading, above the ID field.
+  int fieldRight=0,fieldTop=Int32.MaxValue;
+  foreach(var node in nodes) {
+   int nx,ny,nw,nh;node.accLocation(out nx,out ny,out nw,out nh,0);
+   if(Math.Abs(nx-x)<=5 && ny>y && ny-y<=45 && nw>=100 && nh>=18 && nh<=50 && ny<fieldTop) {
+    fieldTop=ny;fieldRight=nx+nw;
+   }
+  }
+  if(fieldRight==0)return false;
+  Point point=new Point{X=fieldRight-15,Y=y+h/2};
+  if(!ScreenToClient(window,ref point) || point.X<0 || point.Y<0)return false;
+  IntPtr position=new IntPtr((point.Y<<16)|(point.X&65535));
+  return PostMessage(window,513,new IntPtr(1),position) && PostMessage(window,514,IntPtr.Zero,position);
  }
  public static string[] SafeLayout(IntPtr window) {
   object accessible;Guid iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
