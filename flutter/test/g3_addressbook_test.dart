@@ -179,4 +179,109 @@ void main() {
     expect(find.text('Mit g3 anmelden'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+  testWidgets('Edits device metadata without replacing the saved password',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final editable = jsonDecode(jsonEncode(tree)) as Map<String, dynamic>;
+    editable['capabilities'] = {
+      'can_create_root': true,
+      'can_move_devices': true,
+      'can_delete_devices': true
+    };
+    for (final book in editable['books']) {
+      book.addAll({'can_edit': true, 'can_add_book': true, 'can_reveal': true});
+    }
+    Map<String, dynamic>? saved;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/devices/7')) {
+        return http.Response(
+            jsonEncode({
+              'id': 7,
+              'customer_id': 3,
+              'name': 'TEST-SERVER',
+              'rustdesk_id': '123456789',
+              'notes': 'Old',
+              'username': 'fixture',
+              'can_reveal': true,
+              'has_credential': true
+            }),
+            200);
+      }
+      if (request.url.path.endsWith('/devices/save')) {
+        saved = jsonDecode(request.body) as Map<String, dynamic>;
+        editable['devices'][0]['name'] = saved!['name'];
+        return http.Response('{"saved":true,"id":7}', 200);
+      }
+      return http.Response(jsonEncode(editable), 200,
+          headers: {'content-type': 'application/json; charset=utf-8'});
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: G3AddressBook(
+                api: G3AddressBookApi(client: client),
+                credentials: FixtureCredentials(),
+                onConnect: (_) async {}))));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '123456789');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEST-SERVER'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bearbeiten'));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), 'Edited server');
+    await tester.tap(find.text('Speichern'));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    expect(saved?['name'], 'Edited server');
+    expect(saved?['credential'], '');
+    expect(saved?['clear_credential'], false);
+    expect(find.text('Edited server'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Creates an address book through the client toolbar',
+      (tester) async {
+    final editable = jsonDecode(jsonEncode(tree)) as Map<String, dynamic>;
+    editable['capabilities'] = {'can_create_root': true};
+    Map<String, dynamic>? saved;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/books/save')) {
+        saved = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response('{"saved":true,"id":9}', 200);
+      }
+      return http.Response(jsonEncode(editable), 200,
+          headers: {'content-type': 'application/json; charset=utf-8'});
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: G3AddressBook(
+                api: G3AddressBookApi(client: client),
+                credentials: FixtureCredentials(),
+                onConnect: (_) async {}))));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Adressbuch hinzufügen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(TextFormField).first, 'New address book');
+    await tester.tap(find.text('Speichern'));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    expect(saved?['name'], 'New address book');
+    expect(saved?['parent_id'], isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

@@ -83,4 +83,40 @@ class NativeAddressBook(unittest.TestCase):
   finally:m.app.config.pop('CENTRAL_CHECK')
   with m.app.app_context():m.run('UPDATE users SET active=0 WHERE id=1')
   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,401)
+ def test_native_edit_create_update_delete_and_password_preservation(self):
+  self.grant()
+  created=self.post('books/save',{'name':'New book','parent_id':1});self.assertEqual(created.status_code,200);cid=created.json['id']
+  self.assertEqual(self.post('books/save',{'name':'Root','parent_id':None}).status_code,403)
+  new=self.post('devices/save',{'customer_id':cid,'name':'New device','rustdesk_id':'123456789','notes':'Note','username':'fixture-user','credential':'fixture-only-secret'});self.assertEqual(new.status_code,200);did=new.json['id']
+  form=self.client.get('/client-addressbook/devices/'+str(did),headers=self.headers,base_url=self.base)
+  self.assertEqual(form.json['username'],'fixture-user');self.assertTrue(form.json['has_credential']);self.assertNotIn(b'fixture-only-secret',form.data)
+  self.assertEqual(self.post('books/delete',{'id':cid}).status_code,409)
+  saved=self.post('devices/save',{'id':did,'customer_id':cid,'name':'Renamed','rustdesk_id':'123456789','notes':'New note'})
+  self.assertEqual(saved.status_code,200)
+  with m.app.app_context():
+   row=m.db().execute('SELECT * FROM devices WHERE id=?',(did,)).fetchone();self.assertEqual(m.dec(row['credential']),'fixture-only-secret');self.assertEqual(m.decrypt_username(row['username']),'fixture-user');self.assertEqual(row['notes'],'New note')
+  self.assertEqual(self.post('devices/delete',{'id':did}).status_code,200)
+  self.assertEqual(self.post('books/delete',{'id':cid}).status_code,200)
+ def test_native_edit_permission_rechecks_and_credentials_require_reveal(self):
+  self.grant()
+  self.assertEqual(self.post('devices/save',{'id':2,'customer_id':1,'name':'No','rustdesk_id':'12345678'}).status_code,404)
+  with m.app.app_context():m.run('UPDATE grants SET can_reveal=0 WHERE uid=1')
+  form=self.client.get('/client-addressbook/devices/1',headers=self.headers,base_url=self.base)
+  self.assertFalse(form.json['can_reveal']);self.assertEqual(form.json['username'],'')
+  body={'id':1,'customer_id':1,'name':'Allowed note','rustdesk_id':'10000001','notes':'Changed'}
+  self.assertEqual(self.post('devices/save',dict(body,credential='denied')).status_code,403)
+  self.assertEqual(self.post('devices/save',dict(body,username='denied')).status_code,403)
+  self.assertEqual(self.post('devices/save',body).status_code,200)
+  with m.app.app_context():self.assertEqual(m.dec(m.db().execute('SELECT credential FROM devices WHERE id=1').fetchone()[0]),'test-secret')
+  self.assertEqual(self.post('devices/save',dict(body,customer_id=3)).status_code,403)
+  with m.app.app_context():m.run('UPDATE grants SET can_edit=0 WHERE uid=1')
+  self.assertEqual(self.post('devices/save',body).status_code,404)
+  self.assertEqual(self.post('books/save',{'id':1,'name':'Denied'}).status_code,404)
+ def test_native_mutations_reject_browser_origin_and_missing_authority(self):
+  self.grant()
+  body={'id':1,'name':'Denied'}
+  self.assertEqual(self.post('books/save',body,headers=dict(self.headers,Origin='https://rust.g3nx.net')).status_code,403)
+  self.assertEqual(self.post('books/save',body,headers={'X-G3-Native':'1'}).status_code,401)
+  with m.app.app_context():m.run('UPDATE users SET active=0 WHERE id=1')
+  self.assertEqual(self.post('devices/delete',{'id':1}).status_code,401)
 if __name__=='__main__':unittest.main()

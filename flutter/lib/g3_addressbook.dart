@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'g3_addressbook_api.dart';
+import 'g3_addressbook_edit.dart';
 import 'g3_addressbook_credentials.dart';
 
 class G3AddressBook extends StatefulWidget {
@@ -21,6 +22,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
   final expanded = <int>{};
   List<Map<String, dynamic>> books = [], devices = [];
   Map<String, dynamic>? selected;
+  Map<String, dynamic> capabilities = {};
   String? username, error, displayCode;
   bool busy = false, remember = true, loading = false;
   int generation = 0;
@@ -65,6 +67,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
       if (!mounted || current != generation) return;
       setState(() {
         username = data['username'] as String;
+        capabilities = (data['capabilities'] as Map<String, dynamic>?) ?? {};
         books = (data['books'] as List).cast<Map<String, dynamic>>();
         devices = (data['devices'] as List).cast<Map<String, dynamic>>();
         final matches = devices.where((d) => d['id'] == selected?['id']);
@@ -240,6 +243,78 @@ class _G3AddressBookState extends State<G3AddressBook> {
     }
   }
 
+  Future<void> mutate(Future<void> Function() action) async {
+    if (busy || loading) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    String? failure;
+    try {
+      await action();
+    } on G3AddressBookExpired {
+      await load();
+    } catch (e) {
+      failure = e.toString();
+    } finally {
+      if (mounted) {
+        await load();
+        if (mounted) {
+          setState(() {
+            busy = false;
+            if (failure != null) error = failure;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> editDevice({Map<String, dynamic>? device, int? bookId}) =>
+      mutate(() async {
+        final entry = device == null
+            ? null
+            : await api.request('devices/${device['id']}');
+        if (!mounted) return;
+        await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => G3AddressBookEditor(
+                api: api,
+                books: books,
+                entry: entry,
+                parentId: bookId,
+                device: true,
+                canMove: capabilities['can_move_devices'] == true));
+      });
+
+  Future<void> editBook({Map<String, dynamic>? book, int? parentId}) =>
+      mutate(() async {
+        final canRoot = capabilities['can_create_root'] == true;
+        final parents = books.where((b) => b['can_add_book'] == true).toList();
+        if (book == null && !canRoot && parentId == null && parents.isEmpty) {
+          return;
+        }
+        await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => G3AddressBookEditor(
+                api: api,
+                books: books,
+                entry: book,
+                parentId: parentId ??
+                    (!canRoot && parents.isNotEmpty
+                        ? parents.first['id'] as int
+                        : null),
+                device: false,
+                canCreateRoot: canRoot));
+      });
+
+  Future<void> deleteEntry(String kind, Map<String, dynamic> entry) =>
+      mutate(() async {
+        await g3DeleteEntry(
+            context, api, kind, entry['id'] as int, entry['name'] as String);
+      });
+
   bool matches(Map<String, dynamic> d, String query) =>
       '${d['name']} ${d['rustdesk_id']}'.toLowerCase().contains(query);
 
@@ -268,7 +343,32 @@ class _G3AddressBookState extends State<G3AddressBook> {
             left: 8 + (depth.clamp(0, 8) * 14).toDouble(), right: 4),
         leading: Icon(isOpen ? Icons.folder_open : Icons.folder_outlined),
         title: Text(book['name'] as String, overflow: TextOverflow.ellipsis),
-        trailing: Icon(isOpen ? Icons.expand_more : Icons.chevron_right),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(isOpen ? Icons.expand_more : Icons.chevron_right),
+          if (book['can_edit'] == true)
+            PopupMenuButton<String>(
+                tooltip: 'Adressbuch verwalten',
+                enabled: !busy,
+                onSelected: (action) {
+                  if (action == 'edit') editBook(book: book);
+                  if (action == 'book') editBook(parentId: id);
+                  if (action == 'device') editDevice(bookId: id);
+                  if (action == 'delete') deleteEntry('books', book);
+                },
+                itemBuilder: (_) => [
+                      const PopupMenuItem(
+                          value: 'edit', child: Text('Adressbuch bearbeiten')),
+                      if (book['can_add_book'] == true)
+                        const PopupMenuItem(
+                            value: 'book',
+                            child: Text('Unteradressbuch hinzufügen')),
+                      const PopupMenuItem(
+                          value: 'device', child: Text('Gerät hinzufügen')),
+                      if (book['can_delete'] == true)
+                        const PopupMenuItem(
+                            value: 'delete', child: Text('Adressbuch löschen')),
+                    ]),
+        ]),
         onTap: () => setState(() {
           if (!expanded.add(id)) expanded.remove(id);
         }),
@@ -342,6 +442,18 @@ class _G3AddressBookState extends State<G3AddressBook> {
               onPressed: busy ? null : () => open(d),
               icon: const Icon(Icons.desktop_windows),
               label: const Text('Verbinden')),
+          if (book['can_edit'] == true)
+            Wrap(spacing: 8, children: [
+              TextButton.icon(
+                  onPressed: busy ? null : () => editDevice(device: d),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Bearbeiten')),
+              if (capabilities['can_delete_devices'] == true)
+                TextButton.icon(
+                    onPressed: busy ? null : () => deleteEntry('devices', d),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Löschen')),
+            ]),
         ]));
   }
 
@@ -363,6 +475,19 @@ class _G3AddressBookState extends State<G3AddressBook> {
                       TextButton(
                           onPressed: busy ? null : logout,
                           child: const Text('Abmelden')),
+                    if (username != null &&
+                        (capabilities['can_create_root'] == true ||
+                            books.any((b) => b['can_add_book'] == true)))
+                      IconButton(
+                          tooltip: 'Adressbuch hinzufügen',
+                          onPressed: busy ? null : () => editBook(),
+                          icon: const Icon(Icons.create_new_folder_outlined)),
+                    if (username != null &&
+                        books.any((b) => b['can_edit'] == true))
+                      IconButton(
+                          tooltip: 'Gerät hinzufügen',
+                          onPressed: busy ? null : () => editDevice(),
+                          icon: const Icon(Icons.add_to_queue)),
                     if (api.token != null)
                       IconButton(
                           tooltip: 'Adressbuch neu laden',

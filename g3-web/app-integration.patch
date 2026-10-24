@@ -5,7 +5,7 @@
                  if g.user['central_admin']:g.user['role']='admin'
                  run('UPDATE sessions SET seen=? WHERE token=?',(now,g.sid))
 -    if request.method=='POST' and request.endpoint and request.endpoint not in ('enroll_register','customer_enroll_register','provision_confirm','client_activity','client_bootstrap','client_session'):
-+    if request.method=='POST' and request.endpoint and request.endpoint not in ('enroll_register','customer_enroll_register','provision_confirm','client_activity','client_bootstrap','client_session','native_ab_start','native_ab_poll','native_ab_connect','native_ab_logout'):
++    if request.method=='POST' and request.endpoint and request.endpoint not in ('enroll_register','customer_enroll_register','provision_confirm','client_activity','client_bootstrap','client_session','native_ab_start','native_ab_poll','native_ab_connect','native_ab_logout','native_ab_device_save','native_ab_device_delete','native_ab_book_save','native_ab_book_delete'):
          if request.headers.get('Origin') not in (None,'null','https://rust.g3nx.net','https://opslinx.g3nx.net','https://opslinx.g3networx.de'):
              app.logger.warning('Request origin rejected: %r',request.headers.get('Origin'));abort(403)
          if not secrets.compare_digest(request.form.get('csrf',''),csrf()):

@@ -5,6 +5,19 @@ import 'package:http/http.dart' as http;
 
 class G3AddressBookExpired implements Exception {}
 
+class G3AddressBookRequestError implements Exception {
+  final int status;
+  G3AddressBookRequestError(this.status);
+  @override
+  String toString() => status == 409
+      ? 'Das Adressbuch ist nicht leer oder kann nicht gelöscht werden.'
+      : status == 403 || status == 404
+          ? 'Keine Berechtigung oder der Eintrag ist nicht mehr verfügbar.'
+          : status == 400
+              ? 'Bitte die Eingaben prüfen.'
+              : 'Adressbuch-Anfrage fehlgeschlagen. Bitte erneut versuchen.';
+}
+
 class G3AddressBookApi {
   String? token;
   final http.Client client;
@@ -34,7 +47,7 @@ class G3AddressBookApi {
     }
     if (response.statusCode != 200 && response.statusCode != 202) {
       await response.stream.drain<void>();
-      throw Exception('Adressbuch-Anfrage fehlgeschlagen');
+      throw G3AddressBookRequestError(response.statusCode);
     }
     final bytes = <int>[];
     await for (final chunk

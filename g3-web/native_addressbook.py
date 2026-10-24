@@ -1,6 +1,7 @@
 """Scoped native address book, approved through the existing g3 browser login."""
 import base64, hashlib, re, secrets, time
 from flask import g, request, abort, redirect, render_template, jsonify
+from native_addressbook_edit import install as install_edit, capabilities, book_permissions
 
 def digest(value):
  return hashlib.sha256(value.encode()).hexdigest()
@@ -92,7 +93,7 @@ def install(app, m):
   for d in m.db().execute('SELECT id,customer_id,name,rustdesk_id FROM devices ORDER BY name COLLATE NOCASE'):
    if d['customer_id'] in allowed:
     devices.append(dict(d,presence=app.jinja_env.globals['device_presence'](d['rustdesk_id'])))
-  return jsonify(username=user['username'].removeprefix('portal:'),books=[dict(id=b['id'],parent_id=b['parent_id'] if b['parent_id'] in allowed else None,name=b['name'],path=b['path']) for b in books],devices=devices)
+  return jsonify(username=user['username'].removeprefix('portal:'),capabilities=capabilities(m,user,books),books=[dict(id=b['id'],parent_id=b['parent_id'] if b['parent_id'] in allowed else None,name=b['name'],path=b['path'],**book_permissions(m,user,b)) for b in books],devices=devices)
 
  @app.post('/client-addressbook/connect')
  def native_ab_connect():
@@ -108,3 +109,5 @@ def install(app, m):
   native_json();identity()
   m.run('DELETE FROM native_ab_sessions WHERE token=?',(g.sid,));m.run('DELETE FROM sessions WHERE token=?',(g.sid,));m.audit('native_addressbook_logout')
   return dict(logged_out=True)
+
+ install_edit(app,m,identity,native_json)
