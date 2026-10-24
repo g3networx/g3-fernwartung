@@ -99,6 +99,19 @@ public static class HostAccessibility {
   }
   if(button==null)return false;button.accDoDefaultAction(0);return true;
  }
+ public static string[] SafeLayout(IntPtr window) {
+  object accessible;Guid iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
+  if(AccessibleObjectFromWindow(window,4294967292,ref iid,out accessible)!=0)return new string[0];
+  var nodes=new System.Collections.Generic.List<Accessibility.IAccessible>();Nodes((Accessibility.IAccessible)accessible,nodes,0);
+  var result=new System.Collections.Generic.List<string>();
+  foreach(var node in nodes) {
+   string name=(node.get_accName(0)??"").Trim();
+   string marker=name=="ID"?"ID":name=="Updates"?"Updates":name=="Settings"||name=="Einstellungen"?"Settings":name.Length==0?"empty":"redacted";
+   int x,y,w,h;node.accLocation(out x,out y,out w,out h,0);
+   result.Add(String.Format("{0};role={1};action={2};bounds={3},{4},{5},{6}",marker,Convert.ToInt32(node.get_accRole(0)),!String.IsNullOrEmpty(node.get_accDefaultAction(0)),x,y,w,h));
+  }
+  return result.ToArray();
+ }
 }
 '@
 $childWindows=@([HostAccessibility]::Children($gui.MainWindowHandle))
@@ -119,7 +132,10 @@ if(!$interfaceReady){
 }
 $settingsOpened=$false
 foreach($child in $childWindows){if([HostAccessibility]::OpenSettings($child)){$settingsOpened=$true;break}}
-if(!$settingsOpened){throw 'Unique Host Settings action beside the ID board was not accessible'}
+if(!$settingsOpened){
+ @(foreach($child in $childWindows){[HostAccessibility]::SafeLayout($child)}) | ConvertTo-Json -Compress | Write-Output
+ throw 'Unique Host Settings action beside the ID board was not accessible'
+}
 $deadline=(Get-Date).AddSeconds(15);$settingsReady=$false
 do {
  $settingsLabels=@(foreach($child in $childWindows){[HostAccessibility]::Labels($child)})
