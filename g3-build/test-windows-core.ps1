@@ -36,6 +36,18 @@ do {
 }while(!$gui -and (Get-Date) -lt $deadline)
 if(!$gui){throw 'Host interface did not open from the installed native launcher'}
 if($gui.Path -ne (Join-Path $root 'g3Host-ui.exe')){throw 'Host interface launched outside the installed payload'}
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$window=[Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
+$deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
+do {
+ $nodes=$window.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
+ $labels=@($nodes | ForEach-Object {$_.Current.Name})
+ $plain=($labels -join ' ') -replace '\s',''
+ $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '^Settings$|^Einstellungen$')
+ if(!$interfaceReady){Start-Sleep -Milliseconds 500}
+}while(!$interfaceReady -and (Get-Date) -lt $deadline)
+if(!$interfaceReady){throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"
 extern crate self as hbb_common;
@@ -63,4 +75,4 @@ $remove=Start-Process msiexec.exe -ArgumentList ('/x "'+$msi+'" /qn REBOOT=Reall
 if($remove.ExitCode -notin @(0,3010)){throw 'Disposable removal failed'}
 if(Get-Service g3Host -ErrorAction SilentlyContinue){throw 'Service not removed'}
 if((Get-CimInstance Win32_OperatingSystem).LastBootUpTime -ne $boot){throw 'Runner rebooted'}
-@{version=$proof.version;native_core_version=$version;clean_install=$true;native_cli=$true;active_lease_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;identity_preserved=$true;uninstall=$true;no_reboot=$true;actual_server_core_runtime='requires separate target preflight';scope='disposable GitHub-hosted Windows runner'} | ConvertTo-Json | Set-Content (Join-Path $PackageDirectory 'core-installation-acceptance.json') -Encoding utf8
+@{version=$proof.version;native_core_version=$version;clean_install=$true;native_cli=$true;host_interface_opened=$true;host_interface_id_otp_updates_settings=$true;active_lease_deferred=$true;service_pid_unchanged_while_busy=$true;idle_repair=$true;identity_preserved=$true;uninstall=$true;no_reboot=$true;actual_server_core_runtime='requires separate target preflight';scope='disposable GitHub-hosted Windows runner'} | ConvertTo-Json | Set-Content (Join-Path $PackageDirectory 'core-installation-acceptance.json') -Encoding utf8
