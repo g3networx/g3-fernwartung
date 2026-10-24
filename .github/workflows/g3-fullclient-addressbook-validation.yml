@@ -51,7 +51,7 @@ jobs:
           if(Test-Path candidate/acceptance.json){Copy-Item candidate/acceptance.json evidence/}
           if(Test-Path candidate/ui-diagnostic.json){Copy-Item candidate/ui-diagnostic.json evidence/}
           if(Test-Path outputs/FullClient-g3.29-Sitzungssperre-Regression.json){Copy-Item outputs/FullClient-g3.29-Sitzungssperre-Regression.json evidence/}
-          Get-ChildItem C:/ProgramData/g3-NetworX-Setup-g3Fernwartung-1.5.0-g3.30 -File -ErrorAction SilentlyContinue | Where-Object {$_.Name -in @('result.txt','update-error.txt','install.log')} | Copy-Item -Destination evidence/
+          Get-ChildItem C:/ProgramData/g3-NetworX-Setup-g3Fernwartung-1.5.0-g3.31 -File -ErrorAction SilentlyContinue | Where-Object {$_.Name -in @('result.txt','update-error.txt','install.log')} | Copy-Item -Destination evidence/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:

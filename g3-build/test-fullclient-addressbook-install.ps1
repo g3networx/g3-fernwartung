@@ -6,8 +6,8 @@ $proof=Get-Content (Join-Path $package 'candidate.json') -Raw|ConvertFrom-Json
 foreach($item in $proof.packages){$file=Join-Path $package $item.file;if((Get-Item $file).Length -ne $item.size -or (Get-FileHash $file).Hash.ToLowerInvariant() -ne $item.sha256){throw 'Pinned package mismatch'}}
 $boot=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime
 $root=Join-Path $env:ProgramFiles 'g3Fernwartung';$exe=Join-Path $root 'g3Fernwartung.exe'
-$setup=Join-Path $package 'g3-OpsLinX-1.5.0-g3.30-install.exe';$msi=Join-Path $package 'g3-OpsLinX-1.5.0-g3.30-install.msi'
-$baselineSetup=Join-Path $package 'g3-OpsLinX-1.5.0-g3.29-install.exe';$baselineMsi=Join-Path $package 'g3-OpsLinX-1.5.0-g3.29-install.msi'
+$setup=Join-Path $package 'g3-OpsLinX-1.5.0-g3.31-install.exe';$msi=Join-Path $package 'g3-OpsLinX-1.5.0-g3.31-install.msi'
+$baselineSetup=Join-Path $package 'g3-OpsLinX-1.5.0-g3.30-install.exe';$baselineMsi=Join-Path $package 'g3-OpsLinX-1.5.0-g3.30-install.msi'
 function Worker([string]$launcher=$setup,[string]$database=$msi){
  $p=Start-Process $launcher -ArgumentList @('--g3-install-worker',('"'+$database+'"')) -WindowStyle Hidden -Wait -PassThru
  return $p.ExitCode
@@ -16,7 +16,7 @@ function Ready {
  if((Get-Service g3Fernwartung).Status -ne 'Running'){throw 'FullClient service not running'}
  if((Get-Service g3Fernwartung).StartType -ne 'Automatic'){throw 'FullClient autostart missing'}
  $product=Get-ItemProperty ('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\'+$proof.product_code)
- if($product.DisplayVersion -ne '1.5.30'){throw 'Incorrect installed product version'}
+ if($product.DisplayVersion -ne '1.5.31'){throw 'Incorrect installed product version'}
  if((Get-FileHash (Join-Path $root 'librustdesk.dll')).Hash.ToLowerInvariant() -ne $proof.native_sha256){throw 'Accepted native core differs'}
  $recovery=(& sc.exe qfailure g3Fernwartung|Out-String)
  if([regex]::Matches($recovery,'RESTART\s+--\s+Delay = 60000 milliseconds').Count -ne 3 -or $recovery -notmatch '86400'){throw 'Service recovery differs'}
@@ -64,7 +64,7 @@ do {
  }
  if($guiWindow -ne [IntPtr]::Zero){$gui=$processes|Where-Object { $_.Id -eq [FullClientAccessibility]::Owner($guiWindow)}|Select-Object -First 1}
 
- $versionPresent=[bool]($labels -match '1\.5\.0-g3\.30')
+ $versionPresent=[bool]($labels -match '1\.5\.0-g3\.31')
  $addressbookPresent=[bool]($labels -match 'g3-Adressbuch')
  $loginPresent=[bool]($labels -match 'Mit g3 anmelden')
 }while((!$versionPresent -or !$addressbookPresent -or !$loginPresent) -and (Get-Date) -lt $deadline)
@@ -90,11 +90,11 @@ if((Worker) -notin @(0,3010)){throw 'Repair failed'}
 Ready;if((Identity) -ne $id){throw 'Repair changed identity'}
 $gui.Refresh();if(!$gui.HasExited){throw 'Idle native GUI did not voluntarily exit during repair'}
 RemoveNew
-if((Worker $baselineSetup $baselineMsi) -notin @(0,3010)){throw 'Accepted g3.29 baseline failed'}
+if((Worker $baselineSetup $baselineMsi) -notin @(0,3010)){throw 'Accepted g3.30 baseline failed'}
 $oldID=Identity
-if((Worker) -notin @(0,3010)){throw 'g3.29 to g3.30 upgrade failed'}
+if((Worker) -notin @(0,3010)){throw 'g3.30 to g3.31 upgrade failed'}
 Ready;if((Identity) -ne $oldID){throw 'Upgrade changed identity'}
 RemoveNew
 if(Get-Service g3Fernwartung -ErrorAction SilentlyContinue){throw 'Uninstall retained service'}
 if((Get-CimInstance Win32_OperatingSystem).LastBootUpTime -ne $boot){throw 'Operating system rebooted'}
-@{version='1.5.0-g3.30';clean_install=$true;installed_addressbook_and_login_displayed=$true;installed_version_displayed=$true;active_session_deferred_1618=$true;service_pid_unchanged_while_busy=$true;idle_gui_exit_voluntary=$true;repair_identity_preserved=$true;upgrade_from_g329_identity_preserved=$true;uninstall=$true;no_os_reboot=$true;host_not_installed=$true;source_commit=$proof.source_commit;validator_commit=$env:GITHUB_SHA;scope='disposable GitHub-hosted Windows runner';real_user_login_and_connection='not claimed by fixture'}|ConvertTo-Json|Set-Content (Join-Path $package 'acceptance.json') -Encoding utf8
+@{version='1.5.0-g3.31';clean_install=$true;installed_addressbook_and_login_displayed=$true;installed_version_displayed=$true;active_session_deferred_1618=$true;service_pid_unchanged_while_busy=$true;idle_gui_exit_voluntary=$true;repair_identity_preserved=$true;upgrade_from_g330_identity_preserved=$true;uninstall=$true;no_os_reboot=$true;host_not_installed=$true;source_commit=$proof.source_commit;validator_commit=$env:GITHUB_SHA;scope='disposable GitHub-hosted Windows runner';real_user_login_and_connection='not claimed by fixture'}|ConvertTo-Json|Set-Content (Join-Path $package 'acceptance.json') -Encoding utf8
