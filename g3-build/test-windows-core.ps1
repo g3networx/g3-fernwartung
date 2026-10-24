@@ -51,16 +51,20 @@ public static class HostAccessibility {
   EnumChildWindows(window,(child,state)=>{handles.Add(child);return true;},IntPtr.Zero);
   return handles.ToArray();
  }
+ static void Fields(Accessibility.IAccessible node,int child,System.Collections.Generic.List<string> labels) {
+  labels.Add(node.get_accName(child)??"");
+  labels.Add(node.get_accDescription(child)??"");
+  try {labels.Add(node.get_accValue(child)??"");}catch(COMException){}
+  try {labels.Add(node.get_accHelp(child)??"");}catch(COMException){}
+ }
  static void Read(Accessibility.IAccessible node,System.Collections.Generic.List<string> labels,int depth) {
   if(depth>64 || labels.Count>2000)return;
-  labels.Add(node.get_accName(0)??"");
-  labels.Add(node.get_accDescription(0)??"");
-  if(Convert.ToInt32(node.get_accRole(0))==42)labels.Add(node.get_accValue(0)??"");
+  Fields(node,0,labels);
   int count=Math.Min(node.accChildCount,500);
   for(int i=1;i<=count;i++) {
    object child=node.get_accChild(i);
    if(child is Accessibility.IAccessible)Read((Accessibility.IAccessible)child,labels,depth+1);
-   else {labels.Add(node.get_accName(i)??"");if(Convert.ToInt32(node.get_accRole(i))==42)labels.Add(node.get_accValue(i)??"");}
+   else Fields(node,i,labels);
   }
  }
  public static string[] Labels(IntPtr window) {
@@ -74,14 +78,18 @@ public static class HostAccessibility {
 '@
 $childWindows=@([HostAccessibility]::Children($gui.MainWindowHandle))
 $deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
+$initialId=$id
 do {
+ $id=(& $exe --get-id | Out-String).Trim()
+ if($id -notmatch '^\d{6,12}$'){throw 'Native identity unavailable during interface check'}
  $labels=@(foreach($child in $childWindows){[HostAccessibility]::Labels($child)})
  $plain=($labels -join ' ') -replace '\s',''
- $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '^Settings$|^Einstellungen$')
+ $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '\bSettings\b|\bEinstellungen\b')
  if(!$interfaceReady){Start-Sleep -Milliseconds 500}
 }while(!$interfaceReady -and (Get-Date) -lt $deadline)
 if(!$interfaceReady){
- @{labelCount=$labels.Count;embeddedWindows=$childWindows.Count;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
+ $aliasId=(& (Join-Path $root 'g3Host-ui.exe') --get-id | Out-String).Trim()
+ @{labelCount=$labels.Count;embeddedWindows=$childWindows.Count;idChangedDuringView=($id -ne $initialId);aliasCliMatchesService=($aliasId -eq $id);idPresent=$plain.Contains($id);numericFieldLengths=@($labels | Where-Object {($_ -replace '\s','') -match '^\d{6,12}$'} | ForEach-Object {($_ -replace '\s','').Length});passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '\bSettings\b|\bEinstellungen\b')} | ConvertTo-Json -Compress | Write-Output
  throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'
 }
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
