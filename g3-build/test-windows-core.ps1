@@ -46,7 +46,7 @@ public static class HostAccessibility {
 }
 '@
 $accessible=$null;$accessibleId=[guid]'618736E0-3C3D-11CF-810C-00AA00389B71'
-$accessibilityResult=[HostAccessibility]::AccessibleObjectFromWindow($gui.MainWindowHandle,0xfffffffc,[ref]$accessibleId,[ref]$accessible)
+$accessibilityResult=[HostAccessibility]::AccessibleObjectFromWindow($gui.MainWindowHandle,[uint32]4294967292,[ref]$accessibleId,[ref]$accessible)
 $window=[Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
 $deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
 do {
