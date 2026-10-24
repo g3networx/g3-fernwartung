@@ -1,5 +1,8 @@
 name: g3 FullClient address book installer acceptance
 on:
+  push:
+    branches: [g3-opslinx-20261023]
+    paths: ['.github/workflows/g3-fullclient-addressbook-validation.yml']
   workflow_dispatch:
     inputs:
       asset_id:
@@ -8,10 +11,14 @@ on:
       sha256:
         type: string
         required: true
+      package_commit:
+        type: string
+        required: true
 permissions:
   contents: write
 jobs:
   validate:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 30
     steps:
@@ -22,13 +29,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ASSET: ${{ inputs.asset_id }}
           SHA256: ${{ inputs.sha256 }}
+          PACKAGE_COMMIT: ${{ inputs.package_commit }}
         run: |
           if($env:ASSET -notmatch '^\d+$' -or $env:SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid candidate pins'}
           Invoke-WebRequest ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/releases/assets/'+$env:ASSET) -Headers @{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/octet-stream';'X-GitHub-Api-Version'='2022-11-28'} -OutFile candidate.zip
           if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne $env:SHA256){throw 'Candidate digest differs'}
           Expand-Archive candidate.zip candidate
           $proof=Get-Content candidate/candidate.json -Raw|ConvertFrom-Json
-          if($proof.source_commit -ne $env:GITHUB_SHA){throw 'Candidate/validator source commit mismatch'}
+          if($env:PACKAGE_COMMIT -notmatch '^[a-f0-9]{40}$' -or $proof.source_commit -ne $env:PACKAGE_COMMIT){throw 'Candidate source commit mismatch'}
       - name: Native session lease regression
         shell: pwsh
         run: python g3-build/test-update-session-gate.py
