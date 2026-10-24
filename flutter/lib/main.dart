@@ -188,7 +188,11 @@ void runMainApp(bool startService) async {
       rustDeskWinManager.registerActiveWindow(kWindowMainId);
     }
     windowManager.setOpacity(1);
-    windowManager.setTitle(getWindowName());
+    windowManager.setTitle(getWindowName() +
+        (bind.mainGetAppNameSync() == 'g3Fernwartung' &&
+                kBootArgs.contains('--g3-addressbook-preview')
+            ? ' - Adressbuch-Vorschau'
+            : ''));
     // Do not use `windowManager.setResizable()` here.
     setResizable(!bind.isIncomingOnly());
   });

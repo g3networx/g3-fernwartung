@@ -89,6 +89,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     }
   }
 
+  // Keep the explicit FullClient preview separate from a running installed UI.
+  if (app_name == L"g3Fernwartung" &&
+      std::find(command_line_arguments.begin(), command_line_arguments.end(),
+                "--g3-addressbook-preview") != command_line_arguments.end()) {
+    app_name += L" - Adressbuch-Vorschau";
+  }
+
   // Uri links dispatch
   HWND hwnd = ::FindWindowW(getWindowClassName(), app_name.c_str());
   if (hwnd != NULL) {
