@@ -43,10 +43,19 @@ using System;
 using System.Runtime.InteropServices;
 public static class HostAccessibility {
  [DllImport("oleacc.dll")] public static extern int AccessibleObjectFromWindow(IntPtr window,uint id,ref Guid iid,[MarshalAs(UnmanagedType.Interface)] out object accessible);
+ public delegate bool EnumChild(IntPtr child,IntPtr state);
+ [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr window,EnumChild callback,IntPtr state);
+ public static IntPtr[] Children(IntPtr window) {
+  var handles=new System.Collections.Generic.List<IntPtr>();
+  EnumChildWindows(window,(child,state)=>{handles.Add(child);return true;},IntPtr.Zero);
+  return handles.ToArray();
+ }
 }
 '@
 $accessible=$null;$accessibleId=[guid]'618736E0-3C3D-11CF-810C-00AA00389B71'
 $accessibilityResult=[HostAccessibility]::AccessibleObjectFromWindow($gui.MainWindowHandle,[uint32]4294967292,[ref]$accessibleId,[ref]$accessible)
+$childWindows=@([HostAccessibility]::Children($gui.MainWindowHandle))
+foreach($child in $childWindows){$childAccessible=$null;[void][HostAccessibility]::AccessibleObjectFromWindow($child,[uint32]4294967292,[ref]$accessibleId,[ref]$childAccessible)}
 $window=[Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
 $deadline=(Get-Date).AddSeconds(30);$interfaceReady=$false
 do {
@@ -57,7 +66,7 @@ do {
  if(!$interfaceReady){Start-Sleep -Milliseconds 500}
 }while(!$interfaceReady -and (Get-Date) -lt $deadline)
 if(!$interfaceReady){
- @{nodes=$nodes.Count;accessibilityResult=$accessibilityResult;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
+ @{nodes=$nodes.Count;embeddedWindows=$childWindows.Count;accessibilityResult=$accessibilityResult;idPresent=$plain.Contains($id);passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '^Settings$|^Einstellungen$')} | ConvertTo-Json -Compress | Write-Output
  throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'
 }
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
