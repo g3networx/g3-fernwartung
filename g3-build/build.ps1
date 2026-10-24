@@ -44,6 +44,7 @@ Pop-Location
 cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_identity_tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_bootstrap::tests; Check
+cargo test --locked --release --lib --features flutter,hwcodec,vram g3_host_auth::tests; Check
 Stage 'Run client identity and native acceptance tests'
 New-Item -ItemType Directory -Path outputs,g3-build/msi -Force | Out-Null
 Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"

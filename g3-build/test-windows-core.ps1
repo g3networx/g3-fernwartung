@@ -22,6 +22,8 @@ function Ready {
  if((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run').g3HostTray -ne ('"'+$exe+'" --tray')){throw 'Host machine-wide tray logon registration missing or incorrect'}
  foreach($item in $proof.payload.PSObject.Properties){$f=Join-Path $root $item.Name;if(!(Test-Path $f)){throw 'Payload missing'};if($item.Name -ne 'g3-update-session.lock' -and (Get-FileHash $f).Hash.ToLowerInvariant() -ne $item.Value){throw 'Payload changed'}}
  foreach($file in @('g3Host-ui.exe','flutter_windows.dll','data/app.so')){if(!(Test-Path (Join-Path $root $file))){throw "Host interface payload missing: $file"}}
+ $identityPins=Get-ItemProperty 'HKLM:\SOFTWARE\g3Host\InstallState\g3Host'
+ if($identityPins.HostCoreSha256 -ne (Get-FileHash $exe).Hash.ToLowerInvariant() -or $identityPins.HostUiSha256 -ne (Get-FileHash (Join-Path $root 'g3Host-ui.exe')).Hash.ToLowerInvariant()){throw 'Host IPC identity pins do not match the installed pair'}
 }
 $code=Worker;if($code -notin @(0,3010)){throw "Clean install failed: $code"};Ready
 $engine=Join-Path $root 'flutter_windows.dll'
@@ -52,6 +54,7 @@ public static class HostAccessibility {
  static void Read(Accessibility.IAccessible node,System.Collections.Generic.List<string> labels,int depth) {
   if(depth>64 || labels.Count>2000)return;
   labels.Add(node.get_accName(0)??"");
+  labels.Add(node.get_accDescription(0)??"");
   if(Convert.ToInt32(node.get_accRole(0))==42)labels.Add(node.get_accValue(0)??"");
   int count=Math.Min(node.accChildCount,500);
   for(int i=1;i<=count;i++) {

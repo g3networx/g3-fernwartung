@@ -70,6 +70,9 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     key=tag(registry,'RegistryKey',Root='HKLM',Key=state)
     for name,typ,value in [('InstallLocation','string','[INSTALLDIR]'),('WindowsInstaller','integer','1'),('BuildDate','string',build_date),('MsiProductCode','string','[ProductCode]')]:
         tag(key,'RegistryValue',Name=name,Type=typ,Value=value,KeyPath='yes' if name=='InstallLocation' else 'no')
+    if kind=='host':
+        for name,file in [('HostCoreSha256',exe),('HostUiSha256',folder/'g3Host-ui.exe')]:
+            tag(key,'RegistryValue',Name=name,Type='string',Value=hashlib.sha256(file.read_bytes()).hexdigest())
     tag(registry,'RemoveRegistryKey',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\'+app,Action='removeOnInstall')
     protocol=tag(registry,'RegistryKey',Root='HKLM',Key='Software\\Classes\\'+app.lower())
     tag(protocol,'RegistryValue',Type='string',Value='URL:'+title)

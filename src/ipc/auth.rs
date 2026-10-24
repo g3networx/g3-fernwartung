@@ -1,4 +1,7 @@
 use crate::ipc::{Connection, ConnectionTmpl};
+#[cfg(windows)]
+#[path = "g3_host_auth.rs"]
+mod g3_host_auth;
 #[cfg(all(windows, not(feature = "flutter")))]
 use hbb_common::sha2::{Digest, Sha256};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -475,6 +478,8 @@ fn ensure_peer_executable_matches_current_by_pid(peer_pid: u32, postfix: &str) -
     if executable_paths_match(&peer_exe, &current_exe) {
         return Ok(());
     }
+    #[cfg(windows)]
+    if g3_host_auth::installed_pair(&peer_exe,&current_exe) {return Ok(())}
     #[cfg(target_os = "macos")]
     if macos_service_ipc_allows_gui_and_service_binaries(&peer_exe, &current_exe, postfix) {
         return Ok(());
