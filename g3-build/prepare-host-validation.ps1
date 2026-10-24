@@ -12,7 +12,7 @@ foreach($item in $outputs){
   if((Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant() -ne $item.Hash.ToLowerInvariant()){throw "Artifact file hash mismatch: $($item.file)"}
 }
 $items=Get-Content (Join-Path $artifact 'msi-items.json') -Raw | ConvertFrom-Json
-$version='1.5.0-g3.28'
+$version='1.5.0-g3.29'
 foreach($key in @('host_msi')){
   $entry=$items.$key
   $source=Join-Path $artifact $entry.file
@@ -20,7 +20,7 @@ foreach($key in @('host_msi')){
   if((Get-FileHash -LiteralPath $source).Hash.ToLowerInvariant() -ne $entry.sha256.ToLowerInvariant()){throw 'Host MSI hash mismatch'}
   Copy-Item -LiteralPath $source -Destination $package
 }
-$setup=Get-ChildItem -LiteralPath $artifact -Filter 'g3-OpsLinX-Host-1.5.0-g3.28-host-install.exe' -File
+$setup=Get-ChildItem -LiteralPath $artifact -Filter 'g3-OpsLinX-Host-1.5.0-g3.29-host-install.exe' -File
 if(!$setup){throw 'Host bootstrapper missing'}
 Copy-Item -LiteralPath $setup.FullName -Destination $package
 $payloadZip=Join-Path $artifact 'g3-windows-unsigned.zip'
@@ -29,9 +29,10 @@ Expand-Archive -LiteralPath $payloadZip -DestinationPath $payloadRoot -Force
 $payload=@{}
 if(!(Test-Path -LiteralPath (Join-Path $artifact 'g3Host.exe'))){throw 'Native Host launcher missing from candidate'}
 Copy-Item -LiteralPath (Join-Path $artifact 'g3Host.exe') -Destination (Join-Path $payloadRoot 'g3Host.exe')
-foreach($name in @('g3Host.exe','librustdesk.dll','g3-update-session.lock','LICENCE','SOURCE.txt')){
-  $file=Join-Path $payloadRoot $name
-  if(!(Test-Path -LiteralPath $file)){throw "Host payload missing: $name"}
+Copy-Item -LiteralPath (Join-Path $payloadRoot 'rustdesk.exe') -Destination (Join-Path $payloadRoot 'g3Host-ui.exe')
+foreach($file in Get-ChildItem $payloadRoot -File -Recurse | Where-Object {$_.Name -notin @('rustdesk.exe','meta.toml') -and $_.Extension -notin @('.pdb','.exp','.lib')}){
+  $name=[IO.Path]::GetRelativePath($payloadRoot,$file.FullName)
+  $file=$file.FullName
   $payload[$name]=(Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant()
 }
 $bootstrapName=$setup.Name

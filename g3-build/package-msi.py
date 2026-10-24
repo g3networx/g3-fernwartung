@@ -10,7 +10,7 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.28'
+version='1.5.0-g3.29'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
@@ -19,8 +19,9 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     folder=ROOT/'g3-build/msi'/kind;folder.mkdir(parents=True,exist_ok=True)
     exe=folder/(app+'.exe')
     shutil.copy2(ROOT/'outputs/g3Host.exe' if kind=='host' else payload/'rustdesk.exe',exe)
+    if kind=='host':shutil.copy2(payload/'rustdesk.exe',folder/'g3Host-ui.exe')
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.28',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.29',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')
@@ -45,7 +46,6 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     for file in sorted(payload.rglob('*')):
         if not file.is_file() or file.suffix.lower() in ('.pdb','.exp','.lib') or file.name in ('rustdesk.exe','meta.toml'):continue
         relative=file.relative_to(payload)
-        if kind=='host' and relative.as_posix() not in {'librustdesk.dll','g3-update-session.lock','LICENCE','SOURCE.txt'}:continue
         cid='C'+hashlib.sha256((kind+'/'+relative.as_posix()).encode()).hexdigest()[:24]
         comp=tag(directory(relative.parent),'Component',Id=cid,Guid=guid(kind+'/file/'+relative.as_posix()),Win64='yes')
         if file.name == 'g3-update-session.lock':comp.set('Permanent','yes');comp.set('NeverOverwrite','yes')
@@ -61,6 +61,10 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     for proto in ('tcp','udp'):
         E.SubElement(main,'{'+FW+'}FirewallException',{'Id':'Firewall'+proto.upper(),'Name':title+' – '+proto.upper(),'File':'MainExeFile','Protocol':proto,'Scope':'any','Profile':'all','IgnoreFailure':'no','Description':'Nur die installierte Fernwartungsanwendung; dynamische Peer-Verbindungsports.'})
     tag(feature,'ComponentRef',Id='MainExe')
+    if kind=='host':
+        gui=tag(install,'Component',Id='HostUI',Guid=guid(kind+'/gui'),Win64='yes')
+        tag(gui,'File',Id='HostUIFile',Source=str(folder/'g3Host-ui.exe'),Name='g3Host-ui.exe',KeyPath='yes')
+        tag(feature,'ComponentRef',Id='HostUI')
     registry=tag(install,'Component',Id='InstallRegistration',Guid=guid(kind+'/registration'),Win64='yes')
     state='Software\\'+app+'\\InstallState\\'+app
     key=tag(registry,'RegistryKey',Root='HKLM',Key=state)

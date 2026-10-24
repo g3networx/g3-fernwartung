@@ -21,11 +21,21 @@ function Ready {
  if($LASTEXITCODE -ne 0 -or @([regex]::Matches($recovery,'RESTART\s+--\s+Delay = 60000 milliseconds')).Count -ne 3 -or $recovery -notmatch '86400'){throw 'Host recovery actions must restart after 60 seconds for all failures and reset after one day'}
  if((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run').g3HostTray -ne ('"'+$exe+'" --tray')){throw 'Host machine-wide tray logon registration missing or incorrect'}
  foreach($item in $proof.payload.PSObject.Properties){$f=Join-Path $root $item.Name;if(!(Test-Path $f)){throw 'Payload missing'};if($item.Name -ne 'g3-update-session.lock' -and (Get-FileHash $f).Hash.ToLowerInvariant() -ne $item.Value){throw 'Payload changed'}}
- if(Test-Path (Join-Path $root 'flutter_windows.dll')){throw 'Unexpected Flutter dependency'}
+ foreach($file in @('g3Host-ui.exe','flutter_windows.dll','data/app.so')){if(!(Test-Path (Join-Path $root $file))){throw "Host interface payload missing: $file"}}
 }
 $code=Worker;if($code -notin @(0,3010)){throw "Clean install failed: $code"};Ready
-$version=(& $exe --version | Out-String).Trim();if($version -ne $coreVersion){throw "Native CLI version failed: expected Cargo package $coreVersion, got $version"}
+$engine=Join-Path $root 'flutter_windows.dll'
+Move-Item -LiteralPath $engine -Destination ($engine+'.core-test')
+try {$version=(& $exe --version | Out-String).Trim();if($version -ne $coreVersion){throw "Native CLI version failed without GUI engine: expected Cargo package $coreVersion, got $version"}}finally{Move-Item -LiteralPath ($engine+'.core-test') -Destination $engine}
 $id=(& $exe --get-id | Out-String).Trim();if($id -notmatch '^\d{6,12}$'){throw 'Native service identity unavailable'}
+$tray=Start-Process $exe -PassThru
+$deadline=(Get-Date).AddSeconds(40);$gui=$null
+do {
+ Start-Sleep -Milliseconds 500
+ $gui=Get-Process -Name 'g3Host-ui' -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1
+}while(!$gui -and (Get-Date) -lt $deadline)
+if(!$gui){throw 'Host interface did not open from the installed native launcher'}
+if($gui.Path -ne (Join-Path $root 'g3Host-ui.exe')){throw 'Host interface launched outside the installed payload'}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"
 extern crate self as hbb_common;
@@ -47,6 +57,7 @@ try {
 }finally{if(!$session.HasExited){$session.StandardInput.WriteLine('');if(!$session.WaitForExit(10000)){throw 'Lease fixture did not exit voluntarily'}};$session.Dispose()}
 Set-Content (Join-Path $root 'SOURCE.txt') 'Deliberately changed disposable fixture'
 $code=Worker;if($code -notin @(0,3010)){throw "Idle repair failed: $code"};Ready
+if(!$tray.WaitForExit(10000) -or !$gui.WaitForExit(10000)){throw 'Idle Host interface/tray did not exit voluntarily for repair'}
 if((& $exe --get-id | Out-String).Trim() -ne $id){throw 'Identity changed across repair'}
 $remove=Start-Process msiexec.exe -ArgumentList ('/x "'+$msi+'" /qn REBOOT=ReallySuppress /norestart') -WindowStyle Hidden -Wait -PassThru
 if($remove.ExitCode -notin @(0,3010)){throw 'Disposable removal failed'}

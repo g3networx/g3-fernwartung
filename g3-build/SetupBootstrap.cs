@@ -32,7 +32,7 @@ using Microsoft.Win32.SafeHandles;
 
 [assembly:AssemblyCompany("g3 NetworX UG & Co. KG")]
 
-[assembly:AssemblyVersion("1.5.27.0")]
+[assembly:AssemblyVersion("1.5.29.0")]
 
 internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
 internal sealed class UpdateSessionGate:IDisposable {
@@ -84,7 +84,7 @@ internal sealed class SetupForm:Form {
   if(checkService)using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Running)return false;}
   return count>0;
  }catch{return false;}}
- static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe,Kind=="host_msi"?"--tray":""){UseShellExecute=true});}
+ static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
 
  async Task Install(){working=true;start.Enabled=false;string previousHash=null;try {
 
@@ -117,7 +117,7 @@ internal sealed class SetupForm:Form {
  }catch(Exception ex){working=false;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;start.Enabled=true;start.Text="Erneut versuchen";if(previous>0&&previousHash!=null)try{if(File.Exists(InstalledExe)&&Digest(InstalledExe)==previousHash&&!PreviousRunning())OpenClient();}catch{}}}
 
  bool PreviousRunning(){try{using(var p=Process.GetProcessById(previous))return !p.HasExited;}catch(ArgumentException){return false;}}
- static bool OwnProcessesRemain(){foreach(var p in Process.GetProcessesByName(AppName))using(p){if(p.HasExited)continue;if(String.Equals(p.MainModule.FileName,InstalledExe,StringComparison.OrdinalIgnoreCase))return true;}return false;}
+ static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName})foreach(var p in Process.GetProcessesByName(name))using(p){if(p.HasExited)continue;string expected=name==AppName?InstalledExe:Path.Combine(Path.GetDirectoryName(InstalledExe),"g3Host-ui.exe");if(String.Equals(p.MainModule.FileName,expected,StringComparison.OrdinalIgnoreCase))return true;}return false;}
  static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;bool stoppedByUs=false;try {
 
   if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;

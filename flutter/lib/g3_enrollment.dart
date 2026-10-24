@@ -28,7 +28,7 @@ Future<void> applyG3Provisioning(String body) async {
   }
   if (!applied) throw Exception('Password setup failed');
   await bind.mainSetOption(
-      key: 'verification-method', value: 'use-permanent-password');
+      key: 'verification-method', value: bind.mainGetAppNameSync() == 'g3Host' ? 'use-both-passwords' : 'use-permanent-password');
   await bind.mainSetOption(key: 'approve-mode', value: 'password');
   final r = await http
       .post(Uri.https('rust.g3nx.net', '/client-provisioning/confirm'),
