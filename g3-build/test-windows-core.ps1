@@ -74,6 +74,31 @@ public static class HostAccessibility {
    Read((Accessibility.IAccessible)accessible,labels,0);
   return labels.ToArray();
  }
+ static void Nodes(Accessibility.IAccessible node,System.Collections.Generic.List<Accessibility.IAccessible> nodes,int depth) {
+  if(depth>64 || nodes.Count>2000)return;nodes.Add(node);
+  for(int i=1;i<=Math.Min(node.accChildCount,500);i++) {
+   var child=node.get_accChild(i) as Accessibility.IAccessible;if(child!=null)Nodes(child,nodes,depth+1);
+  }
+ }
+ public static bool OpenSettings(IntPtr window) {
+  object accessible;Guid iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
+  if(AccessibleObjectFromWindow(window,4294967292,ref iid,out accessible)!=0)return false;
+  var nodes=new System.Collections.Generic.List<Accessibility.IAccessible>();
+  Nodes((Accessibility.IAccessible)accessible,nodes,0);
+  Accessibility.IAccessible anchor=null;
+  foreach(var node in nodes)if(node.get_accName(0)=="ID"){if(anchor!=null)return false;anchor=node;}
+  if(anchor==null)return false;
+  int x,y,w,h;anchor.accLocation(out x,out y,out w,out h,0);
+  Accessibility.IAccessible button=null;
+  foreach(var node in nodes) {
+   if(String.IsNullOrEmpty(node.get_accDefaultAction(0)))continue;
+   int bx,by,bw,bh;node.accLocation(out bx,out by,out bw,out bh,0);
+   if(bx>x+w && Math.Abs(by-y)<=24 && bw>=10 && bw<=60 && bh>=10 && bh<=60) {
+    if(button!=null)return false;button=node;
+   }
+  }
+  if(button==null)return false;button.accDoDefaultAction(0);return true;
+ }
 }
 '@
 $childWindows=@([HostAccessibility]::Children($gui.MainWindowHandle))
@@ -84,7 +109,7 @@ do {
  if($id -notmatch '^\d{6,12}$'){throw 'Native identity unavailable during interface check'}
  $labels=@(foreach($child in $childWindows){[HostAccessibility]::Labels($child)})
  $plain=($labels -join ' ') -replace '\s',''
- $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates') -and ($labels -match '\bSettings\b|\bEinstellungen\b')
+ $interfaceReady=$plain.Contains($id) -and ($labels -match 'One-time Password|Einmalpasswort') -and ($labels -contains 'Updates')
  if(!$interfaceReady){Start-Sleep -Milliseconds 500}
 }while(!$interfaceReady -and (Get-Date) -lt $deadline)
 if(!$interfaceReady){
@@ -92,6 +117,16 @@ if(!$interfaceReady){
  @{labelCount=$labels.Count;embeddedWindows=$childWindows.Count;idChangedDuringView=($id -ne $initialId);aliasCliMatchesService=($aliasId -eq $id);idPresent=$plain.Contains($id);numericFieldLengths=@($labels | Where-Object {($_ -replace '\s','') -match '^\d{6,12}$'} | ForEach-Object {($_ -replace '\s','').Length});passwordBoardPresent=[bool]($labels -match 'One-time Password|Einmalpasswort');updatesPresent=($labels -contains 'Updates');settingsPresent=[bool]($labels -match '\bSettings\b|\bEinstellungen\b')} | ConvertTo-Json -Compress | Write-Output
  throw 'Host accessibility tree lacks native ID, one-time-password board, Updates or Settings'
 }
+$settingsOpened=$false
+foreach($child in $childWindows){if([HostAccessibility]::OpenSettings($child)){$settingsOpened=$true;break}}
+if(!$settingsOpened){throw 'Unique Host Settings action beside the ID board was not accessible'}
+$deadline=(Get-Date).AddSeconds(15);$settingsReady=$false
+do {
+ $settingsLabels=@(foreach($child in $childWindows){[HostAccessibility]::Labels($child)})
+ $settingsReady=[bool]($settingsLabels -match '\bGeneral\b|\bAllgemein\b') -and [bool]($settingsLabels -match '\bSecurity\b|\bSicherheit\b')
+ if(!$settingsReady){Start-Sleep -Milliseconds 500}
+}while(!$settingsReady -and (Get-Date) -lt $deadline)
+if(!$settingsReady){throw 'Host Settings did not display General and Security after its normal accessible action'}
 $gate=(Join-Path $PSScriptRoot '../src/g3_update_gate.rs').Replace('\','/')
 $fixture=@"
 extern crate self as hbb_common;
