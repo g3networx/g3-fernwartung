@@ -1,7 +1,7 @@
 $ErrorActionPreference='Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Installation test may run only on a disposable GitHub Windows runner.' }
 $root=(Resolve-Path "$PSScriptRoot/..").Path
-$version='1.5.0-g3.27'
+$version='1.5.0-g3.28'
 $setup=Join-Path $root "outputs/g3-OpsLinX-$version-install.exe"
 $msi=Join-Path $root "outputs/g3-OpsLinX-$version-install.msi"
 $install=Join-Path $env:ProgramFiles 'g3Fernwartung'
@@ -22,6 +22,8 @@ function Ready {
     $result=Get-Content (Join-Path $env:ProgramData "g3-NetworX-Setup-g3Fernwartung-$version/result.txt") -Raw
     if ($result -notmatch 'product_ready=True') { throw "Installer did not verify the product: $result" }
     if ((Get-Service g3Fernwartung).Status -ne 'Running') { throw 'FullClient service is not running.' }
+    $recovery=(& sc.exe qfailure g3Fernwartung | Out-String)
+    if($LASTEXITCODE -ne 0 -or @([regex]::Matches($recovery,'RESTART\s+--\s+Delay = 60000 milliseconds')).Count -ne 3 -or $recovery -notmatch '86400'){throw 'FullClient recovery actions must restart after 60 seconds for all failures and reset after one day'}
     if (Get-Service g3Host -ErrorAction SilentlyContinue) { throw 'FullClient test unexpectedly installed Host.' }
 }
 $code=Worker

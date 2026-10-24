@@ -16,11 +16,16 @@ on:
         description: SHA256 of the complete Actions artifact ZIP
         type: string
         required: true
+      source_commit:
+        description: Exact source commit of the Windows artifact
+        type: string
+        required: true
 permissions:
   actions: read
   contents: read
 jobs:
   validate-host:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
@@ -37,15 +42,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ inputs.artifact_id }}
           EXPECTED_SHA256: ${{ inputs.artifact_sha256 }}
-          CANDIDATE_ARTIFACT_ID: '12534279045'
-          CANDIDATE_SHA256: '2d47b98e0778a482ca62b59c7407c01b347735194d0ad5b7c918db5f792eed44'
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.source_commit }}
         run: |
-          if(!$env:ARTIFACT_ID){$env:ARTIFACT_ID=$env:CANDIDATE_ARTIFACT_ID}
-          if(!$env:EXPECTED_SHA256){$env:EXPECTED_SHA256=$env:CANDIDATE_SHA256}
+          if($env:EXPECTED_SOURCE_COMMIT -notmatch '^[a-f0-9]{40}$'){throw 'Invalid pinned source commit'}
           if($env:ARTIFACT_ID -notmatch '^\d+$' -or $env:EXPECTED_SHA256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid pinned artifact identity'}
           $headers=@{Authorization=('Bearer '+$env:GH_TOKEN);Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
           $metadata=Invoke-RestMethod -Uri ('https://api.github.com/repos/'+$env:GITHUB_REPOSITORY+'/actions/artifacts/'+$env:ARTIFACT_ID) -Headers $headers
-          if($metadata.expired -or $metadata.name -ne 'g3-windows-unsigned-80454bd115ec27849b3299f594d245ecdfa6e23c'){throw 'Unexpected or expired artifact'}
+          if($metadata.expired -or $metadata.name -ne ('g3-windows-unsigned-'+$env:EXPECTED_SOURCE_COMMIT)){throw 'Unexpected or expired artifact'}
           Invoke-WebRequest -Uri $metadata.archive_download_url -Headers $headers -OutFile candidate.zip
           if((Get-FileHash candidate.zip).Hash.ToLowerInvariant() -ne $env:EXPECTED_SHA256){throw 'Pinned artifact digest mismatch'}
           Expand-Archive candidate.zip artifact

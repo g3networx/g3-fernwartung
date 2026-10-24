@@ -84,7 +84,7 @@ internal sealed class SetupForm:Form {
   if(checkService)using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Running)return false;}
   return count>0;
  }catch{return false;}}
- static void OpenClient(){if(Kind!="host_msi"&&File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
+ static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe,Kind=="host_msi"?"--tray":""){UseShellExecute=true});}
 
  async Task Install(){working=true;start.Enabled=false;string previousHash=null;try {
 

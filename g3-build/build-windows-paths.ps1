@@ -79,7 +79,7 @@ Set-Content "$payload/SOURCE.txt" "https://github.com/g3networx/g3-fernwartung/t
 $rc="$source/g3-build/windows-core-host.rc"
 & rc.exe /nologo "/fo$source/outputs/windows-core-host.res" $rc
 Check
-& cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link "$source/outputs/windows-core-host.res" /SUBSYSTEM:CONSOLE "/OUT:$source/outputs/g3Host.exe"
+& cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link "$source/outputs/windows-core-host.res" /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup "/OUT:$source/outputs/g3Host.exe"
 Check
 Stage 'Package FullClient and native Host installers'
 python g3-build/package-msi.py; Check

@@ -17,6 +17,9 @@ function Worker {
 }
 function Ready {
  if((Get-Service g3Host).Status -ne 'Running'){throw 'Core Host service not running'}
+ $recovery=(& sc.exe qfailure g3Host | Out-String)
+ if($LASTEXITCODE -ne 0 -or @([regex]::Matches($recovery,'RESTART\s+--\s+Delay = 60000 milliseconds')).Count -ne 3 -or $recovery -notmatch '86400'){throw 'Host recovery actions must restart after 60 seconds for all failures and reset after one day'}
+ if(!(Test-Path (Join-Path ([Environment]::GetFolderPath('CommonStartup')) 'g3 OpsLinX Host Status.lnk'))){throw 'Host tray startup shortcut missing'}
  foreach($item in $proof.payload.PSObject.Properties){$f=Join-Path $root $item.Name;if(!(Test-Path $f)){throw 'Payload missing'};if($item.Name -ne 'g3-update-session.lock' -and (Get-FileHash $f).Hash.ToLowerInvariant() -ne $item.Value){throw 'Payload changed'}}
  if(Test-Path (Join-Path $root 'flutter_windows.dll')){throw 'Unexpected Flutter dependency'}
 }

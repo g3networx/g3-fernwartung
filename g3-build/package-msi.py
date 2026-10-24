@@ -10,7 +10,7 @@ NS='http://schemas.microsoft.com/wix/2006/wi';FW='http://schemas.microsoft.com/w
 E.register_namespace('',NS);E.register_namespace('fire',FW);E.register_namespace('util',UTIL)
 def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v) for k,v in attrs.items()})
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
-version='1.5.0-g3.27'
+version='1.5.0-g3.28'
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}
@@ -20,7 +20,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     exe=folder/(app+'.exe')
     shutil.copy2(ROOT/'outputs/g3Host.exe' if kind=='host' else payload/'rustdesk.exe',exe)
     wix=E.Element('{'+NS+'}Wix')
-    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.27',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
+    product=tag(wix,'Product',Id=guid(kind+'/'+version),Name=title,Language=1031,Version='1.5.28',Manufacturer='g3 NetworX UG & Co. KG',UpgradeCode=guid(kind+'/upgrade'))
     tag(product,'Package',Id='*',InstallerVersion=500,Compressed='yes',InstallScope='perMachine',Platform='x64',Description=title)
     tag(product,'MajorUpgrade',DowngradeErrorMessage='Eine neuere Version ist bereits installiert.',Schedule='afterInstallInitialize')
     tag(product,'MediaTemplate',EmbedCab='yes',CompressionLevel='medium')
@@ -56,7 +56,8 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     mainfile=tag(main,'File',Id='MainExeFile',Source=str(exe),Name=app+'.exe',KeyPath='yes')
     tag(mainfile,'Shortcut',Id='StartMenuShortcut',Directory='ApplicationProgramsFolder',Name=title,Advertise='yes',WorkingDirectory='INSTALLDIR')
     tag(main,'RemoveFolder',Id='MenuFolderRemove',Directory='ApplicationProgramsFolder',On='uninstall')
-    tag(main,'ServiceInstall',Id='HostService',Name=app,DisplayName=title,Description='Autorisierte Fernwartung und automatische Sitzungsprotokollierung.',Type='ownProcess',Start='auto',ErrorControl='normal',Account='LocalSystem',Arguments='--service')
+    service=tag(main,'ServiceInstall',Id='HostService',Name=app,DisplayName=title,Description='Autorisierte Fernwartung und automatische Sitzungsprotokollierung.',Type='ownProcess',Start='auto',ErrorControl='normal',Account='LocalSystem',Arguments='--service')
+    E.SubElement(service,'{'+UTIL+'}ServiceConfig',{'FirstFailureActionType':'restart','SecondFailureActionType':'restart','ThirdFailureActionType':'restart','RestartServiceDelayInSeconds':'60','ResetPeriodInDays':'1'})
     tag(main,'ServiceControl',Id='ServiceLifecycle',Name=app,Start='install',Stop='both',Remove='uninstall',Wait='yes')
     for proto in ('tcp','udp'):
         E.SubElement(main,'{'+FW+'}FirewallException',{'Id':'Firewall'+proto.upper(),'Name':title+' – '+proto.upper(),'File':'MainExeFile','Protocol':proto,'Scope':'any','Profile':'all','IgnoreFailure':'no','Description':'Nur die installierte Fernwartungsanwendung; dynamische Peer-Verbindungsports.'})
@@ -80,10 +81,9 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     sas=tag(install,'Component',Id='SecureAttention',Guid=guid(kind+'/sas'),Win64='yes',NeverOverwrite='yes',Permanent='yes')
     tag(sas,'RegistryValue',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',Name='SoftwareSASGeneration',Type='integer',Value=1,KeyPath='yes')
     tag(feature,'ComponentRef',Id='SecureAttention')
-    if kind!='host':
-        tray=tag(startup,'Component',Id='TrayStartup',Guid=guid(kind+'/tray'),Win64='yes')
-        tag(tray,'Shortcut',Id='TrayShortcut',Name=title+' Status',Target='[INSTALLDIR]'+app+'.exe',Arguments='--tray',WorkingDirectory='INSTALLDIR')
-        tag(tray,'RegistryValue',Root='HKLM',Key=state,Name='TrayShortcut',Type='integer',Value=1,KeyPath='yes');tag(feature,'ComponentRef',Id='TrayStartup')
+    tray=tag(startup,'Component',Id='TrayStartup',Guid=guid(kind+'/tray'),Win64='yes')
+    tag(tray,'Shortcut',Id='TrayShortcut',Name=title+' Status',Target='[INSTALLDIR]'+app+'.exe',Arguments='--tray',WorkingDirectory='INSTALLDIR')
+    tag(tray,'RegistryValue',Root='HKLM',Key=state,Name='TrayShortcut',Type='integer',Value=1,KeyPath='yes');tag(feature,'ComponentRef',Id='TrayStartup')
     tag(product,'UIRef',Id='WixUI_InstallDir');tag(product,'Property',Id='WIXUI_INSTALLDIR',Value='INSTALLDIR')
     tag(product,'WixVariable',Id='WixUILicenseRtf',Value=str(ROOT/'g3-build/msi/license.rtf'))
     if kind!='host':
