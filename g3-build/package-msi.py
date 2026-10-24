@@ -37,7 +37,7 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     pf=tag(target,'Directory',Id='ProgramFiles64Folder');install=tag(pf,'Directory',Id='INSTALLDIR',Name=app)
     tag(target,'Directory',Id='System64Folder')
     programs=tag(target,'Directory',Id='ProgramMenuFolder');menu=tag(programs,'Directory',Id='ApplicationProgramsFolder',Name=title)
-    startup=tag(target,'Directory',Id='CommonStartupFolder')
+    startup=tag(target,'Directory',Id='StartupFolder')
     feature=tag(product,'Feature',Id='Complete',Title=title,Level=1)
     dirs={Path('.'):install}
     def directory(rel):
