@@ -29,7 +29,7 @@ use std::{
     path::{Path, PathBuf},
 };
 #[cfg(windows)]
-use windows::Win32::{Foundation::HANDLE, System::Pipes::GetNamedPipeClientProcessId};
+use windows::Win32::{Foundation::HANDLE, System::Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId}};
 
 #[cfg(windows)]
 #[inline]
@@ -731,6 +731,16 @@ where
 
     pub(super) fn peer_pid(&self) -> Option<u32> {
         peer_pid_from_fd(self.inner.get_ref().as_raw_fd())
+    }
+}
+
+#[cfg(windows)]
+impl ConnectionTmpl<parity_tokio_ipc::ConnectionClient> {
+    pub(super) fn shared_host_server_is_trusted(&self) -> bool {
+        let mut pid=0u32;
+        if unsafe {GetNamedPipeServerProcessId(HANDLE(self.inner.get_ref().as_raw_handle()),&mut pid)}.is_err() {return false;}
+        let (Ok(peer),Ok(current))=(peer_exe_canonical_path_by_pid(pid),current_exe_canonical_path()) else {return false;};
+        crate::platform::g3_shared_host::trusted_pair(&peer,&current)
     }
 }
 

@@ -36,7 +36,7 @@ index 6fe1004..6f78e83 100644
          #[cfg(any(target_os = "android", target_os = "ios"))]
          {
              return Some(
-@@ -3678,3 +3682,12 @@ mod tests {
+@@ -3678,3 +3682,17 @@ mod tests {
          assert_ne!(non_service_root, non_service_user);
      }
  }
@@ -48,4 +48,9 @@ index 6fe1004..6f78e83 100644
 +
 +pub fn is_g3_host() -> bool {
 + std::env::var("RUSTDESK_APPNAME").unwrap_or_default().to_lowercase().starts_with("g3-host-") || std::env::current_exe().ok().and_then(|p|p.file_name().map(|n|n.to_string_lossy().to_lowercase())).map_or(false,|n|n=="g3host.exe"||n.starts_with("g3host-"))
++}
++
++#[cfg(windows)]
++pub fn g3_reset_key_pair_cache() {
++ *KEY_PAIR.lock().unwrap() = None;
 +}

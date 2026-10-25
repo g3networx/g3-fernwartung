@@ -2,6 +2,8 @@ $ErrorActionPreference='Stop'
 function Check { if ($LASTEXITCODE -ne 0) { throw "Build command failed during '$script:BuildStage': $LASTEXITCODE" } }
 function Stage([string]$name) { $script:BuildStage=$name; Write-Output "BUILD STAGE: $name" }
 Stage 'Initialize native build'
+$version=if($env:G3_BUILD_VERSION){$env:G3_BUILD_VERSION}else{'1.5.0-g3.29'}
+if($version -notmatch '^1\.5\.0-g3\.\d{1,3}$'){throw 'Invalid build version'}
 $source=(Resolve-Path "$PSScriptRoot/..").Path
 $tools=Join-Path $env:RUNNER_TEMP 'g3-tools'
 New-Item -ItemType Directory -Path $tools -Force | Out-Null
@@ -35,6 +37,13 @@ git -C "$tools/vcpkg" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d; Check
 $env:VCPKG_ROOT="$tools/vcpkg"
 & "$tools/vcpkg/vcpkg.exe" install --triplet x64-windows-static --host-triplet x64-windows-static "--x-install-root=$tools/vcpkg/installed"; Check
 Stage 'Compile native core and Flutter client'
+if($env:G3_BUILD_VERSION){
+ $versionFile=Join-Path $source 'flutter/lib/g3_update_check.dart'
+ $versionSource=[IO.File]::ReadAllText($versionFile)
+ if(!$versionSource.Contains("defaultValue: '1.5.0-g3.29'")){throw 'Client version declaration changed unexpectedly'}
+ $versionSource=$versionSource.Replace("defaultValue: '1.5.0-g3.29'","defaultValue: '$version'")
+ [IO.File]::WriteAllText($versionFile,$versionSource,[Text.UTF8Encoding]::new($false))
+}
 python build.py --portable --flutter --skip-portable-pack --hwcodec --vram; Check
 Push-Location flutter
 flutter test --no-pub test/g3_legal_notices_test.dart; Check
@@ -45,6 +54,7 @@ cargo test --locked --release --lib --features flutter,hwcodec,vram ipc::g3_iden
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_file_transfer::tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_bootstrap::tests; Check
 cargo test --locked --release --lib --features flutter,hwcodec,vram g3_host_auth::tests; Check
+cargo test --locked --release --lib --features flutter,hwcodec,vram g3_shared_host::tests; Check
 Stage 'Run client identity and native acceptance tests'
 New-Item -ItemType Directory -Path outputs,g3-build/msi -Force | Out-Null
 Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
@@ -61,8 +71,9 @@ Check
 & cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link "$source/outputs/windows-core-host.res" /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup "/OUT:$source/outputs/g3Host.exe"
 Check
 Stage 'Package FullClient and Host MSIs and bootstrappers'
-python g3-build/package-msi.py; Check
-python g3-build/build-setup-launchers.py; Check
+python g3-build/package-msi.py --version $version; Check
+python g3-build/build-setup-launchers.py --version $version; Check
+python g3-build/test-setup-progress.py; Check
 python g3-build/test-update-session-gate.py; Check
 & "$PSScriptRoot/test-windows-update.ps1"
 python g3-build/test-download-bootstrap.py; Check

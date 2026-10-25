@@ -38,10 +38,15 @@ fn shared(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-pub fn session() -> io::Result<Option<File>> {
+pub struct SessionLease { _own: File, _sibling: Option<File> }
+
+pub fn session() -> io::Result<Option<SessionLease>> {
     let path = std::env::current_exe()?.with_file_name(FILE_NAME);
     match shared(&path) {
-        Ok(file) => Ok(Some(file)),
+        Ok(file) => {
+            let sibling=crate::platform::g3_shared_host::sibling_gate().map(|path|shared(&path)).transpose()?;
+            Ok(Some(SessionLease { _own:file, _sibling:sibling }))
+        },
         // Portable clients have no installer or update gate. Their in-app
         // update never exits the process; the installer refuses live legacy apps.
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),

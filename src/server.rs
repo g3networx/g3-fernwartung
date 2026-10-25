@@ -677,6 +677,9 @@ pub async fn start_server(is_server: bool, no_server: bool) {
     });
 
     if is_server {
+        #[cfg(windows)]
+        if !crate::platform::g3_shared_host::uses_host() {crate::g3_bootstrap::start();}
+        #[cfg(not(windows))]
         crate::g3_bootstrap::start();
         crate::common::set_server_running(true);
         std::thread::spawn(move || {
@@ -689,6 +692,11 @@ pub async fn start_server(is_server: bool, no_server: bool) {
                 std::process::exit(-1);
             }
         });
+        #[cfg(windows)]
+        if crate::platform::g3_shared_host::uses_host() {
+            crate::platform::g3_shared_host::standby().await;
+            crate::g3_bootstrap::start();
+        }
         // Warm the DRM availability cache before any client connects, so the first connection does
         // not race a cold `_drm` probe and ship an empty display list ("No displays" + retry).
         // X11 is skipped -- probing there makes the root service open DRM readers for a path this
@@ -729,6 +737,8 @@ pub async fn start_server(is_server: bool, no_server: bool) {
                             Data::SyncConfig(Some(configs)) => {
                                 let (config, config2) = *configs;
                                 if Config::set(config) {
+                                    #[cfg(windows)]
+                                    crate::platform::g3_shared_host::config_synced();
                                     log::info!("config synced");
                                 }
                                 if Config2::set(config2) {

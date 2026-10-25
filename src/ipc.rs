@@ -1478,6 +1478,14 @@ pub async fn connect(ms_timeout: u64, postfix: &str) -> ResultType<ConnectionTmp
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
+        #[cfg(windows)]
+        {
+            if let Some(path)=crate::platform::g3_shared_host::ipc_path(postfix) {
+                let connection=connect_with_path(ms_timeout,&path).await?;
+                if !connection.shared_host_server_is_trusted() {bail!("Installed Host identity endpoint is not trusted");}
+                return Ok(connection);
+            }
+        }
         let path = Config::ipc_path(postfix);
         connect_with_path(ms_timeout, &path).await
     }

@@ -19,6 +19,7 @@ fn matches_install(peer:&Path,current:&Path,root:&Path,core_hash:&str,ui_hash:&s
 }
 
 pub(super) fn installed_pair(peer:&Path,current:&Path)->bool {
+    if crate::platform::g3_shared_host::trusted_pair(peer,current) {return true}
     use winreg::{enums::{HKEY_LOCAL_MACHINE,KEY_READ,KEY_WOW64_64KEY},RegKey};
     if crate::get_app_name()!="g3Host" {return false}
     let Ok(key)=RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(

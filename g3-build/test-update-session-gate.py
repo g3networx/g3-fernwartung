@@ -8,6 +8,7 @@ repo=Path(__file__).resolve().parents[1]; root=repo; folder=repo/'work/session-g
 module=(repo/'src/g3_update_gate.rs').as_posix()
 (folder/'session.rs').write_text('''extern crate self as hbb_common;
 pub mod log {pub use std::eprintln as error;}
+pub mod platform {pub mod g3_shared_host {pub fn sibling_gate()->Option<std::path::PathBuf>{std::env::var_os("G3_GATE_TEST_SIBLING").map(std::path::PathBuf::from)}}}
 #[path="'''+module+'''"] mod gate;
 fn main() {
  let mode=std::env::args().nth(1).unwrap_or_default();
@@ -32,7 +33,7 @@ verification=source[source.index(' static string Digest'):source.index(' static 
 (folder/'payload.tsv').write_text('g3-update-session.lock\t'+hashlib.sha256(b'').hexdigest()+'\npayload.txt\t'+hashlib.sha256(b'verified payload').hexdigest(),encoding='utf-8')
 (folder/'verify.cs').write_text('''using System;using System.IO;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;using System.Security.Cryptography;using System.Reflection;using System.ServiceProcess;using Microsoft.Win32;
 '''+classes+'''class TestPayload {
- static string InstalledExe,AppName="unused-fixture-service";
+ static string InstalledExe,AppName="unused-fixture-service";static Action<int> verifiedFileProgress;
 '''+verification+'''
  static int Main(string[] args){InstalledExe=Path.Combine(Path.GetFullPath(args[0]),"fixture.exe");using(var gate=new UpdateSessionGate(Path.Combine(args[0],"g3-update-session.lock"))){if(!VerifiedInstallation(false))return 1;File.WriteAllText(Path.Combine(args[0],"payload.txt"),"tampered");return VerifiedInstallation(false)?2:0;}}
 }
@@ -64,12 +65,23 @@ try:
  assert subprocess.run([str(folder/'session.exe'),'session'],capture_output=True).returncode==1618
  stop(gate);idle=launch('session.exe','idle');stop(idle)
  results.append({'case':'only_idle_process_exits_voluntarily_after_atomic_exclusive_handoff','passed':True})
+ sibling=folder/'sibling.lock';sibling.write_bytes(b'')
+ os.environ['G3_GATE_TEST_SIBLING']=str(sibling)
+ paired=launch('session.exe','session')
+ assert probe()==1618
+ assert subprocess.run([str(folder/'gate.exe'),str(sibling)],capture_output=True).returncode==1618
+ stop(paired)
+ gate=launch('gate.exe',str(sibling),'hold')
+ assert subprocess.run([str(folder/'session.exe'),'session'],capture_output=True).returncode==1618
+ stop(gate);os.environ.pop('G3_GATE_TEST_SIBLING')
+ results.append({'case':'paired_session_blocks_both_product_updates_and_either_update_blocks_new_session','passed':True})
 finally:
+ os.environ.pop('G3_GATE_TEST_SIBLING',None)
  for p in children:
   if p.poll() is None:
    try:p.communicate('\n',timeout=5)
    except subprocess.TimeoutExpired:p.terminate();p.wait(timeout=5)
 (root/'outputs').mkdir(exist_ok=True)
-proof={'version':'1.5.0-g3.29','scope':'isolated disposable test processes; real Rust/C# production gate code','installed_client_touched':False,'tests':results}
+proof={'version':os.environ.get('G3_BUILD_VERSION','1.5.0-g3.29'),'scope':'isolated disposable test processes; real Rust/C# production gate code','installed_client_touched':False,'tests':results}
 (root/'outputs/FullClient-g3.29-Sitzungssperre-Regression.json').write_text(json.dumps(proof,indent=2),encoding='utf-8')
 print(json.dumps(proof))

@@ -1,0 +1,91 @@
+name: g3 shared device identity and setup progress
+on:
+  push:
+    branches: [g3-opslinx-20261023]
+    paths: ['.github/workflows/g3-shared-device-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Verify accepted installer baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tools=Join-Path $env:RUNNER_TEMP 'g3-tools'
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12477693931/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile "$tools/base.zip"
+          if((Get-FileHash "$tools/base.zip").Hash.ToLowerInvariant() -ne 'e6fc1f920c6ca6d129d798dfc1b6b365ce0e2261f8d6eb1e1e52e29a510e6b57'){throw 'Baseline artifact mismatch'}
+          Expand-Archive "$tools/base.zip" "$tools/base"
+          "G3_ACCEPTED_BASE=$tools/base" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build and validate exact committed native core and installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          G3_BUILD_VERSION: 1.5.0-g3.32
+        run: ./g3-build/build.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-shared-device-build-${{ github.sha }}
+          path: outputs/*
+          if-no-files-found: error
+          retention-days: 30
+  paired-acceptance:
+    needs: windows
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: g3-shared-device-build-${{ github.sha }}
+          path: outputs
+      - name: Session guard and visible progress regression
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.32
+        run: |
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session regression failed'}
+          python g3-build/test-setup-progress.py
+          if($LASTEXITCODE -ne 0){throw 'Progress regression failed'}
+      - name: Co-installation, canonical Host identity and cross-product session protection
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.32
+        run: ./g3-build/test-shared-device-install.ps1
+      - name: Collect narrowly scoped installer diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          Copy-Item outputs/*acceptance.json evidence/ -ErrorAction SilentlyContinue
+          Copy-Item outputs/*Regression.json evidence/ -ErrorAction SilentlyContinue
+          Copy-Item work/setup-progress-test/*.png evidence/ -ErrorAction SilentlyContinue
+          foreach($app in @('g3Host','g3Fernwartung')){
+            Get-ChildItem "C:/ProgramData/g3-NetworX-Setup-$app-1.5.0-g3.32" -File -ErrorAction SilentlyContinue | Where-Object {$_.Name -in @('result.txt','update-error.txt','companion-restore-error.txt','install.log')} | ForEach-Object {Copy-Item $_.FullName (Join-Path evidence ($app+'-'+$_.Name))}
+          }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-shared-device-acceptance-${{ github.sha }}
+          path: evidence/*
+          if-no-files-found: error

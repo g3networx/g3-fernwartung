@@ -77,6 +77,9 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
     if kind=='host':
         for name,file in [('HostCoreSha256',exe),('HostUiSha256',folder/'g3Host-ui.exe')]:
             tag(key,'RegistryValue',Name=name,Type='string',Value=hashlib.sha256(file.read_bytes()).hexdigest())
+    else:
+        tag(key,'RegistryValue',Name='FullUiSha256',Type='string',Value=hashlib.sha256(exe.read_bytes()).hexdigest())
+    tag(key,'RegistryValue',Name='SharedDeviceIdentityProtocol',Type='integer',Value='1')
     tag(registry,'RemoveRegistryKey',Root='HKLM',Key='Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\'+app,Action='removeOnInstall')
     protocol=tag(registry,'RegistryKey',Root='HKLM',Key='Software\\Classes\\'+app.lower())
     tag(protocol,'RegistryValue',Type='string',Value='URL:'+title)
