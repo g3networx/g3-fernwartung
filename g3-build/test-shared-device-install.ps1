@@ -39,6 +39,12 @@ if($scenario -eq 'existing-host'){
  if((Worker $legacySetup $legacyMsi) -notin @(0,3010)){throw 'Legacy Host baseline install failed'}
  $existingHostId=Identity $hostExe
  $legacyHostProfile=Fingerprint g3Host
+ $legacySession=Session $hostRoot $null
+ try {
+  $legacyPid=Running g3Host
+  if((Worker $hostSetup $hostMsi) -ne 1618){throw 'Existing legacy Host session did not defer upgrade'}
+  if((Running g3Host) -ne $legacyPid -or $legacySession.HasExited){throw 'Deferred upgrade interrupted legacy Host'}
+ }finally{Release $legacySession}
 }
 $session=Session $fullRoot $null
 try {

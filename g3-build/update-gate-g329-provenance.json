@@ -1,0 +1,10 @@
+{
+  "native_sha256": "39b06bfbb13c90e975f23c36ad54d971e0975cd0f87d395ce85c8cc9c5169f5d",
+  "native_source_commit": "a3574baf2fc1a68f40d3e5d800423685f181426e",
+  "native_build_run": 40063595742,
+  "host_validation_run": 40072172394,
+  "accepted_host_version": "1.5.0-g3.29",
+  "previous_acceptance": ["active_lease_deferred", "service_pid_unchanged_while_busy", "idle_repair", "identity_preserved", "no_reboot"],
+  "purpose": "Recognize the already accepted g3.29 native session guard when upgrading it. The same exclusive nonblocking LockFileEx lease remains mandatory. No unguarded legacy hash or session override is admitted.",
+  "required_new_acceptance": "existing-host scenario must defer under the actual legacy Host coordination lease, then upgrade while idle and preserve its identity and credentials"
+}
