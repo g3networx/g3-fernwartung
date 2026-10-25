@@ -47,6 +47,10 @@ jobs:
           retention-days: 30
   paired-acceptance:
     needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [fresh, existing-host]
     runs-on: windows-2022
     timeout-minutes: 35
     steps:
@@ -71,6 +75,7 @@ jobs:
         shell: pwsh
         env:
           G3_BUILD_VERSION: 1.5.0-g3.32
+          G3_PAIR_SCENARIO: ${{ matrix.scenario }}
         run: ./g3-build/test-shared-device-install.ps1
       - name: Collect narrowly scoped installer diagnostics
         if: always()
@@ -86,6 +91,6 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: g3-shared-device-acceptance-${{ github.sha }}
+          name: g3-shared-device-acceptance-${{ matrix.scenario }}-${{ github.sha }}
           path: evidence/*
           if-no-files-found: error

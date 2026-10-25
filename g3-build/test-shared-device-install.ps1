@@ -4,6 +4,8 @@ $repo=(Resolve-Path "$PSScriptRoot/..").Path
 $version=$env:G3_BUILD_VERSION
 if($version -notmatch '^1\.5\.0-g3\.\d{1,3}$'){throw 'Missing exact candidate version'}
 $output=Join-Path $repo outputs
+$scenario=$env:G3_PAIR_SCENARIO
+if($scenario -notin @('fresh','existing-host')){throw 'Exact disposable pairing scenario required'}
 $fullRoot=Join-Path $env:ProgramFiles 'g3Fernwartung';$fullExe=Join-Path $fullRoot 'g3Fernwartung.exe'
 $hostRoot=Join-Path $env:ProgramFiles 'g3Host';$hostExe=Join-Path $hostRoot 'g3Host.exe'
 $fullSetup=Join-Path $output "g3-OpsLinX-$version-install.exe";$fullMsi=Join-Path $output "g3-OpsLinX-$version-install.msi"
@@ -28,15 +30,30 @@ function Running($app){$s=Get-CimInstance Win32_Service -Filter "Name='$app'";if
 if(Get-Service g3Host -ErrorAction SilentlyContinue){throw 'Expected FullClient-only starting state'}
 if(!(Get-Service g3Fernwartung -ErrorAction SilentlyContinue)){if((Worker $fullSetup $fullMsi) -notin @(0,3010)){throw 'Initial FullClient install failed'}}
 $fullInitial=Identity $fullExe;$fullProfile=Fingerprint g3Fernwartung
+$existingHostId=$null
+if($scenario -eq 'existing-host'){
+ $legacySetup=Join-Path $env:RUNNER_TEMP 'g3-host-g329.exe';$legacyMsi=Join-Path $env:RUNNER_TEMP 'g3-host-g329.msi'
+ Invoke-WebRequest 'https://rust.g3nx.net/client/releases/1.5.0-g3.29/host' -OutFile $legacySetup
+ Invoke-WebRequest 'https://rust.g3nx.net/client/releases/1.5.0-g3.29/host_msi' -OutFile $legacyMsi
+ if((Get-FileHash $legacySetup).Hash.ToLowerInvariant() -ne '95fc603c83db28338b9d58223a87a025315409b2766b360c435ebac432ba8643' -or (Get-FileHash $legacyMsi).Hash.ToLowerInvariant() -ne '9b908b218401ba4af8f7a831b107fdccea13587486bd97630a2b72b8b2d83224'){throw 'Immutable legacy Host pin differs'}
+ if((Worker $legacySetup $legacyMsi) -notin @(0,3010)){throw 'Legacy Host baseline install failed'}
+ $existingHostId=Identity $hostExe
+ $legacyHostProfile=Fingerprint g3Host
+}
 $session=Session $fullRoot $null
 try {
  $fullPid=Running g3Fernwartung
+ if($existingHostId){$beforeHostPid=Running g3Host}
  if((Worker $hostSetup $hostMsi) -ne 1618){throw 'Host install did not defer while Full session was active'}
  if((Running g3Fernwartung) -ne $fullPid -or $session.HasExited){throw 'Deferred Host install interrupted Full'}
- if(Get-Service g3Host -ErrorAction SilentlyContinue){throw 'Deferred Host install changed products'}
+ if($existingHostId){if((Running g3Host) -ne $beforeHostPid -or (Identity $hostExe) -ne $existingHostId){throw 'Deferred upgrade changed existing Host'}}
+ elseif(Get-Service g3Host -ErrorAction SilentlyContinue){throw 'Deferred Host install changed products'}
 }finally{Release $session}
 if((Worker $hostSetup $hostMsi) -notin @(0,3010)){throw 'Idle co-installation failed'}
 $hostId=Identity $hostExe
+if($existingHostId){
+ if($hostId -ne $existingHostId -or (Fingerprint g3Host) -ne $legacyHostProfile){throw 'Upgrade changed existing canonical Host identity/credentials'}
+}elseif($hostId -ne $fullInitial){throw 'New Host did not retain the existing standalone FullClient identity'}
 if((Identity $fullExe) -ne $hostId){throw 'Host and FullClient report different public device identities'}
 if((Fingerprint g3Fernwartung) -ne $fullProfile){throw 'Pairing changed the original FullClient service profile'}
 $hostPid=Running g3Host
@@ -73,4 +90,5 @@ if((Worker $hostSetup $hostMsi) -notin @(0,3010)){throw 'Idle paired Host repair
 if((Identity $fullExe) -ne $hostId -or (Identity $hostExe) -ne $hostId){throw 'Repair changed the canonical Host identity'}
 if((Fingerprint g3Fernwartung) -ne $fullProfile -or (Fingerprint g3Host) -ne $hostProfile){throw 'Repair modified original service identity/credentials'}
 if((Get-CimInstance Win32_OperatingSystem).LastBootUpTime -ne $boot){throw 'Operating system rebooted'}
+@{scenario=$scenario;canonical_identity_preserved=$true;rule=if($existingHostId){'Existing Host ID retained'}else{'New Host inherits existing FullClient ID'}}|ConvertTo-Json|Set-Content (Join-Path $output 'shared-device-scenario-acceptance.json') -Encoding utf8
 @{version=$version;full_session_defers_host_install=$true;existing_full_service_profile_preserved=$true;canonical_host_id_same_in_both_native_clis=$true;full_ui_displays_host_id=$true;full_service_stop_does_not_stop_host=$true;paired_session_defers_both_updates=$true;service_pids_unchanged_while_deferred=$true;full_repair_preserves_host_service_pid=$true;host_id_and_both_credential_profiles_preserved_after_repairs=$true;no_os_reboot=$true;no_force_or_security_changes=$true;scope='Disposable GitHub-hosted Windows runner; native lease fixture, not an interactive customer remote session'}|ConvertTo-Json|Set-Content (Join-Path $output 'shared-device-acceptance.json') -Encoding utf8

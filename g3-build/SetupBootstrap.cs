@@ -177,6 +177,25 @@ internal sealed class SetupForm:Form {
    var deadline=DateTime.UtcNow.AddSeconds(40);while(Remains()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
    if(Remains())throw new UpdateBusyException();
   }
+  static void PlainDirectory(string path){for(var dir=new DirectoryInfo(path);dir!=null;dir=dir.Parent)if(dir.Exists&&(dir.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Konfigurationspfad darf keine Umleitung enthalten.");}
+  public void InitializeNewHostProfile(){
+   if(gate==null)return;
+   string profiles=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),@"ServiceProfiles\LocalService\AppData\Roaming");
+   string source=Path.Combine(profiles,@"g3Fernwartung\config"),target=Path.Combine(profiles,@"g3Host\config");
+   PlainDirectory(source);PlainDirectory(target);
+   if(File.Exists(Path.Combine(target,"g3Host.toml")))return;
+   if(Directory.Exists(target)&&Directory.GetFiles(target).Length!=0)throw new InvalidDataException("Vorhandene Host-Konfiguration ist unvollständig; keine automatische Überschreibung.");
+   if(!File.Exists(Path.Combine(source,"g3Fernwartung.toml")))throw new InvalidDataException("Vorhandene FullClient-Identität konnte nicht sicher übernommen werden.");
+   var security=new DirectorySecurity();security.SetAccessRuleProtection(true,false);security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null));
+   foreach(var sid in new[]{WellKnownSidType.LocalSystemSid,WellKnownSidType.BuiltinAdministratorsSid})security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid,null),FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
+   Directory.CreateDirectory(target);Directory.SetAccessControl(target,security);
+   foreach(string suffix in new[]{"","2"}){
+    string input=Path.Combine(source,"g3Fernwartung"+suffix+".toml"),output=Path.Combine(target,"g3Host"+suffix+".toml");
+    if(!File.Exists(input))continue;
+    if((File.GetAttributes(input)&FileAttributes.ReparsePoint)!=0||new FileInfo(input).Length>4*1024*1024)throw new InvalidDataException("FullClient-Konfiguration konnte nicht sicher gelesen werden.");
+    File.Copy(input,output,false);File.SetAttributes(output,FileAttributes.Normal);
+   }
+  }
   bool Remains(){foreach(var process in Process.GetProcessesByName("g3Fernwartung"))using(process){if(!process.HasExited&&String.Equals(process.MainModule.FileName,exe,StringComparison.OrdinalIgnoreCase))return true;}return false;}
   public void Restore(){if(!stopped)return;using(var service=new ServiceController("g3Fernwartung")){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
@@ -205,7 +224,7 @@ internal sealed class SetupForm:Form {
    using(var f=new FileStream(gatePath,FileMode.CreateNew,FileAccess.Write,FileShare.None)){f.Flush();}
   }
   gate=new UpdateSessionGate(gatePath);
-  companion=new Companion();companion.Suspend();
+  companion=new Companion();companion.Suspend();companion.InitializeNewHostProfile();
   // Native GUI/tray processes exit voluntarily only while this exclusive
   // lease is held. Incoming/outgoing session acquisition is now blocked.
   using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();stoppedByUs=true;svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
