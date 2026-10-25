@@ -24,8 +24,10 @@ def install(app, m):
   if not re.fullmatch(r'Bearer [A-Za-z0-9_-]{43}',bearer):abort(401)
   sid=digest(bearer[7:]);now=int(time.time())
   row=m.db().execute('SELECT s.*,u.username,u.role,u.active,u.setup,u.password,u.totp,u.last_totp,u.central_sub,u.central_admin FROM native_ab_sessions n JOIN sessions s ON s.token=n.token JOIN users u ON u.id=s.uid WHERE n.token=?',(sid,)).fetchone()
-  if not row or not row['active'] or row['setup'] or row['expires']<=now or row['seen']<=now-7*86400:abort(401)
-  checked=app.config['CENTRAL_CHECK'](dict(row)) if app.config.get('CENTRAL_CHECK') else dict(row)
+  if not row or not row['active'] or row['setup']:abort(401)
+  check=app.config.get('NATIVE_CENTRAL_CHECK') or app.config.get('CENTRAL_CHECK')
+  checked=check(dict(row)) if check else dict(row)
+  if checked is None:abort(503)
   if not checked:abort(401)
   g.sid=sid;g.user=dict(row) if checked is True else dict(checked)
   if g.user['central_admin']:g.user['role']='admin'
@@ -81,10 +83,13 @@ def install(app, m):
   if not checked:abort(401)
   consumed=m.db().execute('DELETE FROM native_ab_requests WHERE device_hash=? RETURNING device_hash',(key,)).fetchone();m.db().commit()
   if not consumed:abort(401)
+  central_token=source['central_token']
+  if app.config.get('NATIVE_CENTRAL_GRANT'):
+   central_token=app.config['NATIVE_CENTRAL_GRANT'](dict(source))
   token=secrets.token_urlsafe(32);sid=digest(token);now=int(time.time())
-  m.run('INSERT INTO sessions(token,uid,expires,seen,central_token,central_checked) VALUES(?,?,?,?,?,?)',(sid,source['uid'],now+30*86400,now,source['central_token'],0))
+  m.run('INSERT INTO sessions(token,uid,expires,seen,central_token,central_checked) VALUES(?,?,?,?,?,?)',(sid,source['uid'],0,now,central_token,0))
   m.run('INSERT INTO native_ab_sessions VALUES(?)',(sid,))
-  return dict(token=token,expires_in=30*86400)
+  return dict(token=token,expires_in=None)
 
  @app.get('/client-addressbook/tree')
  def native_ab_tree():
@@ -107,6 +112,7 @@ def install(app, m):
  @app.post('/client-addressbook/logout')
  def native_ab_logout():
   native_json();identity()
+  if app.config.get('NATIVE_CENTRAL_REVOKE'):app.config['NATIVE_CENTRAL_REVOKE'](g.user)
   m.run('DELETE FROM native_ab_sessions WHERE token=?',(g.sid,));m.run('DELETE FROM sessions WHERE token=?',(g.sid,));m.audit('native_addressbook_logout')
   return dict(logged_out=True)
 

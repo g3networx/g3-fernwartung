@@ -63,17 +63,30 @@ class NativeAddressBook(unittest.TestCase):
   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).json['devices'],[])
   self.assertEqual(self.post('logout',{}).status_code,200)
   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,401)
- def test_remembered_session_survives_browser_idle_cleanup_but_not_expiry(self):
+ def test_remembered_session_survives_age_idle_and_browser_cleanup(self):
   self.grant()
   token_hash=hashlib.sha256(self.headers['Authorization'][7:].encode()).hexdigest()
   with m.app.test_request_context('/login'):
-   m.run('UPDATE sessions SET seen=? WHERE token=?',(int(time.time())-7200,token_hash))
+   m.run('UPDATE sessions SET seen=? WHERE token=?',(int(time.time())-400*86400,token_hash))
    user=m.db().execute('SELECT * FROM users WHERE id=1').fetchone()
    m.create_session(user)
    self.assertIsNotNone(m.db().execute('SELECT 1 FROM sessions WHERE token=?',(token_hash,)).fetchone())
   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,200)
   with m.app.app_context():m.run('UPDATE sessions SET expires=? WHERE token=?',(int(time.time())-1,token_hash))
-  self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,401)
+  self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,200)
+  handoff=self.post('connect',{'device_id':1});self.assertEqual(handoff.status_code,200)
+  redeemed=self.client.get('/client-handoff',headers={'Authorization':'Bearer '+handoff.json['uri'].split('/')[-1]},base_url=self.base)
+  self.assertEqual(redeemed.status_code,200)
+ def test_native_outage_keeps_grant_and_account_block_denies(self):
+  self.grant()
+  m.app.config['NATIVE_CENTRAL_CHECK']=lambda row:None
+  try:
+   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,503)
+   m.app.config['NATIVE_CENTRAL_CHECK']=lambda row:dict(row)
+   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,200)
+   m.app.config['NATIVE_CENTRAL_CHECK']=lambda row:False
+   self.assertEqual(self.client.get('/client-addressbook/tree',headers=self.headers,base_url=self.base).status_code,401)
+  finally:m.app.config.pop('NATIVE_CENTRAL_CHECK')
  def test_browser_csrf_and_disabled_user_central_revocation(self):
   flow=self.start()
   self.assertEqual(self.browser.post(flow['verification_uri'],data={'decision':'approve'},base_url=self.base).status_code,403)

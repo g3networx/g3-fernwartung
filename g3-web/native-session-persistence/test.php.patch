@@ -1,0 +1,31 @@
+--- a/test.php
++++ b/test.php
+@@ -1,6 +1,7 @@
+ <?php
+ /** Transactional regression tests: all user and token rows are rolled back. */
+ chdir('/srv/g3-portal/app');require 'vendor/autoload.php';$a=require 'bootstrap/app.php';$a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
++require __DIR__.'/RustdeskSsoController.php';
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Session\Store;
+@@ -30,10 +31,20 @@
+  $assert($result->getStatusCode()===200 && $body['identity']['sub']===(string)$u->id && $body['identity']['mfa']===true,'valid code yields verified identity');
+  $assert($controller->token($make('POST','/sso/rustdesk/token',$data))->getStatusCode()===400,'code replay refused');
+  $session=['session_token'=>$body['session_token']];
++ $native=$controller->native($make('POST','/sso/rustdesk/native',array_merge($session,['action'=>'grant'])))->getData(true);
++ $nativeSession=['action'=>'check','session_token'=>$native['session_token']];
++ DB::table('rustdesk_sso_native_sessions')->where('token_hash',hash('sha256',$native['session_token']))->update(['created_at'=>now()->subYears(2)]);
+  $assert($controller->introspect($make('POST','/sso/rustdesk/introspect',$session))->getData(true)['active']===true,'central session valid');
+  $assert($controller->directory($make('POST','/sso/rustdesk/directory',$session))->getStatusCode()===200,'administrator directory allowed');
+  $u->active=false;$u->save();$assert($controller->introspect($make('POST','/sso/rustdesk/introspect',$session))->getData(true)['active']===false,'disabled central account refused');
+  $u->active=true;$u->save();$u->password=bin2hex(random_bytes(32));$u->save();$assert($controller->introspect($make('POST','/sso/rustdesk/introspect',$session))->getData(true)['active']===false,'password change revokes prior central session');
++ $assert($controller->native($make('POST','/sso/rustdesk/native',$nativeSession))->getData(true)['active']===true,'native grant survives age and password change');
++ DB::table('rustdesk_sso_sessions')->where('token_hash',hash('sha256',$body['session_token']))->update(['expires_at'=>now()->subDay()]);
++ $assert($controller->native($make('POST','/sso/rustdesk/native',$nativeSession))->getData(true)['active']===true,'native grant independent of expired browser grant');
++ $u->active=false;$u->save();
++ $assert($controller->native($make('POST','/sso/rustdesk/native',$nativeSession))->getData(true)['active']===false,'account block revokes native grant');
++ $u->active=true;$u->save();
++ $assert($controller->native($make('POST','/sso/rustdesk/native',$nativeSession))->getData(true)['active']===false,'unblock does not resurrect revoked grant');
+  $controller->revoke($make('POST','/sso/rustdesk/revoke',$session));
+  $assert(DB::table('rustdesk_sso_sessions')->where('token_hash',hash('sha256',$body['session_token']))->count()===0,'logout revokes central app session');
+  $secret2=app(PragmaRX\Google2FA\Google2FA::class)->generateSecretKey();$pwd=bin2hex(random_bytes(24));$u->forceFill(['password'=>$pwd,'two_factor_secret'=>encrypt($secret2)]);$u->save();

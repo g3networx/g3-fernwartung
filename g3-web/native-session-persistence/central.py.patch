@@ -1,0 +1,45 @@
+--- a/central.py
++++ b/central.py
+@@ -52,6 +52,42 @@
+    # Fail closed after the 60 second cache, rather than accepting stale central authority.
+    return False
+  app.config['CENTRAL_CHECK']=check
++ def native_grant(s):
++  try:result=api('native',{'action':'grant','session_token':core.dec(s['central_token'])})
++  except urllib.error.HTTPError as error:abort(401 if error.code==401 else 503)
++  except Exception:abort(503)
++  if not identity_valid(result.get('identity',{})) or result['identity']['sub']!=s['central_sub']:abort(401)
++  token=result.get('session_token','')
++  if not __import__('re').fullmatch(r'[a-f0-9]{96}',token):abort(503)
++  return core.enc(token)
++ def native_check(s):
++  if not s['central_sub'] or not s['central_token']:return False
++  if s['central_checked']>time.time()-60:return dict(s)
++  try:
++   result=api('native',{'action':'check','session_token':core.dec(s['central_token'])})
++   if result.get('unknown'):
++    upgraded=native_grant(s)
++    core.run('UPDATE sessions SET central_token=? WHERE token=?',(upgraded,s['token']))
++    s=dict(s,central_token=upgraded)
++    result=api('native',{'action':'check','session_token':core.dec(upgraded)})
++   if not result.get('active') or not identity_valid(result.get('identity',{})) or result['identity']['sub']!=s['central_sub']:
++    core.run('DELETE FROM sessions WHERE token=?',(s['token'],));return False
++   u=sync(result['identity'])
++   core.run('UPDATE sessions SET central_checked=? WHERE token=?',(int(time.time()),s['token']))
++   refreshed=dict(s);refreshed.update(username=u['username'],central_admin=u['central_admin'],role=u['role'],active=u['active'])
++   return refreshed if u['active'] else False
++  except urllib.error.HTTPError as error:
++   return False if error.code==401 else None
++  except Exception as error:
++   if getattr(error,'code',None)==401:return False
++   # An outage denies this request without deleting the saved app grant.
++   return None
++ def native_revoke(s):
++  try:api('native',{'action':'revoke','session_token':core.dec(s['central_token'])})
++  except Exception:abort(503)
++ app.config['NATIVE_CENTRAL_GRANT']=native_grant
++ app.config['NATIVE_CENTRAL_CHECK']=native_check
++ app.config['NATIVE_CENTRAL_REVOKE']=native_revoke
+  def revoke(s):
+   try:
+    if s['central_token']:api('revoke',{'session_token':core.dec(s['central_token'])})

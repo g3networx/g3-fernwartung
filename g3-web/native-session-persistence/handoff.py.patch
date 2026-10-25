@@ -1,0 +1,16 @@
+--- a/handoff.py
++++ b/handoff.py
+@@ -50,8 +50,11 @@
+   r=m.db().execute('DELETE FROM client_handoffs WHERE token=? RETURNING *',(token,)).fetchone();m.db().commit()
+   if not r or r['expires']<time.time():abort(404)
+   s=m.db().execute('SELECT s.*,u.username,u.role,u.active,u.setup,u.password,u.totp,u.last_totp,u.central_sub,u.central_admin FROM sessions s JOIN users u ON u.id=s.uid WHERE s.token=?',(r['sid'],)).fetchone()
+-  if not s or not s['active'] or s['expires']<time.time() or s['seen']<time.time()-1800:abort(404)
+-  checked=app.config['CENTRAL_CHECK'](dict(s)) if app.config.get('CENTRAL_CHECK') else dict(s)
++  native=m.db().execute('SELECT 1 FROM native_ab_sessions WHERE token=?',(r['sid'],)).fetchone() if r['purpose']=='connect' else None
++  if not s or not s['active'] or (not native and (s['expires']<time.time() or s['seen']<time.time()-1800)):abort(404)
++  check=app.config.get('NATIVE_CENTRAL_CHECK') if native else app.config.get('CENTRAL_CHECK')
++  checked=check(dict(s)) if check else dict(s)
++  if native and checked is None:abort(503)
+   if not checked:abort(404)
+   g.user=dict(s) if checked is True else dict(checked)
+   if g.user['central_admin']:g.user['role']='admin'

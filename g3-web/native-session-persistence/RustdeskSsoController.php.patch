@@ -1,0 +1,33 @@
+--- a/app/Http/Controllers/RustdeskSsoController.php
++++ b/app/Http/Controllers/RustdeskSsoController.php
+@@ -100,6 +100,30 @@
+         $u=$row ? User::find($row->user_id) : null;
+         return $this->eligible($u) && hash_equals($row->security_stamp,$this->stamp($u)) ? $u : null;
+     }
++    public function native(Request $r) {
++        $this->client($r);
++        $r->validate(['action'=>'required|in:grant,check,revoke','session_token'=>['required','regex:/^[a-f0-9]{96}$/']]);
++        $hash=hash('sha256',(string)$r->input('session_token'));
++        if ($r->input('action')==='grant') {
++            $u=$this->principal($r);
++            if (!$u)return $this->response(['error'=>'invalid_grant'],401);
++            $token=bin2hex(random_bytes(48));
++            DB::table('rustdesk_sso_native_sessions')->insert(['token_hash'=>hash('sha256',$token),'user_id'=>$u->id,'created_at'=>now()]);
++            return $this->response(['identity'=>$this->identity($u),'session_token'=>$token]);
++        }
++        if ($r->input('action')==='revoke') {
++            DB::table('rustdesk_sso_native_sessions')->where('token_hash',$hash)->delete();
++            return $this->response(['revoked'=>true]);
++        }
++        $row=DB::table('rustdesk_sso_native_sessions')->where('token_hash',$hash)->first();
++        if (!$row)return $this->response(['active'=>false,'unknown'=>true]);
++        $u=User::find($row->user_id);
++        if (!$u || !$u->active) {
++            DB::table('rustdesk_sso_native_sessions')->where('user_id',$row->user_id)->delete();
++            return $this->response(['active'=>false]);
++        }
++        return $this->response(['active'=>true,'identity'=>$this->identity($u)]);
++    }
+     public function introspect(Request $r) {
+         $this->client($r);$u=$this->principal($r);
+         return $this->response($u ? ['active'=>true,'identity'=>$this->identity($u)] : ['active'=>false]);

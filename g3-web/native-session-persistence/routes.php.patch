@@ -1,0 +1,7 @@
+--- a/routes/rustdesk-sso.php
++++ b/routes/rustdesk-sso.php
+@@ -7,3 +7,3 @@
+ Route::post('/sso/rustdesk/authorize',[RustdeskSso::class,'approve'])->middleware(['auth',\App\Http\Middleware\PortalAccess::class,'throttle:5,1,rustdesk-sso-otp']);
+-foreach(['token','introspect','directory','revoke','password'] as $method) {
++foreach(['token','introspect','directory','revoke','password','native'] as $method) {
+     Route::post('/sso/rustdesk/'.$method,[RustdeskSso::class,$method])->withoutMiddleware([ValidateCsrfToken::class,\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class])->middleware('throttle:300,1,rustdesk-sso-backend');

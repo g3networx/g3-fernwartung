@@ -14,7 +14,7 @@
  def create_session(u,central_token=''):
      session.clear();sid=secrets.token_urlsafe(48);now=int(time.time())
 -    run('DELETE FROM sessions WHERE expires<? OR seen<?',(now,now-1800))
-+    run('DELETE FROM sessions WHERE expires<? OR (seen<? AND token NOT IN (SELECT token FROM native_ab_sessions))',(now,now-1800))
++    run('DELETE FROM sessions WHERE (expires<? OR seen<?) AND token NOT IN (SELECT token FROM native_ab_sessions)',(now,now-1800))
      run('INSERT INTO sessions(token,uid,expires,seen,central_token,central_checked) VALUES(?,?,?,?,?,?)',(hashlib.sha256(sid.encode()).hexdigest(),u['id'],now+28800,now,enc(central_token),now if central_token else 0))
      r=redirect('/setup' if u['setup'] else '/')
      r.set_cookie('__Host-rdab',sid,secure=True,httponly=True,samesite='Strict',max_age=28800,path='/')
