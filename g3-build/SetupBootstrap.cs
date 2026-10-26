@@ -200,7 +200,7 @@ internal sealed class SetupForm:Form {
   public void Restore(){if(!stopped)return;using(var service=new ServiceController("g3Fernwartung")){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
  }
- static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName})foreach(var p in Process.GetProcessesByName(name))using(p){if(p.HasExited)continue;string expected=name==AppName?InstalledExe:Path.Combine(Path.GetDirectoryName(InstalledExe),"g3Host-ui.exe");if(String.Equals(p.MainModule.FileName,expected,StringComparison.OrdinalIgnoreCase))return true;}return false;}
+ static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName}){var processes=Process.GetProcessesByName(name);try{if(processes.Length!=0)return true;}finally{foreach(var p in processes)p.Dispose();}}return false;}
  static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
   if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;

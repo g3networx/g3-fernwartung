@@ -1,0 +1,71 @@
+name: g3 bootstrap process inspection correction
+on:
+  push:
+    branches: [g3-opslinx-20261023]
+    paths: ['.github/workflows/g3-bootstrap-process-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  bootstrap:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Fetch immutable accepted payload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive=Join-Path $env:RUNNER_TEMP 'accepted-g332.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12599076949/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $archive
+          "G3_ACCEPTED_ARCHIVE=$archive" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Rebuild only bootstrap wrappers and test access-denied regression
+        shell: pwsh
+        run: |
+          python g3-build/rebuild-bootstrap-only.py
+          if($LASTEXITCODE -ne 0){throw 'Bootstrap build failed'}
+          python g3-build/test-process-inspection.py
+          if($LASTEXITCODE -ne 0){throw 'Process regression failed'}
+          python g3-build/test-setup-progress.py
+          if($LASTEXITCODE -ne 0){throw 'Progress regression failed'}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-bootstrap-process-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30
+  paired-acceptance:
+    needs: bootstrap
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [fresh, existing-host]
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: g3-bootstrap-process-${{ github.sha }}
+          path: outputs
+      - name: Native session gates and paired product acceptance
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.32
+          G3_PAIR_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session regression failed'}
+          ./g3-build/test-shared-device-install.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-bootstrap-pair-${{ matrix.scenario }}-${{ github.sha }}
+          path: outputs/*acceptance.json
+          retention-days: 30
