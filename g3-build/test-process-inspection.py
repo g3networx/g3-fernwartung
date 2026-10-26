@@ -16,6 +16,12 @@ class ProcessInspectionAcceptance {
  [DllImport("advapi32.dll",SetLastError=true)]static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string s,uint revision,out IntPtr descriptor,out uint size);
  [DllImport("advapi32.dll",SetLastError=true)]static extern bool SetKernelObjectSecurity(IntPtr handle,uint information,IntPtr descriptor);
  [DllImport("kernel32.dll")]static extern IntPtr LocalFree(IntPtr p);
+ [DllImport("kernel32.dll")]static extern IntPtr GetCurrentProcess();
+ [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr p);
+ [DllImport("advapi32.dll",SetLastError=true)]static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+ [DllImport("advapi32.dll",SetLastError=true)]static extern bool CreateRestrictedToken(IntPtr token,uint flags,uint disabled,IntPtr sids,uint deleted,IntPtr privileges,uint restricted,IntPtr restrictions,out IntPtr result);
+ [DllImport("advapi32.dll",SetLastError=true)]static extern bool ImpersonateLoggedOnUser(IntPtr token);
+ [DllImport("advapi32.dll")]static extern bool RevertToSelf();
  static bool Busy(){return (bool)typeof(SetupForm).GetMethod("OwnProcessesRemain",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,null);}
  static void Main(string[] args){
   if(Busy())throw new Exception("Fixture requires no installed client processes");
@@ -26,10 +32,15 @@ class ProcessInspectionAcceptance {
     var handle=child.Handle;IntPtr descriptor;uint length;
     if(!ConvertStringSecurityDescriptorToSecurityDescriptor("D:(D;;0x001FFFFF;;;WD)",1,out descriptor,out length))throw new Exception("Fixture descriptor failed");
     try{if(!SetKernelObjectSecurity(handle,4,descriptor))throw new Exception("Fixture ACL failed");}finally{LocalFree(descriptor);}
-    bool denied=false;
-    using(var query=Process.GetProcessById(child.Id)){try{var exited=query.HasExited;}catch(System.ComponentModel.Win32Exception e){denied=e.NativeErrorCode==5;}}
-    if(!denied)throw new Exception("Did not reproduce Framework HasExited access denied");
-    if(!Busy())throw new Exception("Protected running process was ignored");
+    IntPtr token,restricted=IntPtr.Zero;
+    if(!OpenProcessToken(GetCurrentProcess(),10,out token))throw new Exception("Fixture token unavailable");
+    try{
+     if(!CreateRestrictedToken(token,1,0,IntPtr.Zero,0,IntPtr.Zero,0,IntPtr.Zero,out restricted)||!ImpersonateLoggedOnUser(restricted))throw new Exception("Restricted fixture context failed");
+     bool denied=false;
+     using(var query=Process.GetProcessById(child.Id)){try{var exited=query.HasExited;}catch(System.ComponentModel.Win32Exception e){denied=e.NativeErrorCode==5;}}
+     if(!denied)throw new Exception("Did not reproduce Framework HasExited access denied");
+     if(!Busy())throw new Exception("Protected running process was ignored");
+    }finally{RevertToSelf();if(restricted!=IntPtr.Zero)CloseHandle(restricted);CloseHandle(token);}
     if(child.HasExited)throw new Exception("Read-only inspection interrupted fixture");
    }finally{child.StandardInput.WriteLine("");if(!child.WaitForExit(10000))throw new Exception("Fixture failed to exit voluntarily");}
   }
