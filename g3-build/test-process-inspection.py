@@ -24,7 +24,7 @@ class ProcessInspectionAcceptance {
    try{
     if(child.StandardOutput.ReadLine()!="READY")throw new Exception("Fixture start failed");
     var handle=child.Handle;IntPtr descriptor;uint length;
-    if(!ConvertStringSecurityDescriptorToSecurityDescriptor("D:(D;;0x0400;;;WD)(A;;GA;;;WD)",1,out descriptor,out length))throw new Exception("Fixture descriptor failed");
+    if(!ConvertStringSecurityDescriptorToSecurityDescriptor("D:(D;;0x001FFFFF;;;WD)",1,out descriptor,out length))throw new Exception("Fixture descriptor failed");
     try{if(!SetKernelObjectSecurity(handle,4,descriptor))throw new Exception("Fixture ACL failed");}finally{LocalFree(descriptor);}
     bool denied=false;
     using(var query=Process.GetProcessById(child.Id)){try{var exited=query.HasExited;}catch(System.ComponentModel.Win32Exception e){denied=e.NativeErrorCode==5;}}
