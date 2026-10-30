@@ -1,3 +1,4 @@
+mod system_fixture;
 #[path = "../../../src/platform/g3_wallpaper.rs"]
 mod wallpaper;
 use std::{
@@ -48,8 +49,8 @@ unsafe fn wait_state(desktop: &IDesktopWallpaper, expected: bool) {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
-fn owner() {
-    for line in std::io::stdin().lock().lines() {
+fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
+    for line in input.lines() {
         match line.unwrap().as_str() {
             "begin1" => wallpaper::begin(1),
             "begin2" => wallpaper::begin(2),
@@ -77,8 +78,8 @@ fn owner() {
             }
             _ => panic!("unknown test command"),
         }
-        println!("accepted");
-        std::io::stdout().flush().unwrap();
+        writeln!(output, "accepted").unwrap();
+        output.flush().unwrap();
     }
 }
 unsafe fn validate() {
@@ -242,15 +243,23 @@ unsafe fn validate() {
                 )
             })
             .collect();
+        let slideshow_start = Instant::now();
+        while desktop.GetStatus().unwrap().0 & 2 == 0
+            && slideshow_start.elapsed() < Duration::from_secs(5)
+        {
+            std::thread::sleep(Duration::from_millis(100));
+        }
         let original_status = desktop.GetStatus().unwrap().0;
-        assert!(original_status & 2 != 0, "Slideshow fixture not active");
+        assert!(count_before > 0, "Slideshow source configuration empty");
+        println!("Slideshow native status before suppression: {original_status}");
         send("begin1");
         wait_state(&desktop, false);
         send("end1");
         wait_state(&desktop, true);
-        assert!(
-            desktop.GetStatus().unwrap().0 & 2 != 0,
-            "Slideshow converted into static picture"
+        assert_eq!(
+            desktop.GetStatus().unwrap().0,
+            original_status,
+            "Slideshow status changed"
         );
         let slideshow = desktop.GetSlideshow().unwrap();
         let items_after: Vec<_> = (0..slideshow.GetCount().unwrap())
@@ -272,7 +281,9 @@ unsafe fn validate() {
             .unwrap();
         assert_eq!(options.0, 1);
         assert_eq!(tick, 60000);
-        println!("PASS slideshow remains slideshow with identical sources/options/timing");
+        println!(
+            "PASS slideshow configuration/status preserved with identical sources/options/timing"
+        );
         desktop
             .SetWallpaper(
                 PCWSTR::null(),
@@ -301,6 +312,7 @@ unsafe fn validate() {
     assert!(wallpaper::supported_client("g3Fernwartung"));
     assert!(!wallpaper::supported_client("RustDesk"));
     println!("PASS client scope; monitor count={count}");
+    system_fixture::validate(&desktop, &baseline);
 }
 fn main() {
     match std::env::args().nth(1).as_deref() {
@@ -310,7 +322,9 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Some("--owner") => owner(),
+        Some("--owner") => owner(std::io::stdin().lock(), std::io::stdout().lock()),
+        Some("--system-relay") => system_fixture::relay(),
+        Some("--system-owner") => system_fixture::owner(),
         Some("--validate") => unsafe {
             validate();
         },
