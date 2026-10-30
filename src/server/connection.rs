@@ -2324,7 +2324,10 @@ impl Connection {
         self.update_codec_on_login();
         #[cfg(windows)]
         if crate::platform::g3_wallpaper::supported_client(&crate::get_app_name()) {
-            if config::option2bool("allow-remove-wallpaper", &Config::get_option("allow-remove-wallpaper")) {
+            if config::option2bool(
+                "allow-remove-wallpaper",
+                &Config::get_option("allow-remove-wallpaper"),
+            ) {
                 crate::platform::g3_wallpaper::begin(self.inner.id());
             }
             return;

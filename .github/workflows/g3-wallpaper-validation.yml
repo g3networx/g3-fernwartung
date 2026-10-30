@@ -6,6 +6,7 @@ on:
       - src/platform/g3_wallpaper.rs
       - g3-build/wallpaper-tests/**
       - .github/workflows/g3-wallpaper-validation.yml
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -31,3 +32,30 @@ jobs:
         with:
           name: wallpaper-recovery-${{ github.sha }}
           path: wallpaper-validation.txt
+
+  native-candidate:
+    if: github.event_name == 'workflow_dispatch'
+    needs: native-recovery
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Build internal next-version native core, Host and FullClient
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          G3_BUILD_VERSION: 1.5.0-g3.33
+        run: ./g3-build/build-windows-paths.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-wallpaper-native-candidate-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30
