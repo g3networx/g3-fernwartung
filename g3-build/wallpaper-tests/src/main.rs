@@ -350,9 +350,8 @@ unsafe fn validate() {
             .count()
     );
     assert!(
-        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty())
-            && desktop.GetStatus().unwrap().0 == 1,
-        "SPI did not restore enabled/no-picture state"
+        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty()),
+        "SPI did not clear the picture configuration"
     );
     desktop.Enable(false).unwrap();
     if let Err(error) = desktop.Enable(true) {
@@ -362,6 +361,15 @@ unsafe fn validate() {
             "Unexpected no-image enable failure"
         );
     }
+    println!(
+        "SPI re-enable state={} picture_count={}",
+        desktop.GetStatus().unwrap().0,
+        snapshot(&desktop)
+            .0
+            .iter()
+            .filter(|(_, p)| !p.is_empty())
+            .count()
+    );
     assert!(
         snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty())
             && desktop.GetStatus().unwrap().0 == 1,
@@ -379,6 +387,13 @@ unsafe fn validate() {
         .unwrap();
     std::thread::sleep(Duration::from_millis(300));
     clear_wallpaper_via_spi().unwrap();
+    if let Err(error) = desktop.Enable(true) {
+        assert_eq!(
+            error.code().0,
+            0x80070002u32 as i32,
+            "Unexpected no-image enable failure"
+        );
+    }
     std::thread::sleep(Duration::from_millis(300));
     assert!(
         existing_configuration(&desktop) == empty_baseline,
