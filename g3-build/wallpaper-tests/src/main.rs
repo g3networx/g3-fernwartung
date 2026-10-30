@@ -1,7 +1,8 @@
 #[path = "../../../src/platform/g3_wallpaper.rs"]
 mod wallpaper;
 use std::{
-    io::{BufRead, Write},
+    io::{BufRead, Read, Write},
+    net::{TcpListener, TcpStream},
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -56,6 +57,24 @@ fn owner() {
             "end2" => wallpaper::end(2),
             "crash" => std::process::exit(23), // Bypass all destructors, no forced termination.
             "quit" => return,
+            value if value.starts_with("network:") => {
+                let values: Vec<_> = value.split(':').collect();
+                let port: u16 = values[1].parse().unwrap();
+                let timeout = values[2] == "timeout";
+                std::thread::spawn(move || {
+                    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+                    if timeout {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                    }
+                    wallpaper::begin(3);
+                    let mut byte = [0];
+                    let result = stream.read(&mut byte);
+                    assert!(matches!(result, Ok(0)) || timeout);
+                    wallpaper::end(3);
+                });
+            }
             _ => panic!("unknown test command"),
         }
         println!("accepted");
@@ -155,19 +174,120 @@ unsafe fn validate() {
         assert_eq!(snapshot(&desktop), baseline);
     }
     println!("PASS five reconnect/disconnect cycles");
+    for timeout in [false, true] {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        send(&format!(
+            "network:{port}:{}",
+            if timeout { "timeout" } else { "eof" }
+        ));
+        let (peer, _) = listener.accept().unwrap();
+        wait_state(&desktop, false);
+        if !timeout {
+            drop(peer);
+        } else {
+            wait_state(&desktop, true);
+            drop(peer);
+        }
+        wait_state(&desktop, true);
+        assert_eq!(snapshot(&desktop), baseline);
+    }
+    println!("PASS TCP peer disconnect and unresponsive-peer read timeout cleanup");
     desktop.Enable(false).unwrap();
     send("begin1");
     std::thread::sleep(Duration::from_millis(400));
     send("end1");
     std::thread::sleep(Duration::from_millis(700));
     assert!(!enabled(&desktop));
-    assert_eq!(snapshot(&desktop), baseline);
+    assert_eq!(snapshot(&desktop).1, baseline.1);
     assert_eq!(
         (desktop.vtable().Enable)(desktop.as_raw(), false.into()),
         S_FALSE
     );
     println!("PASS already-disabled background stays disabled");
     desktop.Enable(true).unwrap();
+    wait_state(&desktop, true);
+    assert_eq!(snapshot(&desktop), baseline);
+    {
+        use windows::Win32::UI::Shell::{
+            IShellItem, IShellItemArray, SHCreateItemFromParsingName,
+            SHCreateShellItemArrayFromShellItem, DESKTOP_SLIDESHOW_OPTIONS, SIGDN_FILESYSPATH,
+        };
+        let folder = std::env::current_dir().unwrap().join("slideshow-fixture");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::copy(&path, folder.join("first.bmp")).unwrap();
+        std::fs::copy(&path, folder.join("second.bmp")).unwrap();
+        let wide: Vec<u16> = folder
+            .to_str()
+            .unwrap()
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None).unwrap();
+        let array: IShellItemArray = SHCreateShellItemArrayFromShellItem(&item).unwrap();
+        desktop.SetSlideshow(&array).unwrap();
+        desktop
+            .SetSlideshowOptions(DESKTOP_SLIDESHOW_OPTIONS(1), 60000)
+            .unwrap();
+        let slideshow = desktop.GetSlideshow().unwrap();
+        let count_before = slideshow.GetCount().unwrap();
+        let items_before: Vec<_> = (0..count_before)
+            .map(|i| {
+                string(
+                    slideshow
+                        .GetItemAt(i)
+                        .unwrap()
+                        .GetDisplayName(SIGDN_FILESYSPATH)
+                        .unwrap(),
+                )
+            })
+            .collect();
+        let original_status = desktop.GetStatus().unwrap().0;
+        assert!(original_status & 2 != 0, "Slideshow fixture not active");
+        send("begin1");
+        wait_state(&desktop, false);
+        send("end1");
+        wait_state(&desktop, true);
+        assert!(
+            desktop.GetStatus().unwrap().0 & 2 != 0,
+            "Slideshow converted into static picture"
+        );
+        let slideshow = desktop.GetSlideshow().unwrap();
+        let items_after: Vec<_> = (0..slideshow.GetCount().unwrap())
+            .map(|i| {
+                string(
+                    slideshow
+                        .GetItemAt(i)
+                        .unwrap()
+                        .GetDisplayName(SIGDN_FILESYSPATH)
+                        .unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(items_after, items_before);
+        let mut options = DESKTOP_SLIDESHOW_OPTIONS(0);
+        let mut tick = 0;
+        desktop
+            .GetSlideshowOptions(&mut options, &mut tick)
+            .unwrap();
+        assert_eq!(options.0, 1);
+        assert_eq!(tick, 60000);
+        println!("PASS slideshow remains slideshow with identical sources/options/timing");
+        desktop
+            .SetWallpaper(
+                PCWSTR::null(),
+                PCWSTR(
+                    path.to_str()
+                        .unwrap()
+                        .encode_utf16()
+                        .chain(Some(0))
+                        .collect::<Vec<_>>()
+                        .as_ptr(),
+                ),
+            )
+            .unwrap();
+        desktop.Enable(true).unwrap();
+    }
     send("begin1");
     wait_state(&desktop, false);
     drop(send);

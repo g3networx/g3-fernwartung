@@ -246,7 +246,20 @@ fn run_user_helper() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 unsafe fn guard_desktop() -> Result<(), Box<dyn std::error::Error>> {
+    use windows::Win32::System::Com::CoTaskMemFree;
     let desktop: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL)?;
+    let mut has_picture = false;
+    for index in 0..desktop.GetMonitorDevicePathCount()? {
+        let monitor = desktop.GetMonitorDevicePathAt(index)?;
+        let picture = desktop.GetWallpaper(windows::core::PCWSTR(monitor.0));
+        CoTaskMemFree(Some(monitor.0.cast()));
+        let picture = picture?;
+        has_picture |= !picture.0.is_null() && *picture.0 != 0;
+        CoTaskMemFree(Some(picture.0.cast()));
+    }
+    if !has_picture {
+        return Ok(());
+    }
     // Preserve S_FALSE: the high-level Result API discards whether wallpaper was
     // already disabled. Never enable a background that we did not disable.
     let changed = (desktop.vtable().Enable)(desktop.as_raw(), false.into());
