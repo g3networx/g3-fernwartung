@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
-          toolchain: stable
+          toolchain: 1.75.0
       - name: Compile production wallpaper module in isolation
         run: cargo build --locked --manifest-path g3-build/wallpaper-tests/Cargo.toml
       - name: Exercise Windows wallpaper and process recovery

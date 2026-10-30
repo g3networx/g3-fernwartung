@@ -1,3 +1,5 @@
+extern crate self as hbb_common;
+pub use log;
 mod system_fixture;
 #[path = "../../../src/platform/g3_wallpaper.rs"]
 mod wallpaper;

@@ -1,5 +1,6 @@
 //! Session-only wallpaper suppression. The helper owns the Windows change; an
 //! inherited pipe restores it even when the server exits without running Drop.
+use hbb_common::log;
 use std::{
     collections::HashSet,
     io::{self, Read},
@@ -61,8 +62,8 @@ impl Drop for Lease {
         // Keep hide/restore serialized, including immediate reconnects. Waiting
         // happens on our dedicated worker, never on the network runtime.
         match self.child.wait() {
-            Ok(status) if !status.success() => eprintln!("Wallpaper helper failed: {status}"),
-            Err(error) => eprintln!("Wallpaper helper wait failed: {error}"),
+            Ok(status) if !status.success() => log::warn!("Wallpaper helper failed: {status}"),
+            Err(error) => log::warn!("Wallpaper helper wait failed: {error}"),
             _ => {}
         }
     }
@@ -81,7 +82,7 @@ fn events() -> &'static mpsc::Sender<Event> {
                             match Lease::start() {
                                 Ok(value) => lease = Some(value),
                                 Err(error) => {
-                                    eprintln!("Wallpaper helper could not start: {error}")
+                                    log::warn!("Wallpaper helper could not start: {error}")
                                 }
                             }
                         }
@@ -101,13 +102,13 @@ fn events() -> &'static mpsc::Sender<Event> {
 
 pub fn begin(id: i32) {
     if let Err(error) = events().send(Event::Begin(id)) {
-        eprintln!("Wallpaper begin failed: {error}");
+        log::warn!("Wallpaper begin failed: {error}");
     }
 }
 pub fn end(id: i32) {
     if let Some(tx) = EVENTS.get() {
         if let Err(error) = tx.send(Event::End(id)) {
-            eprintln!("Wallpaper end failed: {error}");
+            log::warn!("Wallpaper end failed: {error}");
         }
     }
 }
@@ -117,10 +118,10 @@ impl Drop for SessionMutex {
     fn drop(&mut self) {
         unsafe {
             if let Err(error) = ReleaseMutex(self.0) {
-                eprintln!("Wallpaper mutex release failed: {error}");
+                log::warn!("Wallpaper mutex release failed: {error}");
             }
             if let Err(error) = CloseHandle(self.0) {
-                eprintln!("Wallpaper mutex close failed: {error}");
+                log::warn!("Wallpaper mutex close failed: {error}");
             }
         }
     }
