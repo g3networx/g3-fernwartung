@@ -6,6 +6,7 @@ mod wallpaper;
 use std::{
     io::{BufRead, Read, Write},
     net::{TcpListener, TcpStream},
+    os::windows::process::CommandExt,
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -66,6 +67,7 @@ fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
                 assert!(wrapper.is_none());
                 let mut child = Command::new(&value[8..])
                     .arg(wallpaper::HELPER_ARG)
+                    .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
                     .stderr(Stdio::inherit())
@@ -176,6 +178,7 @@ unsafe fn validate_wrappers() {
         let path = std::fs::canonicalize(exe).unwrap();
         let mut child = Command::new(std::env::current_exe().unwrap())
             .arg("--owner")
+            .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -224,6 +227,7 @@ unsafe fn validate() {
     let (desktop, baseline, path, count) = fixture();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .arg("--owner")
+        .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -311,6 +315,47 @@ unsafe fn validate() {
     assert!(!wallpaper::supported_client("RustDesk"));
     println!("PASS client scope; monitor count={count}");
     system_fixture::validate(&desktop, &baseline, None);
+    // Prove the supported empty-image restoration before using temporary
+    // monitor-specific pictures on an explicitly approved desktop.
+    desktop
+        .SetWallpaper(PCWSTR::null(), windows::core::w!(""))
+        .unwrap();
+    let empty_start = Instant::now();
+    while snapshot(&desktop)
+        .0
+        .iter()
+        .any(|(_, image)| !image.is_empty())
+    {
+        assert!(
+            empty_start.elapsed() < Duration::from_secs(10),
+            "Empty wallpaper fixture was not applied"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let empty_baseline = existing_configuration(&desktop);
+    let fixture_wide: Vec<u16> = path
+        .to_str()
+        .unwrap()
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    desktop
+        .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    desktop
+        .SetWallpaper(PCWSTR::null(), windows::core::w!(""))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        existing_configuration(&desktop) == empty_baseline,
+        "Empty original wallpaper configuration was not restored"
+    );
+    desktop
+        .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    println!("PASS temporary picture fixture restores an originally empty desktop configuration");
     {
         use windows::Win32::UI::Shell::{
             IShellItem, IShellItemArray, SHCreateItemFromParsingName,
@@ -392,6 +437,127 @@ unsafe fn validate() {
         );
     }
 }
+
+unsafe fn existing_configuration(
+    desktop: &IDesktopWallpaper,
+) -> (
+    (Vec<(String, String)>, i32, u32),
+    i32,
+    Vec<String>,
+    i32,
+    u32,
+) {
+    let status = desktop.GetStatus().unwrap().0;
+    let mut current = snapshot(desktop);
+    let mut sources = Vec::new();
+    let mut options = windows::Win32::UI::Shell::DESKTOP_SLIDESHOW_OPTIONS(0);
+    let mut tick = 0;
+    if status & 2 != 0 {
+        let slideshow = desktop.GetSlideshow().unwrap();
+        for index in 0..slideshow.GetCount().unwrap() {
+            sources.push(string(
+                slideshow
+                    .GetItemAt(index)
+                    .unwrap()
+                    .GetDisplayName(windows::Win32::UI::Shell::SIGDN_FILESYSPATH)
+                    .unwrap(),
+            ));
+        }
+        desktop
+            .GetSlideshowOptions(&mut options, &mut tick)
+            .unwrap();
+        // A slideshow may legitimately advance; compare its original sources/options.
+        for (_, image) in &mut current.0 {
+            image.clear();
+        }
+    }
+    (current, status, sources, options.0, tick)
+}
+unsafe fn validate_existing_desktop() {
+    assert_eq!(
+        std::env::var("G3_WALLPAPER_TEST_EXISTING_DESKTOP").as_deref(),
+        Ok("APPROVED"),
+        "Explicit desktop-test authorization required"
+    );
+    CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
+    let desktop: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL).unwrap();
+    let baseline = existing_configuration(&desktop);
+    let images = snapshot(&desktop).0;
+    let count = images.len();
+    assert!(
+        count >= 2,
+        "This mode requires a real multi-monitor desktop"
+    );
+    assert!(
+        images
+            .iter()
+            .all(|(_, path)| path.is_empty() || std::path::Path::new(path).is_file()),
+        "Original image unavailable; refuse to hide"
+    );
+    let has_picture = images.iter().any(|(_, path)| !path.is_empty()) && baseline.1 & 1 != 0;
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .arg("--owner")
+        .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut send = |value: &str| {
+        writeln!(input, "{value}").unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        assert_eq!(line.trim(), "accepted");
+    };
+    if !has_picture {
+        send("begin1");
+        std::thread::sleep(Duration::from_millis(400));
+        send("end1");
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            existing_configuration(&desktop) == baseline,
+            "Original desktop configuration changed"
+        );
+        println!("PASS existing desktop: {count} monitors, already disabled/no picture remains unchanged");
+        drop(send);
+        writeln!(input, "quit").unwrap();
+        input.flush().unwrap();
+        assert!(child.wait().unwrap().success());
+        return;
+    }
+    for _ in 0..2 {
+        send("begin1");
+        wait_state(&desktop, false);
+        send("begin2");
+        send("end1");
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(!enabled(&desktop), "Restored before last session ended");
+        send("end2");
+        wait_state(&desktop, true);
+        assert!(
+            existing_configuration(&desktop) == baseline,
+            "Original multi-monitor configuration was not restored"
+        );
+    }
+    println!(
+        "PASS existing desktop: {count} monitors, normal/overlapping session restoration twice"
+    );
+    send("begin1");
+    wait_state(&desktop, false);
+    drop(send);
+    writeln!(input, "crash").unwrap();
+    input.flush().unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(23));
+    wait_state(&desktop, true);
+    assert!(
+        existing_configuration(&desktop) == baseline,
+        "Original multi-monitor configuration not restored after owner exit"
+    );
+    println!("PASS existing desktop: {count} monitors, abrupt owner exit without Drop restores original images and settings");
+}
+
 fn main() {
     match std::env::args().nth(1).as_deref() {
         Some(wallpaper::HELPER_ARG) => {
@@ -403,6 +569,9 @@ fn main() {
         Some("--owner") => owner(std::io::stdin().lock(), std::io::stdout().lock()),
         Some("--system-relay") => system_fixture::relay(),
         Some("--system-owner") => system_fixture::owner(),
+        Some("--validate-existing-desktop") => unsafe {
+            validate_existing_desktop();
+        },
         Some("--validate-wrappers") => unsafe {
             validate_wrappers();
         },
