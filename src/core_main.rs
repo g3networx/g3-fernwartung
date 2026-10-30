@@ -34,6 +34,7 @@ pub fn core_main() -> Option<Vec<String>> {
     if std::env::args().skip(1).eq([crate::platform::g3_wallpaper::HELPER_ARG]) {
         if let Err(error) = crate::platform::g3_wallpaper::run_helper() {
             eprintln!("Wallpaper recovery helper failed: {error}");
+            std::process::exit(1);
         }
         return None;
     }

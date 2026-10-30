@@ -1,0 +1,5 @@
+C:\Users\PlassmannM\Documents\Codex\2026-10-19\referenced-chatgpt-conversation-this-is-an\work\signpath\opslinx-wallpaper-20261030\g3-build\wallpaper-tests\target\debug\build\proc-macro2-d571c5305c921de1\build_script_build-d571c5305c921de1.d: C:\Users\PlassmannM\Documents\Codex\2026-10-19\referenced-chatgpt-conversation-this-is-an\work\wallpaper-toolchain\cargo\registry\src\index.crates.io-1949cf8c6b5b557f\proc-macro2-1.0.107\build.rs
+
+C:\Users\PlassmannM\Documents\Codex\2026-10-19\referenced-chatgpt-conversation-this-is-an\work\signpath\opslinx-wallpaper-20261030\g3-build\wallpaper-tests\target\debug\build\proc-macro2-d571c5305c921de1\build_script_build-d571c5305c921de1.exe: C:\Users\PlassmannM\Documents\Codex\2026-10-19\referenced-chatgpt-conversation-this-is-an\work\wallpaper-toolchain\cargo\registry\src\index.crates.io-1949cf8c6b5b557f\proc-macro2-1.0.107\build.rs
+
+C:\Users\PlassmannM\Documents\Codex\2026-10-19\referenced-chatgpt-conversation-this-is-an\work\wallpaper-toolchain\cargo\registry\src\index.crates.io-1949cf8c6b5b557f\proc-macro2-1.0.107\build.rs:
