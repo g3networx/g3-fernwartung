@@ -351,6 +351,22 @@ unsafe fn validate() {
         existing_configuration(&desktop) == empty_baseline,
         "Empty original wallpaper configuration was not restored"
     );
+    let enable_empty = desktop.Enable(true);
+    println!(
+        "Empty-image enable result={:?} status={} picture_count={}",
+        enable_empty.as_ref().err().map(|e| e.code().0),
+        desktop.GetStatus().unwrap().0,
+        snapshot(&desktop)
+            .0
+            .iter()
+            .filter(|(_, p)| !p.is_empty())
+            .count()
+    );
+    assert!(
+        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty())
+            && desktop.GetStatus().unwrap().0 == 1,
+        "Cannot recreate the original enabled/no-picture state safely"
+    );
     validate_temporary_monitor_images();
     desktop
         .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
@@ -565,6 +581,7 @@ struct EmptyDesktopFixture {
     desktop: IDesktopWallpaper,
     monitors: Vec<String>,
     cleared: bool,
+    enabled: bool,
 }
 impl EmptyDesktopFixture {
     unsafe fn clear(&mut self) -> windows::core::Result<()> {
@@ -572,6 +589,18 @@ impl EmptyDesktopFixture {
             let wide: Vec<u16> = monitor.encode_utf16().chain(Some(0)).collect();
             self.desktop
                 .SetWallpaper(PCWSTR(wide.as_ptr()), windows::core::w!(""))?;
+        }
+        if let Err(error) = self.desktop.Enable(self.enabled) {
+            let empty = snapshot(&self.desktop)
+                .0
+                .iter()
+                .all(|(_, image)| image.is_empty());
+            let state = self.desktop.GetStatus()?.0;
+            if error.code().0 == 0x80070002u32 as i32 && self.enabled && empty && state == 1 {
+                println!("Windows reports missing image for empty background; original empty/enabled state verified");
+            } else {
+                return Err(error);
+            }
         }
         self.cleared = true;
         Ok(())
@@ -614,6 +643,7 @@ unsafe fn validate_temporary_monitor_images() {
             .map(|(monitor, _)| monitor.clone())
             .collect(),
         cleared: false,
+        enabled: original.1 & 1 != 0,
     };
     let folder = std::env::current_dir()
         .unwrap()
