@@ -209,6 +209,20 @@ unsafe fn validate() {
     desktop.Enable(true).unwrap();
     wait_state(&desktop, true);
     assert_eq!(snapshot(&desktop), baseline);
+    send("begin1");
+    wait_state(&desktop, false);
+    drop(send);
+    writeln!(input, "crash").unwrap();
+    input.flush().unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(23));
+    wait_state(&desktop, true);
+    assert_eq!(snapshot(&desktop), baseline);
+    println!("PASS abrupt owner-process exit without Drop restores original configuration");
+    assert!(wallpaper::supported_client("g3Host"));
+    assert!(wallpaper::supported_client("g3Fernwartung"));
+    assert!(!wallpaper::supported_client("RustDesk"));
+    println!("PASS client scope; monitor count={count}");
+    system_fixture::validate(&desktop, &baseline);
     {
         use windows::Win32::UI::Shell::{
             IShellItem, IShellItemArray, SHCreateItemFromParsingName,
@@ -250,11 +264,15 @@ unsafe fn validate() {
             std::thread::sleep(Duration::from_millis(100));
         }
         let original_status = desktop.GetStatus().unwrap().0;
+        assert!(
+            original_status & 2 != 0,
+            "Slideshow fixture did not become active"
+        );
         assert!(count_before > 0, "Slideshow source configuration empty");
         println!("Slideshow native status before suppression: {original_status}");
-        send("begin1");
+        wallpaper::begin(101);
         wait_state(&desktop, false);
-        send("end1");
+        wallpaper::end(101);
         wait_state(&desktop, true);
         assert_eq!(
             desktop.GetStatus().unwrap().0,
@@ -284,35 +302,7 @@ unsafe fn validate() {
         println!(
             "PASS slideshow configuration/status preserved with identical sources/options/timing"
         );
-        desktop
-            .SetWallpaper(
-                PCWSTR::null(),
-                PCWSTR(
-                    path.to_str()
-                        .unwrap()
-                        .encode_utf16()
-                        .chain(Some(0))
-                        .collect::<Vec<_>>()
-                        .as_ptr(),
-                ),
-            )
-            .unwrap();
-        desktop.Enable(true).unwrap();
     }
-    send("begin1");
-    wait_state(&desktop, false);
-    drop(send);
-    writeln!(input, "crash").unwrap();
-    input.flush().unwrap();
-    assert_eq!(child.wait().unwrap().code(), Some(23));
-    wait_state(&desktop, true);
-    assert_eq!(snapshot(&desktop), baseline);
-    println!("PASS abrupt owner-process exit without Drop restores original configuration");
-    assert!(wallpaper::supported_client("g3Host"));
-    assert!(wallpaper::supported_client("g3Fernwartung"));
-    assert!(!wallpaper::supported_client("RustDesk"));
-    println!("PASS client scope; monitor count={count}");
-    system_fixture::validate(&desktop, &baseline);
 }
 fn main() {
     match std::env::args().nth(1).as_deref() {
