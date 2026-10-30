@@ -9,6 +9,9 @@ pub use windows::*;
 pub mod windows;
 
 #[cfg(windows)]
+pub mod g3_wallpaper;
+
+#[cfg(windows)]
 pub mod win_device;
 
 #[cfg(target_os = "macos")]

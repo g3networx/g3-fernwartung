@@ -30,10 +30,29 @@ macro_rules! my_println{
 /// If it returns [`Some`], then the process will continue, and flutter gui will be started.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn core_main() -> Option<Vec<String>> {
+    #[cfg(windows)]
+    if std::env::args()
+        .skip(1)
+        .eq([crate::platform::g3_wallpaper::HELPER_ARG])
+    {
+        if let Err(error) = crate::platform::g3_wallpaper::run_helper() {
+            eprintln!("Wallpaper recovery helper failed: {error}");
+            std::process::exit(1);
+        }
+        return None;
+    }
     if !crate::common::global_init() {
         return None;
     }
     crate::load_custom_client();
+    #[cfg(windows)]
+    if crate::platform::g3_wallpaper::supported_client(&crate::get_app_name()) {
+        config::DEFAULT_SETTINGS
+            .write()
+            .unwrap()
+            .entry("allow-remove-wallpaper".to_owned())
+            .or_insert_with(|| "Y".to_owned());
+    }
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process

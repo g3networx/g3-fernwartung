@@ -1,0 +1,94 @@
+name: g3 wallpaper recovery validation
+on:
+  push:
+    branches: [g3-wallpaper-next-20261030]
+    paths:
+      - src/platform/g3_wallpaper.rs
+      - g3-build/wallpaper-tests/**
+      - .github/workflows/g3-wallpaper-validation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-recovery:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - name: Compile production wallpaper module in isolation
+        run: cargo build --locked --manifest-path g3-build/wallpaper-tests/Cargo.toml
+      - name: Exercise Windows wallpaper and process recovery
+        shell: pwsh
+        env:
+          G3_WALLPAPER_TEST_DISPOSABLE: YES
+        run: |
+          & g3-build/wallpaper-tests/target/debug/g3-wallpaper-validation.exe --validate 2>&1 | Tee-Object wallpaper-validation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Native wallpaper recovery validation failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wallpaper-recovery-${{ github.sha }}
+          path: wallpaper-validation.txt
+
+  native-candidate:
+    if: github.event_name == 'workflow_dispatch'
+    needs: native-recovery
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Compile internal next-version native core, Host and FullClient
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          G3_BUILD_VERSION: 1.5.0-g3.33
+        run: |
+          $source=(Get-Location).Path
+          New-Item -ItemType Directory -Force outputs | Out-Null
+          Start-Transcript outputs/wallpaper-build-diagnostics.txt -Force | Out-Null
+          $buildSource=Get-Content g3-build/build.ps1 -Raw
+          $marker="Stage 'Run client identity and native acceptance tests'"
+          $end=$buildSource.IndexOf($marker)
+          if($end -lt 0){throw 'Native build boundary changed'}
+          $compileSource=$buildSource.Substring(0,$end)
+          $compileSource=$compileSource.Replace('$source=(Resolve-Path "$PSScriptRoot/..").Path','$source=(Get-Location).Path')
+          $compileSource=$compileSource.Replace('$PSScriptRoot','$source/g3-build')
+          & ([scriptblock]::Create($compileSource))
+          if($LASTEXITCODE -ne 0){throw 'Native compilation/tests failed'}
+          New-Item -ItemType Directory -Force outputs | Out-Null
+          & rc.exe /nologo "/fo$source/outputs/wallpaper-host.res" "$source/g3-build/windows-core-host.rc"
+          if($LASTEXITCODE -ne 0){throw 'Host resource compile failed'}
+          & cl.exe /nologo /O2 /MT /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source/g3-build/windows-core-host.cpp" /link "$source/outputs/wallpaper-host.res" /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup "/OUT:$source/outputs/g3Host.exe"
+          if($LASTEXITCODE -ne 0){throw 'Host launcher compile failed'}
+          $payload=Join-Path $source 'flutter/build/windows/x64/runner/Release'
+          Copy-Item "$payload/rustdesk.exe" "$payload/g3Fernwartung.exe"
+          Copy-Item outputs/g3Host.exe "$payload/g3Host.exe"
+          @{source_commit=$env:GITHUB_SHA;version=$env:G3_BUILD_VERSION;purpose='uninstalled wallpaper wrapper test payload';installer_tests_run=$false;publicly_trusted_signature=$false}|ConvertTo-Json|Set-Content outputs/wallpaper-build-provenance.json
+          Compress-Archive "$payload/*" outputs/g3-wallpaper-native-test-payload.zip
+          Stop-Transcript | Out-Null
+      - name: Test actual Host and FullClient wallpaper helper entry points
+        shell: pwsh
+        env:
+          G3_WALLPAPER_TEST_DISPOSABLE: YES
+        run: |
+          cargo build --locked --manifest-path g3-build/wallpaper-tests/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Wallpaper validation harness compile failed'}
+          $payload=Join-Path (Get-Location) 'flutter/build/windows/x64/runner/Release'
+          & g3-build/wallpaper-tests/target/debug/g3-wallpaper-validation.exe --validate-wrappers "$payload/g3Host.exe" "$payload/g3Fernwartung.exe" 2>&1 | Tee-Object outputs/wallpaper-wrapper-validation.txt
+          if($LASTEXITCODE -ne 0){throw 'Actual Host/FullClient wallpaper wrapper acceptance failed'}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-wallpaper-native-candidate-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30

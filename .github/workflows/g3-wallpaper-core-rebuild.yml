@@ -1,0 +1,79 @@
+name: g3 wallpaper corrected native core
+on:
+  push:
+    branches: [g3-wallpaper-next-20261030]
+    paths: [.github/workflows/g3-wallpaper-core-rebuild.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  corrected-core:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Reuse exact already-built Host and FullClient frontends
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force outputs|Out-Null
+          $archive=Join-Path $env:RUNNER_TEMP 'wallpaper-base.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12978163732/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $archive
+          if((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'e54064b51c03785e10524e1029868effd822af18b86f6fea7721196c1cb61156'){throw 'Base artifact digest mismatch'}
+          $stage=Join-Path $env:RUNNER_TEMP 'wallpaper-base'
+          Expand-Archive $archive $stage
+          $provenance=Get-Content "$stage/wallpaper-build-provenance.json" -Raw|ConvertFrom-Json
+          if($provenance.source_commit -ne '38fd8c45ce76a5b01b668f878380f9878dad9736'){throw 'Base source mismatch'}
+          $frontendDiff=git diff 38fd8c45ce76a5b01b668f878380f9878dad9736 HEAD -- flutter g3-build/windows-core-host.cpp g3-build/windows-core-host.rc
+          if($LASTEXITCODE -ne 0 -or $frontendDiff){throw 'Frontend source changed; exact frontend reuse invalid'}
+          Expand-Archive "$stage/g3-wallpaper-native-test-payload.zip" "$stage/payload"
+          "G3_WRAPPER_PAYLOAD=$stage/payload"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Compile corrected native core only
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.33
+        run: |
+          $source=(Get-Location).Path
+          Start-Transcript outputs/corrected-core-build.txt -Force|Out-Null
+          $buildSource=Get-Content g3-build/build.ps1 -Raw
+          $marker="Stage 'Compile native core and Flutter client'"
+          $end=$buildSource.IndexOf($marker)
+          if($end -lt 0){throw 'Native setup boundary changed'}
+          $setup=$buildSource.Substring(0,$end).Replace('$source=(Resolve-Path "$PSScriptRoot/..").Path','$source=(Get-Location).Path').Replace('$PSScriptRoot','$source/g3-build')
+          & ([scriptblock]::Create($setup))
+          cargo build --locked --features hwcodec,vram,flutter --lib --release
+          if($LASTEXITCODE -ne 0){throw 'Corrected native core build failed'}
+          $baseNativeHash=(Get-FileHash "$env:G3_WRAPPER_PAYLOAD/librustdesk.dll").Hash.ToLowerInvariant()
+          Copy-Item target/release/librustdesk.dll "$env:G3_WRAPPER_PAYLOAD/librustdesk.dll" -Force
+          $nativeHash=(Get-FileHash "$env:G3_WRAPPER_PAYLOAD/librustdesk.dll").Hash.ToLowerInvariant()
+          @{source_commit=$env:GITHUB_SHA;version=$env:G3_BUILD_VERSION;native_sha256=$nativeHash;base_native_sha256=$baseNativeHash;frontend_source_commit='38fd8c45ce76a5b01b668f878380f9878dad9736';base_artifact_id=12978163732;base_artifact_sha256='e54064b51c03785e10524e1029868effd822af18b86f6fea7721196c1cb61156';purpose='uninstalled corrected wallpaper test payload';publicly_trusted_signature=$false}|ConvertTo-Json|Set-Content outputs/corrected-core-provenance.json
+          Compress-Archive "$env:G3_WRAPPER_PAYLOAD/*" outputs/g3-wallpaper-corrected-native-test-payload.zip
+          Stop-Transcript|Out-Null
+      - name: Test corrected module and actual Host and FullClient entry points
+        shell: pwsh
+        env:
+          G3_WALLPAPER_TEST_DISPOSABLE: YES
+          G3_WRAPPER_STDERR_MODE: 'null'
+        run: |
+          cargo build --locked --manifest-path g3-build/wallpaper-tests/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Validation harness compile failed'}
+          & g3-build/wallpaper-tests/target/debug/g3-wallpaper-validation.exe --validate 2>&1|Tee-Object outputs/corrected-module-tests.txt
+          if($LASTEXITCODE -ne 0){throw 'Corrected module acceptance failed'}
+          & g3-build/wallpaper-tests/target/debug/g3-wallpaper-validation.exe --validate-wrappers "$env:G3_WRAPPER_PAYLOAD/g3Host.exe" "$env:G3_WRAPPER_PAYLOAD/g3Fernwartung.exe" 2>&1|Tee-Object outputs/corrected-wrapper-tests.txt
+          if($LASTEXITCODE -ne 0){throw 'Corrected actual-wrapper acceptance failed'}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3-wallpaper-corrected-core-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30

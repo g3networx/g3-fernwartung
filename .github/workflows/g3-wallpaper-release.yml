@@ -1,0 +1,86 @@
+name: g3.33 wallpaper release packaging
+on:
+  push:
+    branches: [g3-wallpaper-next-20261030]
+    paths: [.github/workflows/g3-wallpaper-release.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - name: Fetch pinned accepted payload and installer tools
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive=Join-Path $env:RUNNER_TEMP 'accepted-wallpaper.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12983117823/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $archive
+          if((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'a329b203fa8735110068172981a49bb293ec8e57077dce2a67c2ee5bbcd35df3'){throw 'Accepted payload digest mismatch'}
+          "G3_WALLPAPER_ACCEPTED_ARCHIVE=$archive"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $tools=Join-Path $env:RUNNER_TEMP 'g333-tools'
+          New-Item -ItemType Directory $tools|Out-Null
+          Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
+          if((Get-FileHash "$tools/wix.zip").Hash.ToLowerInvariant() -ne '6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31'){throw 'WiX digest mismatch'}
+          Expand-Archive "$tools/wix.zip" "$tools/wix/bin"
+          "WIX=$tools/wix"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Package exact g3.33 Host and FullClient and test installer regressions
+        shell: pwsh
+        run: |
+          python g3-build/package-wallpaper-release.py
+          if($LASTEXITCODE -ne 0){throw 'Packaging failed'}
+          python g3-build/test-process-inspection.py
+          if($LASTEXITCODE -ne 0){throw 'Process inspection regression failed'}
+          python g3-build/test-setup-progress.py
+          if($LASTEXITCODE -ne 0){throw 'Setup progress regression failed'}
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session guard regression failed'}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g333-release-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30
+  paired-acceptance:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [fresh, existing-host]
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: g333-release-${{ github.sha }}
+          path: outputs
+      - name: Verify native session gates and paired installations on disposable runner
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.33
+          G3_PAIR_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session regression failed'}
+          ./g3-build/test-shared-device-install.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g333-pair-${{ matrix.scenario }}-${{ github.sha }}
+          path: outputs/*acceptance.json
+          retention-days: 30
