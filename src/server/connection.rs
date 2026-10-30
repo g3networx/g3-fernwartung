@@ -2322,6 +2322,13 @@ impl Connection {
 
     fn on_remote_authorized(&self) {
         self.update_codec_on_login();
+        #[cfg(windows)]
+        if crate::platform::g3_wallpaper::supported_client(&crate::get_app_name()) {
+            if config::option2bool("allow-remove-wallpaper", &Config::get_option("allow-remove-wallpaper")) {
+                crate::platform::g3_wallpaper::begin(self.inner.id());
+            }
+            return;
+        }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         if config::option2bool(
             "allow-remove-wallpaper",
@@ -7052,6 +7059,8 @@ mod raii {
 
     impl Drop for AuthedConnID {
         fn drop(&mut self) {
+            #[cfg(windows)]
+            crate::platform::g3_wallpaper::end(self.0);
             if self.1 == AuthConnType::Remote || self.1 == AuthConnType::ViewCamera {
                 scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Remove(self.0));
                 video_service::VIDEO_QOS

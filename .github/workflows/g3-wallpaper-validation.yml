@@ -1,0 +1,33 @@
+name: g3 wallpaper recovery validation
+on:
+  push:
+    branches: [g3-wallpaper-next-20261030]
+    paths:
+      - src/platform/g3_wallpaper.rs
+      - g3-build/wallpaper-tests/**
+      - .github/workflows/g3-wallpaper-validation.yml
+permissions:
+  contents: read
+jobs:
+  native-recovery:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: stable
+      - name: Compile production wallpaper module in isolation
+        run: cargo build --locked --manifest-path g3-build/wallpaper-tests/Cargo.toml
+      - name: Exercise Windows wallpaper and process recovery
+        shell: pwsh
+        env:
+          G3_WALLPAPER_TEST_DISPOSABLE: YES
+        run: |
+          & g3-build/wallpaper-tests/target/debug/g3-wallpaper-validation.exe --validate 2>&1 | Tee-Object wallpaper-validation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Native wallpaper recovery validation failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wallpaper-recovery-${{ github.sha }}
+          path: wallpaper-validation.txt
