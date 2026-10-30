@@ -47,7 +47,9 @@ impl Lease {
             .arg(HELPER_ARG)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
+            // GUI service processes may have no stderr to inherit. The helper
+            // needs valid standard handles for the SYSTEM-to-user launch.
+            .stderr(Stdio::null())
             .creation_flags(CREATE_NO_WINDOW.0)
             .spawn()?;
         Ok(Self {

@@ -27,9 +27,7 @@ pub fn relay() {
         .any(|v| v == b"S-1-5-18"));
     let session: u32 = std::env::args().nth(2).unwrap().parse().unwrap();
     let port = std::env::args().nth(3).unwrap();
-    let stderr_mode = std::env::args()
-        .nth(4)
-        .unwrap_or_else(|| "inherit".to_owned());
+    let stderr_mode = std::env::args().nth(4).unwrap_or_else(|| "null".to_owned());
     unsafe {
         let mut token = HANDLE::default();
         OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &mut token).unwrap();
@@ -97,10 +95,8 @@ pub fn owner() {
         .windows(8)
         .any(|v| v == b"S-1-5-18"));
     let port: u16 = std::env::args().nth(2).unwrap().parse().unwrap();
-    let stderr_mode = std::env::args()
-        .nth(3)
-        .unwrap_or_else(|| "inherit".to_owned());
-    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe"));
+    let stderr_mode = std::env::args().nth(3).unwrap_or_else(|| "null".to_owned());
+    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe" | "null"));
     std::env::set_var("G3_WRAPPER_STDERR_MODE", stderr_mode);
     let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     super::owner(std::io::BufReader::new(stream.try_clone().unwrap()), stream);
@@ -119,9 +115,8 @@ pub unsafe fn validate(
         .unwrap()
         .to_string_lossy()
         .replace("'", "''");
-    let stderr_mode =
-        std::env::var("G3_WRAPPER_STDERR_MODE").unwrap_or_else(|_| "inherit".to_owned());
-    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe"));
+    let stderr_mode = std::env::var("G3_WRAPPER_STDERR_MODE").unwrap_or_else(|_| "null".to_owned());
+    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe" | "null"));
     let script = format!("$a=New-ScheduledTaskAction -Execute '{exe}' -Argument '--system-relay {session} {port} {stderr_mode}'; $p=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount; Register-ScheduledTask -TaskName '{name}' -Action $a -Principal $p | Out-Null; Start-ScheduledTask -TaskName '{name}'");
     assert!(Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])

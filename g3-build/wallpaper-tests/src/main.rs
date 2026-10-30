@@ -70,13 +70,11 @@ fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
                     .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
-                    .stderr(
-                        if std::env::var("G3_WRAPPER_STDERR_MODE").as_deref() == Ok("pipe") {
-                            Stdio::piped()
-                        } else {
-                            Stdio::inherit()
-                        },
-                    )
+                    .stderr(match std::env::var("G3_WRAPPER_STDERR_MODE").as_deref() {
+                        Ok("pipe") => Stdio::piped(),
+                        Ok("inherit") => Stdio::inherit(),
+                        _ => Stdio::null(),
+                    })
                     .spawn()
                     .unwrap();
                 wrapper_input = child.stdin.take();
