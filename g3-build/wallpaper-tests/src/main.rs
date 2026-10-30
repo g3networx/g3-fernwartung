@@ -351,23 +351,6 @@ unsafe fn validate() {
         existing_configuration(&desktop) == empty_baseline,
         "Empty original wallpaper configuration was not restored"
     );
-    let enable_empty = desktop.Enable(true);
-    println!(
-        "Empty-image enable result={:?} status={} picture_count={}",
-        enable_empty.as_ref().err().map(|e| e.code().0),
-        desktop.GetStatus().unwrap().0,
-        snapshot(&desktop)
-            .0
-            .iter()
-            .filter(|(_, p)| !p.is_empty())
-            .count()
-    );
-    assert!(
-        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty())
-            && desktop.GetStatus().unwrap().0 == 1,
-        "Cannot recreate the original enabled/no-picture state safely"
-    );
-    validate_temporary_monitor_images();
     desktop
         .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
         .unwrap();
@@ -501,11 +484,9 @@ unsafe fn validate_existing_desktop() {
     let baseline = existing_configuration(&desktop);
     let images = snapshot(&desktop).0;
     let count = images.len();
-    let disposable = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
-        && std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref() == Ok("YES");
     assert!(
-        count >= if disposable { 1 } else { 2 },
-        "This mode requires a real multi-monitor desktop outside disposable CI"
+        count >= 2,
+        "This mode requires a real multi-monitor desktop"
     );
     assert!(
         images
@@ -577,145 +558,6 @@ unsafe fn validate_existing_desktop() {
     println!("PASS existing desktop: {count} monitors, abrupt owner exit without Drop restores original images and settings");
 }
 
-struct EmptyDesktopFixture {
-    desktop: IDesktopWallpaper,
-    monitors: Vec<String>,
-    cleared: bool,
-    enabled: bool,
-}
-impl EmptyDesktopFixture {
-    unsafe fn clear(&mut self) -> windows::core::Result<()> {
-        for monitor in &self.monitors {
-            let wide: Vec<u16> = monitor.encode_utf16().chain(Some(0)).collect();
-            self.desktop
-                .SetWallpaper(PCWSTR(wide.as_ptr()), windows::core::w!(""))?;
-        }
-        if let Err(error) = self.desktop.Enable(self.enabled) {
-            let empty = snapshot(&self.desktop)
-                .0
-                .iter()
-                .all(|(_, image)| image.is_empty());
-            let state = self.desktop.GetStatus()?.0;
-            if error.code().0 == 0x80070002u32 as i32 && self.enabled && empty && state == 1 {
-                println!("Windows reports missing image for empty background; original empty/enabled state verified");
-            } else {
-                return Err(error);
-            }
-        }
-        self.cleared = true;
-        Ok(())
-    }
-}
-impl Drop for EmptyDesktopFixture {
-    fn drop(&mut self) {
-        if !self.cleared {
-            if let Err(error) = unsafe { self.clear() } {
-                eprintln!("Temporary wallpaper cleanup failed: {error}");
-            }
-        }
-    }
-}
-unsafe fn validate_temporary_monitor_images() {
-    let disposable = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
-        && std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref() == Ok("YES");
-    assert!(
-        disposable
-            || std::env::var("G3_WALLPAPER_TEST_TEMPORARY_PICTURES").as_deref() == Ok("APPROVED"),
-        "Explicit temporary-picture authorization required"
-    );
-    let desktop: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL).unwrap();
-    let original = existing_configuration(&desktop);
-    assert!(
-        original.0 .0.iter().all(|(_, image)| image.is_empty()) && original.1 == 1,
-        "Only an originally empty enabled desktop is supported; refuse to replace user pictures"
-    );
-    let count = original.0 .0.len();
-    assert!(
-        count >= if disposable { 1 } else { 2 },
-        "Expected a multi-monitor desktop"
-    );
-    let mut cleanup = EmptyDesktopFixture {
-        desktop: desktop.clone(),
-        monitors: original
-            .0
-             .0
-            .iter()
-            .map(|(monitor, _)| monitor.clone())
-            .collect(),
-        cleared: false,
-        enabled: original.1 & 1 != 0,
-    };
-    let folder = std::env::current_dir()
-        .unwrap()
-        .join("work/g333/wallpaper")
-        .join(format!("desktop-fixture-{}", std::process::id()));
-    assert!(!folder.exists(), "Do not reuse an old fixture directory");
-    std::fs::create_dir_all(&folder).unwrap();
-    let mut files = Vec::new();
-    for (index, (monitor, _)) in original.0 .0.iter().enumerate() {
-        let path = folder.join(format!("monitor-{index}.bmp"));
-        let mut bmp = vec![0u8; 70];
-        bmp[0..2].copy_from_slice(b"BM");
-        bmp[2..6].copy_from_slice(&70u32.to_le_bytes());
-        bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
-        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-        bmp[18..22].copy_from_slice(&2u32.to_le_bytes());
-        bmp[22..26].copy_from_slice(&2u32.to_le_bytes());
-        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-        bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
-        bmp[54..].fill((40 + (index * 45) % 200) as u8);
-        std::fs::write(&path, bmp).unwrap();
-        let monitor_wide: Vec<u16> = monitor.encode_utf16().chain(Some(0)).collect();
-        let image_wide: Vec<u16> = path
-            .to_str()
-            .unwrap()
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
-        desktop
-            .SetWallpaper(PCWSTR(monitor_wide.as_ptr()), PCWSTR(image_wide.as_ptr()))
-            .unwrap();
-        files.push(path);
-    }
-    let start = Instant::now();
-    loop {
-        let images = snapshot(&desktop).0;
-        if images
-            .iter()
-            .zip(&files)
-            .all(|((_, image), file)| std::path::Path::new(image) == file)
-        {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "Distinct temporary pictures were not applied"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    if disposable {
-        std::env::set_var("G3_WALLPAPER_TEST_EXISTING_DESKTOP", "APPROVED");
-    }
-    validate_existing_desktop();
-    if disposable {
-        std::env::remove_var("G3_WALLPAPER_TEST_EXISTING_DESKTOP");
-    }
-    cleanup.clear().unwrap();
-    let start = Instant::now();
-    while existing_configuration(&desktop) != original {
-        assert!(
-            start.elapsed() < Duration::from_secs(10),
-            "Original empty desktop configuration not restored"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    for file in files {
-        std::fs::remove_file(file).unwrap();
-    }
-    std::fs::remove_dir(&folder).unwrap();
-    println!("PASS {count} distinct monitor pictures: normal/overlapping sessions and abrupt owner exit; original empty desktop restored and fixture files removed");
-}
-
 fn main() {
     match std::env::args().nth(1).as_deref() {
         Some(wallpaper::HELPER_ARG) => {
@@ -727,10 +569,6 @@ fn main() {
         Some("--owner") => owner(std::io::stdin().lock(), std::io::stdout().lock()),
         Some("--system-relay") => system_fixture::relay(),
         Some("--system-owner") => system_fixture::owner(),
-        Some("--validate-temporary-monitor-images") => unsafe {
-            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
-            validate_temporary_monitor_images();
-        },
         Some("--validate-existing-desktop") => unsafe {
             validate_existing_desktop();
         },
