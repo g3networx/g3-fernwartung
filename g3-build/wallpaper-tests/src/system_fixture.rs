@@ -141,13 +141,28 @@ pub unsafe fn validate(
         input.flush().unwrap();
         let mut line = String::new();
         output.read_line(&mut line).unwrap();
-        assert_eq!(line.trim(), "accepted");
+        if value == "wrapperdiag" {
+            println!("SYSTEM wrapper diagnostic: {}", line.trim());
+        } else {
+            assert_eq!(line.trim(), "accepted");
+        }
     };
     let start_command = wrapper
         .map(|path| format!("wrapper:{}", path.display()))
         .unwrap_or_else(|| "begin1".to_owned());
     send(&start_command);
-    wait_state(desktop, false);
+    if wrapper.is_some() {
+        let deadline = Instant::now();
+        while enabled(desktop) {
+            if deadline.elapsed() > Duration::from_secs(10) {
+                send("wrapperdiag");
+                panic!("SYSTEM wrapper did not hide the wallpaper");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    } else {
+        wait_state(desktop, false);
+    }
     send(if wrapper.is_some() {
         "wrapperend"
     } else {

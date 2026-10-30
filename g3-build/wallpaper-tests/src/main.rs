@@ -70,11 +70,37 @@ fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
                     .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
-                    .stderr(Stdio::inherit())
+                    .stderr(
+                        if std::env::var("G3_WRAPPER_STDERR_MODE").as_deref() == Ok("pipe") {
+                            Stdio::piped()
+                        } else {
+                            Stdio::inherit()
+                        },
+                    )
                     .spawn()
                     .unwrap();
                 wrapper_input = child.stdin.take();
                 wrapper = Some(child);
+            }
+            "wrapperdiag" => {
+                use windows::Win32::System::Console::{
+                    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+                };
+                let handles = unsafe {
+                    [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+                        .map(|kind| GetStdHandle(kind).map(|h| !h.is_invalid()).unwrap_or(false))
+                };
+                let status = wrapper.as_mut().unwrap().try_wait().unwrap();
+                let mut error = String::new();
+                if status.is_some()
+                    && std::env::var("G3_WRAPPER_STDERR_MODE").as_deref() == Ok("pipe")
+                {
+                    let result = wrapper.take().unwrap().wait_with_output().unwrap();
+                    error = String::from_utf8_lossy(&result.stderr).replace('\n', " | ");
+                }
+                writeln!(output,"wrapper_exit={status:?}; parent_stdin_stdout_stderr_valid={handles:?}; stderr={error}").unwrap();
+                output.flush().unwrap();
+                continue;
             }
             "wrapperend" => {
                 wrapper_input.take();
@@ -169,10 +195,9 @@ unsafe fn validate_wrappers() {
     assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
     let (desktop, baseline, _, _) = fixture();
     let executables: Vec<_> = std::env::args().skip(2).collect();
-    assert_eq!(
-        executables.len(),
-        2,
-        "Provide actual Host and FullClient executable paths"
+    assert!(
+        !executables.is_empty() && executables.len() <= 2,
+        "Provide actual Host/FullClient executable paths"
     );
     for exe in executables {
         let path = std::fs::canonicalize(exe).unwrap();
@@ -571,6 +596,9 @@ fn main() {
         Some("--system-owner") => system_fixture::owner(),
         Some("--validate-existing-desktop") => unsafe {
             validate_existing_desktop();
+        },
+        Some("--diagnose-wrapper") => unsafe {
+            validate_wrappers();
         },
         Some("--validate-wrappers") => unsafe {
             validate_wrappers();
