@@ -27,6 +27,9 @@ pub fn relay() {
         .any(|v| v == b"S-1-5-18"));
     let session: u32 = std::env::args().nth(2).unwrap().parse().unwrap();
     let port = std::env::args().nth(3).unwrap();
+    let stderr_mode = std::env::args()
+        .nth(4)
+        .unwrap_or_else(|| "inherit".to_owned());
     unsafe {
         let mut token = HANDLE::default();
         OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &mut token).unwrap();
@@ -58,10 +61,11 @@ pub fn relay() {
         let mut desktop: Vec<u16> = "winsta0\\default".encode_utf16().chain(Some(0)).collect();
         startup.lpDesktop = PWSTR(desktop.as_mut_ptr());
         let exe = std::env::current_exe().unwrap();
-        let mut command: Vec<u16> = format!("\"{}\" --system-owner {port}", exe.display())
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
+        let mut command: Vec<u16> =
+            format!("\"{}\" --system-owner {port} {stderr_mode}", exe.display())
+                .encode_utf16()
+                .chain(Some(0))
+                .collect();
         let mut process = PROCESS_INFORMATION::default();
         CreateProcessAsUserW(
             Some(primary),
@@ -93,6 +97,11 @@ pub fn owner() {
         .windows(8)
         .any(|v| v == b"S-1-5-18"));
     let port: u16 = std::env::args().nth(2).unwrap().parse().unwrap();
+    let stderr_mode = std::env::args()
+        .nth(3)
+        .unwrap_or_else(|| "inherit".to_owned());
+    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe"));
+    std::env::set_var("G3_WRAPPER_STDERR_MODE", stderr_mode);
     let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     super::owner(std::io::BufReader::new(stream.try_clone().unwrap()), stream);
 }
@@ -110,7 +119,10 @@ pub unsafe fn validate(
         .unwrap()
         .to_string_lossy()
         .replace("'", "''");
-    let script = format!("$a=New-ScheduledTaskAction -Execute '{exe}' -Argument '--system-relay {session} {port}'; $p=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount; Register-ScheduledTask -TaskName '{name}' -Action $a -Principal $p | Out-Null; Start-ScheduledTask -TaskName '{name}'");
+    let stderr_mode =
+        std::env::var("G3_WRAPPER_STDERR_MODE").unwrap_or_else(|_| "inherit".to_owned());
+    assert!(matches!(stderr_mode.as_str(), "inherit" | "pipe"));
+    let script = format!("$a=New-ScheduledTaskAction -Execute '{exe}' -Argument '--system-relay {session} {port} {stderr_mode}'; $p=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount; Register-ScheduledTask -TaskName '{name}' -Action $a -Principal $p | Out-Null; Start-ScheduledTask -TaskName '{name}'");
     assert!(Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .status()
