@@ -24,6 +24,8 @@ with zipfile.ZipFile(archive) as outer:
 assert hashlib.sha256((payload / 'librustdesk.dll').read_bytes()).hexdigest() == provenance['native_sha256']
 shutil.copy2(root / 'LICENCE', payload / 'LICENCE')
 (payload / 'SOURCE.txt').write_text('https://github.com/g3networx/g3-fernwartung/tree/' + os.environ['GITHUB_SHA'] + '\n', encoding='utf8')
+# The native build normally creates this file; packaging only needs its date.
+(root / 'src/version.rs').write_text('pub const BUILD_DATE: &str = "2026-10-30";\n', encoding='utf8')
 for kind in ('windows', 'host'):
     (root / 'g3-build/msi' / kind).mkdir(parents=True, exist_ok=True)
 subprocess.run(['python', 'g3-build/package-msi.py', '--version', '1.5.0-g3.33'], check=True)
