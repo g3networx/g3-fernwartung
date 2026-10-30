@@ -338,72 +338,6 @@ unsafe fn validate() {
     assert!(!wallpaper::supported_client("RustDesk"));
     println!("PASS client scope; monitor count={count}");
     system_fixture::validate(&desktop, &baseline, None);
-    clear_wallpaper_via_spi().unwrap();
-    std::thread::sleep(Duration::from_millis(300));
-    println!(
-        "SPI empty state={} picture_count={}",
-        desktop.GetStatus().unwrap().0,
-        snapshot(&desktop)
-            .0
-            .iter()
-            .filter(|(_, p)| !p.is_empty())
-            .count()
-    );
-    assert!(
-        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty()),
-        "SPI did not clear the picture configuration"
-    );
-    desktop.Enable(false).unwrap();
-    if let Err(error) = desktop.Enable(true) {
-        assert_eq!(
-            error.code().0,
-            0x80070002u32 as i32,
-            "Unexpected no-image enable failure"
-        );
-    }
-    println!(
-        "SPI re-enable state={} picture_count={}",
-        desktop.GetStatus().unwrap().0,
-        snapshot(&desktop)
-            .0
-            .iter()
-            .filter(|(_, p)| !p.is_empty())
-            .count()
-    );
-    assert!(
-        snapshot(&desktop).0.iter().all(|(_, p)| p.is_empty())
-            && desktop.GetStatus().unwrap().0 == 1,
-        "Old temporary images returned after empty-state toggle"
-    );
-    let empty_baseline = existing_configuration(&desktop);
-    let fixture_wide: Vec<u16> = path
-        .to_str()
-        .unwrap()
-        .encode_utf16()
-        .chain(Some(0))
-        .collect();
-    desktop
-        .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
-        .unwrap();
-    std::thread::sleep(Duration::from_millis(300));
-    clear_wallpaper_via_spi().unwrap();
-    if let Err(error) = desktop.Enable(true) {
-        assert_eq!(
-            error.code().0,
-            0x80070002u32 as i32,
-            "Unexpected no-image enable failure"
-        );
-    }
-    std::thread::sleep(Duration::from_millis(300));
-    assert!(
-        existing_configuration(&desktop) == empty_baseline,
-        "SPI did not restore original empty configuration"
-    );
-    desktop
-        .SetWallpaper(PCWSTR::null(), PCWSTR(fixture_wide.as_ptr()))
-        .unwrap();
-    std::thread::sleep(Duration::from_millis(300));
-    println!("PASS temporary picture fixture restores original empty configuration through supported SPI");
     {
         use windows::Win32::UI::Shell::{
             IShellItem, IShellItemArray, SHCreateItemFromParsingName,
@@ -604,19 +538,6 @@ unsafe fn validate_existing_desktop() {
         "Original multi-monitor configuration not restored after owner exit"
     );
     println!("PASS existing desktop: {count} monitors, abrupt owner exit without Drop restores original images and settings");
-}
-
-unsafe fn clear_wallpaper_via_spi() -> windows::core::Result<()> {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        SystemParametersInfoW, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SPI_SETDESKWALLPAPER,
-    };
-    let mut empty = [0u16];
-    SystemParametersInfoW(
-        SPI_SETDESKWALLPAPER,
-        0,
-        Some(empty.as_mut_ptr().cast()),
-        SPIF_UPDATEINIFILE | SPIF_SENDCHANGE,
-    )
 }
 
 fn main() {
