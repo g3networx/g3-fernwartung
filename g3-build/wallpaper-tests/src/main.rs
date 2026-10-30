@@ -485,9 +485,11 @@ unsafe fn validate_existing_desktop() {
     let baseline = existing_configuration(&desktop);
     let images = snapshot(&desktop).0;
     let count = images.len();
+    let disposable = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        && std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref() == Ok("YES");
     assert!(
-        count >= 2,
-        "This mode requires a real multi-monitor desktop"
+        count >= if disposable { 1 } else { 2 },
+        "This mode requires a real multi-monitor desktop outside disposable CI"
     );
     assert!(
         images
