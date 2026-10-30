@@ -96,7 +96,11 @@ pub fn owner() {
     let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     super::owner(std::io::BufReader::new(stream.try_clone().unwrap()), stream);
 }
-pub unsafe fn validate(desktop: &IDesktopWallpaper, baseline: &(Vec<(String, String)>, i32, u32)) {
+pub unsafe fn validate(
+    desktop: &IDesktopWallpaper,
+    baseline: &(Vec<(String, String)>, i32, u32),
+    wrapper: Option<&std::path::Path>,
+) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -139,12 +143,19 @@ pub unsafe fn validate(desktop: &IDesktopWallpaper, baseline: &(Vec<(String, Str
         output.read_line(&mut line).unwrap();
         assert_eq!(line.trim(), "accepted");
     };
-    send("begin1");
+    let start_command = wrapper
+        .map(|path| format!("wrapper:{}", path.display()))
+        .unwrap_or_else(|| "begin1".to_owned());
+    send(&start_command);
     wait_state(desktop, false);
-    send("end1");
+    send(if wrapper.is_some() {
+        "wrapperend"
+    } else {
+        "end1"
+    });
     wait_state(desktop, true);
     assert_eq!(&snapshot(desktop), baseline);
-    send("begin1");
+    send(&start_command);
     wait_state(desktop, false);
     drop(send);
     writeln!(input, "crash").unwrap();

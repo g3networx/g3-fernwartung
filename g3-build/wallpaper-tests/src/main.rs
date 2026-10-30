@@ -52,6 +52,8 @@ unsafe fn wait_state(desktop: &IDesktopWallpaper, expected: bool) {
     }
 }
 fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
+    let mut wrapper = None;
+    let mut wrapper_input = None;
     for line in input.lines() {
         match line.unwrap().as_str() {
             "begin1" => wallpaper::begin(1),
@@ -60,6 +62,25 @@ fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
             "end2" => wallpaper::end(2),
             "crash" => std::process::exit(23), // Bypass all destructors, no forced termination.
             "quit" => return,
+            value if value.starts_with("wrapper:") => {
+                assert!(wrapper.is_none());
+                let mut child = Command::new(&value[8..])
+                    .arg(wallpaper::HELPER_ARG)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .unwrap();
+                wrapper_input = child.stdin.take();
+                wrapper = Some(child);
+            }
+            "wrapperend" => {
+                wrapper_input.take();
+                assert!(
+                    wrapper.take().unwrap().wait().unwrap().success(),
+                    "Actual Host/FullClient helper failed"
+                );
+            }
             value if value.starts_with("network:") => {
                 let values: Vec<_> = value.split(':').collect();
                 let port: u16 = values[1].parse().unwrap();
@@ -84,12 +105,12 @@ fn owner<R: BufRead, W: Write>(input: R, mut output: W) {
         output.flush().unwrap();
     }
 }
-unsafe fn validate() {
-    assert_eq!(
-        std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref(),
-        Ok("YES")
-    );
-    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+unsafe fn fixture() -> (
+    IDesktopWallpaper,
+    (Vec<(String, String)>, i32, u32),
+    std::path::PathBuf,
+    u32,
+) {
     CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();
     let desktop: IDesktopWallpaper = CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL).unwrap();
     let count = desktop.GetMonitorDevicePathCount().unwrap();
@@ -136,6 +157,71 @@ unsafe fn validate() {
     }
     let baseline = snapshot(&desktop);
     assert!(baseline.0.iter().all(|(_, image)| !image.is_empty()));
+    (desktop, baseline, path, count)
+}
+unsafe fn validate_wrappers() {
+    assert_eq!(
+        std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref(),
+        Ok("YES")
+    );
+    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+    let (desktop, baseline, _, _) = fixture();
+    let executables: Vec<_> = std::env::args().skip(2).collect();
+    assert_eq!(
+        executables.len(),
+        2,
+        "Provide actual Host and FullClient executable paths"
+    );
+    for exe in executables {
+        let path = std::fs::canonicalize(exe).unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--owner")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut send = |value: &str| {
+            writeln!(input, "{value}").unwrap();
+            input.flush().unwrap();
+            let mut line = String::new();
+            output.read_line(&mut line).unwrap();
+            assert_eq!(line.trim(), "accepted");
+        };
+        let start = format!("wrapper:{}", path.display());
+        send(&start);
+        wait_state(&desktop, false);
+        send("wrapperend");
+        wait_state(&desktop, true);
+        assert_eq!(snapshot(&desktop), baseline);
+        send(&start);
+        wait_state(&desktop, false);
+        drop(send);
+        writeln!(input, "crash").unwrap();
+        input.flush().unwrap();
+        assert_eq!(child.wait().unwrap().code(), Some(23));
+        wait_state(&desktop, true);
+        assert_eq!(snapshot(&desktop), baseline);
+        println!(
+            "PASS actual executable user context: normal end and owner crash: {}",
+            path.display()
+        );
+        system_fixture::validate(&desktop, &baseline, Some(&path));
+        println!(
+            "PASS actual executable SYSTEM/interactive-user delegation: {}",
+            path.display()
+        );
+    }
+}
+
+unsafe fn validate() {
+    assert_eq!(
+        std::env::var("G3_WALLPAPER_TEST_DISPOSABLE").as_deref(),
+        Ok("YES")
+    );
+    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+    let (desktop, baseline, path, count) = fixture();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .arg("--owner")
         .stdin(Stdio::piped())
@@ -224,7 +310,7 @@ unsafe fn validate() {
     assert!(wallpaper::supported_client("g3Fernwartung"));
     assert!(!wallpaper::supported_client("RustDesk"));
     println!("PASS client scope; monitor count={count}");
-    system_fixture::validate(&desktop, &baseline);
+    system_fixture::validate(&desktop, &baseline, None);
     {
         use windows::Win32::UI::Shell::{
             IShellItem, IShellItemArray, SHCreateItemFromParsingName,
@@ -317,6 +403,9 @@ fn main() {
         Some("--owner") => owner(std::io::stdin().lock(), std::io::stdout().lock()),
         Some("--system-relay") => system_fixture::relay(),
         Some("--system-owner") => system_fixture::owner(),
+        Some("--validate-wrappers") => unsafe {
+            validate_wrappers();
+        },
         Some("--validate") => unsafe {
             validate();
         },
