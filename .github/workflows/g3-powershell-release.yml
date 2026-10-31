@@ -1,4 +1,4 @@
-name: g3.40.1 Remote PowerShell with explicit Windows context
+name: g3.40.1 Remote PowerShell with bounded connection diagnostic
 on:
   push:
     branches: [g3-remote-powershell-20261031]

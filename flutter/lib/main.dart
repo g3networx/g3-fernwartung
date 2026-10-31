@@ -31,6 +31,7 @@ import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
+import 'g3_powershell_probe.dart';
 
 /// Basic window and launch properties.
 int? kWindowId;
@@ -40,6 +41,12 @@ late List<String> kBootArgs;
 Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (isWindows && args.contains('--g3-powershell-probe')) {
+    desktopType = DesktopType.main;
+    await runG3PowerShellProbe();
+    return;
+  }
 
   // Do not log launch arguments: they can contain session credentials.
   kBootArgs = List.from(args);
