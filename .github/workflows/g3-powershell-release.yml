@@ -1,4 +1,4 @@
-name: g3.40.1 Remote PowerShell with bounded diagnostic result reporting
+name: g3.40.1 mandatory Windows login with protected per-device credentials
 on:
   push:
     branches: [g3-remote-powershell-20261031]

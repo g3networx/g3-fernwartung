@@ -82,7 +82,7 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
       isSharedPassword: params['isSharedPassword'],
       forceRelay: params['forceRelay'],
       connToken: params['connToken'],
-      terminalLogin: params['g3TerminalUsername'] == null ? null : <String, String>{'username': params.remove('g3TerminalUsername'), 'password': params.remove('g3TerminalPassword') ?? ''},
+      terminalLogin: params['g3TerminalUsername'] == null ? null : <String, String>{'username': params.remove('g3TerminalUsername'), 'password': params.remove('g3TerminalPassword') ?? '', 'deviceId': params['id'], 'save': params.remove('g3TerminalSaveCredentials') == true ? 'Y' : ''},
     ));
   }
 

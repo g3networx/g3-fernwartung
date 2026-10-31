@@ -5,18 +5,21 @@ import 'g3_addressbook_api.dart';
 import 'g3_addressbook_edit.dart';
 import 'g3_addressbook_credentials.dart';
 import 'g3_powershell_login.dart';
+import 'g3_powershell_credentials.dart';
 
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
   final Future<void> Function(String uri, G3PowerShellLogin login)? onPowerShell;
   final G3AddressBookApi? api;
   final G3AddressBookCredentials? credentials;
+  final G3PowerShellCredentials? powerShellCredentials;
   const G3AddressBook(
       {super.key,
       required this.onConnect,
       this.onPowerShell,
       this.api,
-      this.credentials});
+      this.credentials,
+      this.powerShellCredentials});
   @override
   State<G3AddressBook> createState() => _G3AddressBookState();
 }
@@ -226,7 +229,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
   Future<void> open(Map<String, dynamic> device, {bool powerShell = false}) async {
     if (busy) return;
     if (powerShell && widget.onPowerShell == null) return;
-    final login = powerShell ? await showG3PowerShellLogin(context) : null;
+    final login = powerShell ? await showG3PowerShellLogin(context, deviceId: device['rustdesk_id'].toString(), credentials: widget.powerShellCredentials) : null;
     if (powerShell && login == null) return;
     if (!mounted) { login?.clear(); return; }
     setState(() {

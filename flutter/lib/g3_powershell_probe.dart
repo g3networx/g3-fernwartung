@@ -56,7 +56,7 @@ Future<void> runG3PowerShellProbe() async {
   final nonce = const Uuid().v4().replaceAll('-', '');
   StreamSubscription<EventToUI>? subscription;
   var added = false, opened = false, requested = false, sent = false;
-  var output = '', osUsername = '', osPassword = '';
+  var output = '', osUsername = '', osPassword = '', connectionPassword = '';
   final done = Completer<void>();
   final terminalClosed = Completer<void>();
   try {
@@ -71,7 +71,7 @@ Future<void> runG3PowerShellProbe() async {
     if (device is! int || id is! String || computer is! String ||
         !RegExp(r'^\d{6,12}$').hasMatch(id) ||
         !RegExp(r'^[A-Za-z0-9_-]{1,63}$').hasMatch(computer) ||
-        osUsername.isEmpty != osPassword.isEmpty) {
+        osUsername.isEmpty || osPassword.isEmpty) {
       throw StateError('invalid-input');
     }
     phase('native-initialization');
@@ -118,6 +118,7 @@ Future<void> runG3PowerShellProbe() async {
     if (credential['id'] != id || credential['password'] is! String) {
       throw StateError('handoff-identity-mismatch');
     }
+    connectionPassword = credential['password'];
     bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: osUsername.isEmpty ? null : 'Y');
     phase('native-session-add');
     final error = bind.sessionAddSync(sessionId: session, id: id,
@@ -139,11 +140,11 @@ Future<void> runG3PowerShellProbe() async {
         if (e['name'] == 'msgbox') {
           final type = e['type']?.toString() ?? '';
           if (RegExp(r'^[a-z-]{1,64}$').hasMatch(type)) proof['nativeMessageType'] = type;
-          if (osUsername.isNotEmpty && e['type'] == 'terminal-admin-login') {
+          if (osUsername.isNotEmpty && (e['type'] == 'terminal-admin-login' || e['type'] == 'terminal-admin-login-password')) {
             final username = osUsername, password = osPassword;
             osUsername = ''; osPassword = '';
             await bind.sessionLogin(sessionId: session, osUsername: username,
-                osPassword: password, password: '', remember: false);
+                osPassword: password, password: e['type'] == 'terminal-admin-login-password' ? connectionPassword : '', remember: false);
             return;
           }
           proof['nativeFailureCategory'] = _failureCategory('${e['title']} ${e['text']}');
@@ -199,15 +200,15 @@ Future<void> runG3PowerShellProbe() async {
   } catch (error) {
     proof['status'] = error is StateError ? error.message : 'probe-failed';
   } finally {
-    osUsername = ''; osPassword = ''; output = '';
+    osUsername = ''; osPassword = ''; output = ''; connectionPassword = '';
     if (added) {
       phase('own-terminal-close');
       try {
-        if (requested) {
-          await bind.sessionCloseTerminal(sessionId: session, terminalId: terminal);
-          if (opened) await terminalClosed.future.timeout(const Duration(seconds: 5));
+        if (opened) {
+          await bind.sessionSendTerminalInput(sessionId: session, terminalId: terminal, data: 'exit\r');
+          await terminalClosed.future.timeout(const Duration(seconds: 5));
         }
-        proof['ownTerminalClosed'] = !opened || terminalClosed.isCompleted;
+        proof['ownTerminalClosed'] = !requested || terminalClosed.isCompleted;
       } catch (_) { proof['ownSessionClosed'] = false; }
       stdout.writeln('G3_POWERSHELL_RESULT=${jsonEncode(proof)}');
       phase('own-session-close');

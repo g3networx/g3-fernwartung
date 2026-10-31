@@ -331,9 +331,9 @@ class _ConnectionPageState extends State<ConnectionPage>
                   }, onPowerShell: (value, login) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
-                      await redeemG3Session(uri.path.substring(1), isTerminal: true, terminalUsername: login.username, terminalPassword: login.password);
+                      await redeemG3Session(uri.path.substring(1), isTerminal: true, terminalUsername: login.username, terminalPassword: login.password, terminalSaveCredentials: login.remember);
                     } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
-                      await rustDeskWinManager.newTerminal(uri.host, forceRelay: true, terminalUsername: login.username, terminalPassword: login.password);
+                      await rustDeskWinManager.newTerminal(uri.host, forceRelay: true, terminalUsername: login.username, terminalPassword: login.password, terminalSaveCredentials: login.remember);
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }

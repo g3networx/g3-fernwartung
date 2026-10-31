@@ -7,6 +7,14 @@ import 'package:http/testing.dart';
 import 'package:flutter_hbb/g3_addressbook.dart';
 import 'package:flutter_hbb/g3_addressbook_api.dart';
 import 'package:flutter_hbb/g3_addressbook_credentials.dart';
+import 'package:flutter_hbb/g3_powershell_credentials.dart';
+
+class FixturePowerShellCredentials extends G3PowerShellCredentials {
+  @override
+  bool get supported => false;
+  @override
+  Future<Map<String, String>?> read(String deviceId) async => null;
+}
 
 class FixtureCredentials extends G3AddressBookCredentials {
   bool deleted = false;
@@ -85,7 +93,7 @@ void main() {
         home: Scaffold(
             body: G3AddressBook(
                 api: G3AddressBookApi(client: client),
-                credentials: FixtureCredentials(),
+                credentials: FixtureCredentials(), powerShellCredentials: FixturePowerShellCredentials(),
                 onConnect: (uri) async {
                   opened = uri;
                 },
@@ -129,10 +137,8 @@ void main() {
     expect(powerShellOpened, isNull);
     await tester.tap(find.byTooltip('PowerShell verbinden'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<bool>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Angemeldeter Windows-Benutzer').last);
-    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), r'EXAMPLE\support');
+    await tester.enterText(find.byType(TextFormField).at(1), 'fixture password');
     await tester.tap(find.widgetWithText(FilledButton, 'Verbinden').last);
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
@@ -158,7 +164,7 @@ void main() {
     }));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: G3AddressBook(
         api: api,
-        credentials: FixtureCredentials(),
+        credentials: FixtureCredentials(), powerShellCredentials: FixturePowerShellCredentials(),
         onConnect: (_) async { opened = true; },
         onPowerShell: (_, login) async { opened = true; }))));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
@@ -170,10 +176,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('PowerShell verbinden'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<bool>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Angemeldeter Windows-Benutzer').last);
-    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), r'EXAMPLE\support');
+    await tester.enterText(find.byType(TextFormField).at(1), 'fixture password');
     await tester.tap(find.widgetWithText(FilledButton, 'Verbinden').last);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pumpAndSettle();

@@ -9,6 +9,8 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/model.dart' show ConnType;
+import 'package:flutter_hbb/g3_powershell_login.dart';
+import 'package:get/get.dart';
 import 'package:flutter_hbb/models/platform_model.dart' show bind;
 
 /// must keep the order
@@ -357,7 +359,18 @@ class RustDeskMultiWindowManager {
     String? connToken,
     String? terminalUsername,
     String? terminalPassword,
+    bool terminalSaveCredentials = false,
   }) async {
+    if (isWindows && bind.mainGetAppNameSync() == 'g3Fernwartung' && (terminalUsername?.isEmpty != false || terminalPassword?.isEmpty != false)) {
+      final context = Get.context;
+      if (context == null) return MultiWindowCallResult(kInvalidWindowId, null);
+      final login = await showG3PowerShellLogin(context, deviceId: remoteId);
+      if (login == null) return MultiWindowCallResult(kInvalidWindowId, null);
+      terminalUsername = login.username;
+      terminalPassword = login.password;
+      terminalSaveCredentials = login.remember;
+      login.clear();
+    }
     if (terminalUsername != null && bind.peerGetSessionsCount(id: remoteId, connType: ConnType.terminal.index) > 0) {
       showToast('Bitte die vorhandene PowerShell-Verbindung zu diesem Gerät zuerst schließen, damit der gewählte Benutzerkontext neu geprüft wird.');
       return MultiWindowCallResult(kInvalidWindowId, null);
@@ -379,6 +392,7 @@ class RustDeskMultiWindowManager {
       "type": WindowType.Terminal.index,
       "g3TerminalUsername": terminalUsername,
       "g3TerminalPassword": terminalPassword,
+      "g3TerminalSaveCredentials": terminalSaveCredentials,
       "id": remoteId,
       "password": password,
       "forceRelay": forceRelay,

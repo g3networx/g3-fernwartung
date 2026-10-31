@@ -33,7 +33,7 @@ class TerminalConnectionManager {
     final ffi = FFI(null);
     if (terminalLogin != null) {
       final administrator = terminalLogin['username']!.isNotEmpty;
-      if (administrator) ffi.g3TerminalLogin = Map<String, String>.from(terminalLogin);
+      if (administrator) ffi.g3TerminalLogin = {...terminalLogin, 'nativePassword': password ?? ''};
       bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: administrator ? 'Y' : null);
     }
     terminalLogin?.clear();

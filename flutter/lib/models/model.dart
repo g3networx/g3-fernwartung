@@ -38,6 +38,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../common.dart';
+import '../g3_powershell_credentials.dart';
 import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
@@ -337,6 +338,18 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'set_multiple_windows_session') {
         handleMultipleWindowsSession(evt, sessionId, peerId);
       } else if (name == 'peer_info') {
+        final login = parent.target?.g3TerminalLogin;
+        parent.target?.g3TerminalLogin = null;
+        if (login != null) {
+          if (login['submitted'] != 'Y') {
+            login.clear();parent.target?.close();
+            showToast('Die Windows-Anmeldung wurde vom Zielgerät nicht bestätigt.');
+            return;
+          }
+          unawaited(saveVerifiedG3PowerShellLogin(login).then((saved) {
+            if (!saved) showToast('Verbunden; die Windows-Anmeldung konnte nicht gespeichert werden.');
+          }));
+        }
         handlePeerInfo(evt, peerId, false);
       } else if (name == 'sync_peer_info') {
         handleSyncPeerInfo(evt, sessionId, peerId);
@@ -910,11 +923,14 @@ class FfiModel with ChangeNotifier {
 
     final terminalLogin = parent.target?.g3TerminalLogin;
     if (terminalLogin != null && (type == 'terminal-admin-login' || type == 'terminal-admin-login-password')) {
-      parent.target!.g3TerminalLogin = null;
-      dialogManager.dismissAll();
-      bind.sessionLogin(sessionId: sessionId, osUsername: terminalLogin['username']!, osPassword: terminalLogin['password']!, password: '', remember: false);
-      terminalLogin.clear();
-      return;
+      if (terminalLogin['submitted'] == 'Y' || (type == 'terminal-admin-login-password' && (terminalLogin['nativePassword'] ?? '').isEmpty)) {
+        terminalLogin.clear();parent.target!.g3TerminalLogin = null;
+      } else {
+        terminalLogin['submitted'] = 'Y';
+        dialogManager.dismissAll();
+        bind.sessionLogin(sessionId: sessionId, osUsername: terminalLogin['username']!, osPassword: terminalLogin['password']!, password: type == 'terminal-admin-login-password' ? terminalLogin['nativePassword']! : '', remember: false);
+        return;
+      }
     }
     if (type == 'error' || title == 'Connection Error' || type == 'peer_info') {
       parent.target?.g3TerminalLogin?.clear();
