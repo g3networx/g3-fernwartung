@@ -327,6 +327,15 @@ class _ConnectionPageState extends State<ConnectionPage>
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
+                  }, onPowerShell: (value) async {
+                    final uri = Uri.parse(value);
+                    if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
+                      await redeemG3Session(uri.path.substring(1), isTerminal: true);
+                    } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
+                      await connect(context, uri.host, forceRelay: true, isTerminal: true);
+                    } else {
+                      throw Exception('Ungültige Verbindungsfreigabe');
+                    }
                   })
                 : const SizedBox.shrink()),
           ],

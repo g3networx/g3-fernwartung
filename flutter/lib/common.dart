@@ -2394,7 +2394,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   return false;
 }
 
-Future<void> redeemG3Session(String token) async {
+Future<void> redeemG3Session(String token, {bool isTerminal = false}) async {
   if (!RegExp(r'^[A-Za-z0-9_-]{54}$').hasMatch(token)) return;
   var redeemed = false;
   try {
@@ -2418,6 +2418,10 @@ Future<void> redeemG3Session(String token) async {
       // Credentials stay in-process; never route through CLI or a password-bearing URI.
       redeemed = true;
       if (isDesktop) {
+        if (isTerminal) {
+          await rustDeskWinManager.newTerminal(id, password: password, forceRelay: true);
+          return;
+        }
         await rustDeskWinManager.newRemoteDesktop(id, password: password, forceRelay: true);
       } else {
         for (var attempt = 0; attempt < 50 && Get.context == null; attempt++) {
@@ -2425,7 +2429,7 @@ Future<void> redeemG3Session(String token) async {
         }
         final context = Get.context;
         if (context == null) throw Exception('Window not ready');
-        await connect(context, id, password: password, forceRelay: true);
+        await connect(context, id, password: password, forceRelay: true, isTerminal: isTerminal);
       }
     } finally {
       client.close();

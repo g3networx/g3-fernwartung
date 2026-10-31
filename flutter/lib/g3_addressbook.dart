@@ -7,10 +7,15 @@ import 'g3_addressbook_credentials.dart';
 
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
+  final Future<void> Function(String uri)? onPowerShell;
   final G3AddressBookApi? api;
   final G3AddressBookCredentials? credentials;
   const G3AddressBook(
-      {super.key, required this.onConnect, this.api, this.credentials});
+      {super.key,
+      required this.onConnect,
+      this.onPowerShell,
+      this.api,
+      this.credentials});
   @override
   State<G3AddressBook> createState() => _G3AddressBookState();
 }
@@ -217,8 +222,10 @@ class _G3AddressBookState extends State<G3AddressBook> {
     }
   }
 
-  Future<void> open(Map<String, dynamic> device) async {
+  Future<void> open(Map<String, dynamic> device, {bool powerShell = false}) async {
     if (busy) return;
+    final onConnect = powerShell ? widget.onPowerShell : widget.onConnect;
+    if (onConnect == null) return;
     setState(() {
       busy = true;
       error = null;
@@ -230,7 +237,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
       if (uri.scheme != 'g3fernwartung' || uri.hasQuery || uri.hasFragment) {
         throw Exception();
       }
-      await widget.onConnect(uri.toString());
+      await onConnect(uri.toString());
     } on G3AddressBookExpired {
       await load();
     } catch (_) {
@@ -438,10 +445,25 @@ class _G3AddressBookState extends State<G3AddressBook> {
           const SizedBox(height: 8),
           Text(book['path'] as String, textAlign: TextAlign.center),
           const SizedBox(height: 18),
-          FilledButton.icon(
-              onPressed: busy ? null : () => open(d),
-              icon: const Icon(Icons.desktop_windows),
-              label: const Text('Verbinden')),
+          Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                Tooltip(
+                    message: 'Desktop verbinden',
+                    child: FilledButton.icon(
+                        onPressed: busy ? null : () => open(d),
+                        icon: const Icon(Icons.desktop_windows),
+                        label: const Text('Verbinden'))),
+                if (widget.onPowerShell != null)
+                  Tooltip(
+                      message: 'PowerShell verbinden',
+                      child: FilledButton.icon(
+                          onPressed: busy ? null : () => open(d, powerShell: true),
+                          icon: const Icon(Icons.terminal),
+                          label: const Text('Verbinden'))),
+              ]),
           if (book['can_edit'] == true)
             Wrap(spacing: 8, children: [
               TextButton.icon(

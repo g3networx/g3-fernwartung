@@ -32,16 +32,6 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
     check();
   }
 
-  List<int> parts(String v) =>
-      RegExp(r'\d+').allMatches(v).map((m) => int.parse(m.group(0)!)).toList();
-  bool newer(String candidate) {
-    final a = parts(candidate), b = parts(g3ClientVersion);
-    for (var i = 0; i < a.length && i < b.length; i++) {
-      if (a[i] != b[i]) return a[i] > b[i];
-    }
-    return false;
-  }
-
   Future<void> check() async {
     try {
       final r = await http
@@ -49,11 +39,10 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
           .timeout(const Duration(seconds: 15));
       if (r.statusCode != 200) throw Exception();
       final data = jsonDecode(r.body) as Map<String, dynamic>;
-      if (!RegExp(r'^\d+\.\d+\.\d+-g3\.\d+$')
-          .hasMatch(data['version'] as String)) throw Exception();
+      if (!g3VersionIsValid(data['version'] as String)) throw Exception();
       if (mounted)
         setState(() {
-          release = newer(data['version']) ? data : null;
+          release = g3VersionNewer(data['version'], g3ClientVersion) ? data : null;
           message = release == null
               ? 'Dieser Client ist aktuell ($g3ClientVersion).'
               : 'Version ${data['version']} ist verfügbar. Laufende Fernwartungen verhindern die Installation. Der Client bleibt bis zur sicheren Übergabe aktiv. Auf dem Zielgerät wird dessen eigener Client aktualisiert; diese Funktion aktualisiert diesen Rechner.';

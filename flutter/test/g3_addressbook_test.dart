@@ -66,12 +66,17 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     String? opened;
+    String? powerShellOpened;
+    var connections = 0;
     final client = MockClient((request) async {
       expect(request.headers['Authorization'], 'Bearer ${'a' * 43}');
       if (request.url.path.endsWith('/connect')) {
+        connections++;
         expect(jsonDecode(request.body)['device_id'], 7);
         return http.Response(
-            jsonEncode({'uri': 'g3fernwartung://123456789'}), 200);
+            jsonEncode({'uri': connections == 1
+                ? 'g3fernwartung://123456789'
+                : 'g3fernwartung://g3-session/${'B' * 54}'}), 200);
       }
       return http.Response(jsonEncode(tree), 200,
           headers: {'content-type': 'application/json; charset=utf-8'});
@@ -83,6 +88,9 @@ void main() {
                 credentials: FixtureCredentials(),
                 onConnect: (uri) async {
                   opened = uri;
+                },
+                onPowerShell: (uri) async {
+                  powerShellOpened = uri;
                 }))));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
@@ -107,12 +115,58 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Geräte-ID: 123456789'), findsOneWidget);
     expect(find.text('Own › Servers'), findsOneWidget);
-    await tester.tap(find.text('Verbinden'));
+    expect(find.byIcon(Icons.terminal), findsOneWidget);
+    expect(tester.getCenter(find.byTooltip('PowerShell verbinden')).dx,
+        greaterThan(tester.getCenter(find.byTooltip('Desktop verbinden')).dx));
+    expect(tester.getCenter(find.byTooltip('PowerShell verbinden')).dy,
+        tester.getCenter(find.byTooltip('Desktop verbinden')).dy);
+    await tester.tap(find.byTooltip('Desktop verbinden'));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     expect(opened, 'g3fernwartung://123456789');
+    expect(powerShellOpened, isNull);
+    await tester.tap(find.byTooltip('PowerShell verbinden'));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pumpAndSettle();
+    expect(powerShellOpened, 'g3fernwartung://g3-session/${'B' * 54}');
+    expect(connections, 2);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Denied PowerShell authorization opens no session', (tester) async {
+    tester.view.physicalSize = const Size(1100, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var opened = false;
+    final api = G3AddressBookApi(client: MockClient((request) async {
+      if (request.url.path.endsWith('/connect')) {
+        return http.Response('{}', 403);
+      }
+      return http.Response(jsonEncode(tree), 200,
+          headers: {'content-type': 'application/json; charset=utf-8'});
+    }));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: G3AddressBook(
+        api: api,
+        credentials: FixtureCredentials(),
+        onConnect: (_) async { opened = true; },
+        onPowerShell: (_) async { opened = true; }))));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '123456789');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEST-SERVER'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('PowerShell verbinden'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pumpAndSettle();
+    expect(opened, isFalse);
+    expect(find.textContaining('Verbindung konnte nicht freigegeben werden'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -134,7 +188,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: G3AddressBook(
-                api: api, credentials: credentials, onConnect: (_) async {}))));
+                api: api, credentials: credentials, onConnect: (_) async {},
+                onPowerShell: (_) async {}))));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump(const Duration(milliseconds: 350));
@@ -149,7 +204,8 @@ void main() {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
-    expect(find.text('Verbinden'), findsOneWidget);
+    expect(find.text('Verbinden'), findsNWidgets(2));
+    expect(find.byTooltip('PowerShell verbinden'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Abmelden'));
     await tester

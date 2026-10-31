@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.29');
+const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.40.1');
+bool g3VersionIsValid(String version) =>
+    RegExp(r'^\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?$').hasMatch(version);
+
 bool g3VersionNewer(String candidate, String current) {
-  final valid = RegExp(r'^\d+\.\d+\.\d+-g3\.\d+$');
-  if (!valid.hasMatch(candidate) || !valid.hasMatch(current)) return false;
+  if (!g3VersionIsValid(candidate) || !g3VersionIsValid(current)) return false;
   final a = RegExp(r'\d+').allMatches(candidate).map((m) => int.parse(m.group(0)!)).toList();
   final b = RegExp(r'\d+').allMatches(current).map((m) => int.parse(m.group(0)!)).toList();
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return a[i] > b[i];
+  for (var i = 0; i < a.length || i < b.length; i++) {
+    final left = i < a.length ? a[i] : 0;
+    final right = i < b.length ? b[i] : 0;
+    if (left != right) return left > right;
   }
   return false;
 }

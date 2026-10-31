@@ -3,6 +3,20 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:flutter_hbb/g3_update_check.dart';
 void main() {
+ test('g3.40.1 compares both release and patch numerically', () {
+  expect(g3VersionNewer('1.5.0-g3.40.1', '1.5.0-g3.34'), isTrue);
+  expect(g3VersionNewer('1.5.0-g3.40.1', '1.5.0-g3.40'), isTrue);
+  expect(g3VersionNewer('1.5.0-g3.40.1', '1.5.0-g3.40.1'), isFalse);
+  expect(g3VersionNewer('1.5.0-g3.40', '1.5.0-g3.40.1'), isFalse);
+  expect(g3VersionNewer('1.5.0-g3.40.10', '1.5.0-g3.40.2'), isTrue);
+  expect(g3VersionNewer('1.5.0-g3.41', '1.5.0-g3.40.1'), isTrue);
+  expect(g3VersionNewer('1.5.0-g3.40.1-evil', '1.5.0-g3.34'), isFalse);
+ });
+ test('start check accepts the g3.40.1 release feed', () async {
+  expect(await g3AvailableUpdate(current:'1.5.0-g3.34',
+   client:MockClient((_) async => http.Response('{"version":"1.5.0-g3.40.1"}',200))),
+   '1.5.0-g3.40.1');
+ });
  test('start check reports a newer release and never installs', () async {
   var requests = 0;
   final client = MockClient((request) async {
