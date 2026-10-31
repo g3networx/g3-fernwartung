@@ -1,4 +1,4 @@
-name: g3.40.1 Remote PowerShell with bounded connection diagnostic
+name: g3.40.1 Remote PowerShell diagnostic with persistent-session guard
 on:
   push:
     branches: [g3-remote-powershell-20261031]

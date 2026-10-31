@@ -119,6 +119,10 @@ Future<void> runG3PowerShellProbe() async {
         if (e['name'] != 'terminal_response' ||
             e['terminal_id'].toString() != terminal.toString()) return;
         if (e['type'] == 'opened' && !sent) {
+          if ((e['message'] as String? ?? '').startsWith('Reconnected to existing terminal')) {
+            requested = false;
+            throw StateError('existing-persistent-terminal');
+          }
           if (e['success'] != true && e['success'] != 'true') {
             throw StateError('terminal-refused');
           }
