@@ -15,6 +15,7 @@ import 'models/platform_model.dart';
 /// A bounded read-only connection diagnostic. Input and credentials use stdin;
 /// output contains only the verified remote identity and PowerShell version.
 Future<void> runG3PowerShellProbe() async {
+  void phase(String name) => stdout.writeln('G3_POWERSHELL_PHASE=$name');
   await Isolate.spawn((_) async {
     await Future<void>.delayed(const Duration(seconds: 120));
     exit(2);
@@ -49,6 +50,7 @@ Future<void> runG3PowerShellProbe() async {
         osUsername.isEmpty != osPassword.isEmpty) {
       throw StateError('invalid-input');
     }
+    phase('native-initialization');
     await platformFFI.init('main');
     await bind.mainCheckConnectStatus();
     final deadline = DateTime.now().add(const Duration(seconds: 10));
@@ -63,29 +65,33 @@ Future<void> runG3PowerShellProbe() async {
     if (bind.peerGetSessionsCount(id: id, connType: 5) != 0) {
       throw StateError('existing-terminal-session');
     }
+    phase('addressbook-authorization');
     api.token = await G3AddressBookCredentials().read();
     if (api.token == null) throw StateError('addressbook-login-required');
     final tree = await api.request('tree');
     final targets = (tree['devices'] as List).where((d) =>
         d['id'] == device && d['rustdesk_id'] == id);
     if (targets.length != 1) throw StateError('addressbook-identity-mismatch');
+    phase('handoff-creation');
     final grant = await api.request('connect', body: {'device_id': device});
     final uri = Uri.parse(grant['uri'] as String);
     if (uri.scheme != 'g3fernwartung' || uri.host != 'g3-session' ||
         !RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path) ||
         uri.hasQuery || uri.hasFragment) throw StateError('invalid-handoff');
+    phase('handoff-redemption');
     final response = await transport.send(http.Request('GET',
       Uri.https('rust.g3nx.net', '/client-handoff'))
       ..followRedirects = false
       ..headers['Authorization'] = 'Bearer ${uri.path.substring(1)}')
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) throw StateError('handoff-denied');
-    final credential = jsonDecode(await response.stream.bytesToString())
+    final credential = jsonDecode(await response.stream.bytesToString().timeout(const Duration(seconds: 15)))
         as Map<String, dynamic>;
     if (credential['id'] != id || credential['password'] is! String) {
       throw StateError('handoff-identity-mismatch');
     }
     bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: osUsername.isEmpty ? null : 'Y');
+    phase('native-session-add');
     final error = bind.sessionAddSync(sessionId: session, id: id,
         isFileTransfer: false, isViewCamera: false, isPortForward: false,
         isRdp: false, isTerminal: true, switchUuid: '', forceRelay: true,
@@ -93,6 +99,7 @@ Future<void> runG3PowerShellProbe() async {
     credential.clear();
     if (error.isNotEmpty) throw StateError('session-refused');
     added = true;
+    phase('native-session-start');
     subscription = bind.sessionStart(sessionId: session, id: id).listen((event) async {
       if (event is! EventToUI_Event) return;
       try {
@@ -112,6 +119,7 @@ Future<void> runG3PowerShellProbe() async {
           throw StateError('connection-or-login-refused');
         }
         if (e['name'] == 'peer_info' && !requested) {
+          phase('remote-peer-accepted');
           requested = true;
           await bind.sessionOpenTerminal(sessionId: session,
               terminalId: terminal, rows: 30, cols: 180);
@@ -127,6 +135,7 @@ Future<void> runG3PowerShellProbe() async {
             throw StateError('terminal-refused');
           }
           opened = true; sent = true;
+          phase('remote-terminal-opened');
           await bind.sessionSendTerminalInput(sessionId: session, terminalId: terminal,
               data: "Write-Output ('$nonce|' + \$env:COMPUTERNAME + '|' + \$PSVersionTable.PSVersion.ToString() + '|' + (6*7) + '|' + [Security.Principal.WindowsIdentity]::GetCurrent().Name);\r");
         }
@@ -136,6 +145,7 @@ Future<void> runG3PowerShellProbe() async {
           final clean = output.replaceAll(RegExp(r'\x1b\[[0-?]*[ -/]*[@-~]'), '');
           final match = RegExp('$nonce\\|${RegExp.escape(computer)}\\|([0-9.]+)\\|42\\|([^\\r\\n]+)', caseSensitive: false).firstMatch(clean);
           if (match != null) {
+            phase('remote-result-verified');
             proof.addAll({'actualRemotePowerShellTested': true,
               'remoteComputer': computer, 'nativeId': id,
               'powerShellVersion': match.group(1),
@@ -158,6 +168,7 @@ Future<void> runG3PowerShellProbe() async {
   } finally {
     osUsername = ''; osPassword = ''; output = '';
     if (added) {
+      phase('own-terminal-close');
       try {
         if (requested) {
           await bind.sessionCloseTerminal(sessionId: session, terminalId: terminal);
@@ -165,6 +176,7 @@ Future<void> runG3PowerShellProbe() async {
         }
         proof['ownTerminalClosed'] = !opened || terminalClosed.isCompleted;
       } catch (_) { proof['ownSessionClosed'] = false; }
+      phase('own-session-close');
       await bind.sessionClose(sessionId: session);
       proof['ownSessionClosed'] = proof['ownTerminalClosed'] == true;
     }
