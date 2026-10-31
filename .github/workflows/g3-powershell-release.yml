@@ -1,4 +1,4 @@
-name: g3.40.1 Remote PowerShell
+name: g3.40.1 Remote PowerShell with Windows account dialog
 on:
   push:
     branches: [g3-remote-powershell-20261031]

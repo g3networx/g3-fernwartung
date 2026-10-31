@@ -82,6 +82,7 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
       isSharedPassword: params['isSharedPassword'],
       forceRelay: params['forceRelay'],
       connToken: params['connToken'],
+      terminalLogin: params['g3TerminalUsername'] == null ? null : <String, String>{'username': params.remove('g3TerminalUsername'), 'password': params.remove('g3TerminalPassword') ?? ''},
     ));
   }
 
@@ -92,6 +93,7 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    Map<String, String>? terminalLogin,
   }) {
     final tabKey = '${peerId}_$terminalId';
     final alias = bind.mainGetPeerOptionSync(id: peerId, key: 'alias');
@@ -118,6 +120,7 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
         tabController: tabController,
         forceRelay: forceRelay,
         connToken: connToken,
+        terminalLogin: terminalLogin,
         onClipboardWriteBlocked: _canHandleTerminalClipboardWriteRequest
             ? (text) => _handleTerminalClipboardWriteBlocked(
                   clipboardSource,
@@ -502,8 +505,7 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
 
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
-      print(
-          "[Remote Terminal] call ${call.method} with args ${call.arguments} from window $fromWindowId");
+      debugPrint('[Remote Terminal] call ${call.method} from window $fromWindowId');
       if (call.method == kWindowEventNewTerminal) {
         final args = jsonDecode(call.arguments);
         final id = args['id'];

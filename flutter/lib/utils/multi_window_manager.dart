@@ -353,11 +353,13 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    String? terminalUsername,
+    String? terminalPassword,
   }) async {
     // Iterate through terminal windows in reverse order to prioritize
     // the most recently added or used windows, as they are more likely
     // to have an active session.
-    for (final windowId in _terminalWindows.reversed) {
+    for (final windowId in terminalUsername == null ? _terminalWindows.reversed : <int>[]) {
       if (await DesktopMultiWindow.invokeMethod(
           windowId, kWindowEventActiveSession, remoteId)) {
         return MultiWindowCallResult(windowId, null);
@@ -369,6 +371,8 @@ class RustDeskMultiWindowManager {
     // new_terminal on an inactive window
     var params = {
       "type": WindowType.Terminal.index,
+      "g3TerminalUsername": terminalUsername,
+      "g3TerminalPassword": terminalPassword,
       "id": remoteId,
       "password": password,
       "forceRelay": forceRelay,

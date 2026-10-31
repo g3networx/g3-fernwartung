@@ -2394,7 +2394,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   return false;
 }
 
-Future<void> redeemG3Session(String token, {bool isTerminal = false}) async {
+Future<void> redeemG3Session(String token, {bool isTerminal = false, String? terminalUsername, String? terminalPassword}) async {
   if (!RegExp(r'^[A-Za-z0-9_-]{54}$').hasMatch(token)) return;
   var redeemed = false;
   try {
@@ -2419,7 +2419,7 @@ Future<void> redeemG3Session(String token, {bool isTerminal = false}) async {
       redeemed = true;
       if (isDesktop) {
         if (isTerminal) {
-          await rustDeskWinManager.newTerminal(id, password: password, forceRelay: true);
+          await rustDeskWinManager.newTerminal(id, password: password, forceRelay: true, terminalUsername: terminalUsername, terminalPassword: terminalPassword);
           return;
         }
         await rustDeskWinManager.newRemoteDesktop(id, password: password, forceRelay: true);

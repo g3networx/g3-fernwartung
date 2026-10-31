@@ -4,10 +4,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'g3_addressbook_api.dart';
 import 'g3_addressbook_edit.dart';
 import 'g3_addressbook_credentials.dart';
+import 'g3_powershell_login.dart';
 
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
-  final Future<void> Function(String uri)? onPowerShell;
+  final Future<void> Function(String uri, G3PowerShellLogin login)? onPowerShell;
   final G3AddressBookApi? api;
   final G3AddressBookCredentials? credentials;
   const G3AddressBook(
@@ -224,8 +225,10 @@ class _G3AddressBookState extends State<G3AddressBook> {
 
   Future<void> open(Map<String, dynamic> device, {bool powerShell = false}) async {
     if (busy) return;
-    final onConnect = powerShell ? widget.onPowerShell : widget.onConnect;
-    if (onConnect == null) return;
+    if (powerShell && widget.onPowerShell == null) return;
+    final login = powerShell ? await showG3PowerShellLogin(context) : null;
+    if (powerShell && login == null) return;
+    if (!mounted) { login?.clear(); return; }
     setState(() {
       busy = true;
       error = null;
@@ -237,7 +240,11 @@ class _G3AddressBookState extends State<G3AddressBook> {
       if (uri.scheme != 'g3fernwartung' || uri.hasQuery || uri.hasFragment) {
         throw Exception();
       }
-      await onConnect(uri.toString());
+      if (powerShell) {
+        await widget.onPowerShell!(uri.toString(), login!);
+      } else {
+        await widget.onConnect(uri.toString());
+      }
     } on G3AddressBookExpired {
       await load();
     } catch (_) {
@@ -246,6 +253,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
             'Verbindung konnte nicht freigegeben werden. Bitte Rechte und Erreichbarkeit prüfen.');
       }
     } finally {
+      login?.clear();
       if (mounted) setState(() => busy = false);
     }
   }

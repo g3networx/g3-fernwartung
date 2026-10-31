@@ -908,6 +908,18 @@ class FfiModel with ChangeNotifier {
       parent.target?.inputModel.setRelativeMouseMode(false);
     }
 
+    final terminalLogin = parent.target?.g3TerminalLogin;
+    if (terminalLogin != null && (type == 'terminal-admin-login' || type == 'terminal-admin-login-password')) {
+      parent.target!.g3TerminalLogin = null;
+      dialogManager.dismissAll();
+      bind.sessionLogin(sessionId: sessionId, osUsername: terminalLogin['username']!, osPassword: terminalLogin['password']!, password: '', remember: false);
+      terminalLogin.clear();
+      return;
+    }
+    if (type == 'error' || title == 'Connection Error' || type == 'peer_info') {
+      parent.target?.g3TerminalLogin?.clear();
+      parent.target?.g3TerminalLogin = null;
+    }
     if (type == 're-input-password') {
       wrongPasswordDialog(sessionId, dialogManager, type, title, text);
     } else if (type == 'input-2fa') {
@@ -4022,6 +4034,7 @@ enum ConnType {
 
 /// Flutter state manager and data communication with the Rust core.
 class FFI {
+  Map<String, String>? g3TerminalLogin;
   var id = '';
   var version = '';
   var connType = ConnType.defaultConn;
@@ -4365,6 +4378,8 @@ class FFI {
 
   /// Close the remote session.
   Future<void> close({bool closeSession = true}) async {
+    g3TerminalLogin?.clear();
+    g3TerminalLogin = null;
     closed = true;
     if (isWeb) {
       platformFFI.clearVideoFrameCallback();

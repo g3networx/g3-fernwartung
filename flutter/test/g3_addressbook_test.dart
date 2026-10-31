@@ -89,7 +89,7 @@ void main() {
                 onConnect: (uri) async {
                   opened = uri;
                 },
-                onPowerShell: (uri) async {
+                onPowerShell: (uri, login) async {
                   powerShellOpened = uri;
                 }))));
     await tester
@@ -128,6 +128,12 @@ void main() {
     expect(opened, 'g3fernwartung://123456789');
     expect(powerShellOpened, isNull);
     await tester.tap(find.byTooltip('PowerShell verbinden'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<bool>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Angemeldeter Windows-Benutzer').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Verbinden').last);
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pumpAndSettle();
@@ -154,7 +160,7 @@ void main() {
         api: api,
         credentials: FixtureCredentials(),
         onConnect: (_) async { opened = true; },
-        onPowerShell: (_) async { opened = true; }))));
+        onPowerShell: (_, login) async { opened = true; }))));
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '123456789');
@@ -163,6 +169,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('PowerShell verbinden'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<bool>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Angemeldeter Windows-Benutzer').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Verbinden').last);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pumpAndSettle();
     expect(opened, isFalse);
@@ -189,7 +201,7 @@ void main() {
         home: Scaffold(
             body: G3AddressBook(
                 api: api, credentials: credentials, onConnect: (_) async {},
-                onPowerShell: (_) async {}))));
+                onPowerShell: (_, login) async {}))));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump(const Duration(milliseconds: 350));

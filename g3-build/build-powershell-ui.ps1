@@ -18,6 +18,6 @@ if((Get-FileHash "$tools/engine.zip").Hash.ToLowerInvariant() -ne $engine.sha256
 Expand-Archive "$tools/engine.zip" "$tools/engine"
 Copy-Item "$tools/engine/*" "$tools/flutter/bin/cache/artifacts/engine/windows-x64-release" -Recurse -Force
 Push-Location flutter
-flutter test test/g3_update_paths_test.dart test/g3_update_metadata_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart test/g3_addressbook_test.dart;Check
+flutter test test/g3_update_paths_test.dart test/g3_update_metadata_test.dart test/g3_update_start_test.dart test/g3_handoff_uri_test.dart test/g3_addressbook_test.dart test/g3_powershell_login_test.dart;Check
 flutter build windows --release --dart-define=G3_CLIENT_VERSION=1.5.0-g3.40.1;Check
 Pop-Location

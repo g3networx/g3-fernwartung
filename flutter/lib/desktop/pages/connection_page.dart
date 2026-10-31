@@ -20,6 +20,7 @@ import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
 import '../../models/platform_model.dart';
+import '../../utils/multi_window_manager.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 
 class OnlineStatusWidget extends StatefulWidget {
@@ -327,12 +328,12 @@ class _ConnectionPageState extends State<ConnectionPage>
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
-                  }, onPowerShell: (value) async {
+                  }, onPowerShell: (value, login) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
-                      await redeemG3Session(uri.path.substring(1), isTerminal: true);
+                      await redeemG3Session(uri.path.substring(1), isTerminal: true, terminalUsername: login.username, terminalPassword: login.password);
                     } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
-                      await connect(context, uri.host, forceRelay: true, isTerminal: true);
+                      await rustDeskWinManager.newTerminal(uri.host, forceRelay: true, terminalUsername: login.username, terminalPassword: login.password);
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
