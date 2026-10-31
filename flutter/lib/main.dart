@@ -42,14 +42,14 @@ Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Do not log launch arguments: they can contain session credentials.
+  kBootArgs = List.from(args);
+
   if (isWindows && args.contains('--g3-powershell-probe')) {
     desktopType = DesktopType.main;
     await runG3PowerShellProbe();
     return;
   }
-
-  // Do not log launch arguments: they can contain session credentials.
-  kBootArgs = List.from(args);
 
   if (!isDesktop) {
     runMobileApp();

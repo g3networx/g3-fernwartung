@@ -12,6 +12,30 @@ import 'g3_addressbook_credentials.dart';
 import 'generated_bridge.dart';
 import 'models/platform_model.dart';
 
+String _failureCategory(String message) {
+  final text = message.toLowerCase();
+  for (final entry in const {
+    'no session with peer id': 'native-session-not-found',
+    'offline': 'remote-offline',
+    'wrong password': 'native-password-rejected',
+    'password': 'login-or-password-required',
+    'no active console user': 'no-active-windows-user',
+    'key mismatch': 'server-key-mismatch',
+    'insecure': 'secure-transport-unavailable',
+    'not allowed': 'connection-not-allowed',
+    'permission': 'permission-denied',
+    'relay': 'relay-connection-failed',
+    'rendezvous': 'rendezvous-connection-failed',
+    'incoming only': 'incoming-only-client',
+    'reset by peer': 'connection-reset',
+    'timeout': 'connection-timeout',
+    'failed to connect': 'connection-unreachable',
+  }.entries) {
+    if (text.contains(entry.key)) return entry.value;
+  }
+  return 'native-error-unclassified';
+}
+
 /// A bounded read-only connection diagnostic. Input and credentials use stdin;
 /// output contains only the verified remote identity and PowerShell version.
 Future<void> runG3PowerShellProbe() async {
@@ -79,9 +103,13 @@ Future<void> runG3PowerShellProbe() async {
         !RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path) ||
         uri.hasQuery || uri.hasFragment) throw StateError('invalid-handoff');
     phase('handoff-redemption');
+    final localId = (await bind.mainGetMyId().timeout(const Duration(seconds: 5))).replaceAll(' ', '');
+    if (!RegExp(r'^\d{6,12}$').hasMatch(localId)) throw StateError('local-device-id-unavailable');
+    proof['localNativeId'] = localId;
     final response = await transport.send(http.Request('GET',
       Uri.https('rust.g3nx.net', '/client-handoff'))
       ..followRedirects = false
+      ..headers['X-G3-Client-ID'] = localId
       ..headers['Authorization'] = 'Bearer ${uri.path.substring(1)}')
         .timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) throw StateError('handoff-denied');
@@ -109,6 +137,8 @@ Future<void> runG3PowerShellProbe() async {
             !terminalClosed.isCompleted) terminalClosed.complete();
         if (done.isCompleted) return;
         if (e['name'] == 'msgbox') {
+          final type = e['type']?.toString() ?? '';
+          if (RegExp(r'^[a-z-]{1,64}$').hasMatch(type)) proof['nativeMessageType'] = type;
           if (osUsername.isNotEmpty && e['type'] == 'terminal-admin-login') {
             final username = osUsername, password = osPassword;
             osUsername = ''; osPassword = '';
@@ -116,6 +146,7 @@ Future<void> runG3PowerShellProbe() async {
                 osPassword: password, password: '', remember: false);
             return;
           }
+          proof['nativeFailureCategory'] = _failureCategory('${e['title']} ${e['text']}');
           throw StateError('connection-or-login-refused');
         }
         if (e['name'] == 'peer_info' && !requested) {
@@ -159,7 +190,9 @@ Future<void> runG3PowerShellProbe() async {
       } catch (_) {
         if (!done.isCompleted) done.completeError(StateError('remote-probe-failed'));
       }
-    }, onError: (_) {
+    }, onError: (Object error) {
+      proof['nativeStreamErrorType'] = error.runtimeType.toString();
+      proof['nativeFailureCategory'] = _failureCategory(error.toString());
       if (!done.isCompleted) done.completeError(StateError('native-stream-failed'));
     });
     await done.future.timeout(const Duration(seconds: 60));
@@ -176,9 +209,12 @@ Future<void> runG3PowerShellProbe() async {
         }
         proof['ownTerminalClosed'] = !opened || terminalClosed.isCompleted;
       } catch (_) { proof['ownSessionClosed'] = false; }
+      stdout.writeln('G3_POWERSHELL_RESULT=${jsonEncode(proof)}');
       phase('own-session-close');
-      await bind.sessionClose(sessionId: session);
-      proof['ownSessionClosed'] = proof['ownTerminalClosed'] == true;
+      try {
+        await bind.sessionClose(sessionId: session).timeout(const Duration(seconds: 5));
+        proof['ownSessionClosed'] = proof['ownTerminalClosed'] == true;
+      } catch (_) { proof['ownSessionClosed'] = false; }
     }
     await subscription?.cancel();
     api.close(); transport.close();

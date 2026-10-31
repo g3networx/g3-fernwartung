@@ -15,5 +15,7 @@ $id=(& $exe --get-id|Out-String).Trim();if($id -notmatch '^\d{6,12}$'){throw 'Ac
 $profile='C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\g3Fernwartung\config\g3Fernwartung.toml'
 $hash=(Get-FileHash $profile).Hash
 Worker (Join-Path $PSScriptRoot '../outputs')
-if((Get-FileHash $exe).Hash.ToLowerInvariant() -ne '358c0093c2b45c3e20f2bd1b4e2684866e93d6e0a57391beb3c6cf79798bf236' -or (& $exe --get-id|Out-String).Trim() -ne $id -or (Get-FileHash $profile).Hash -ne $hash){throw 'Same-version update payload or preservation failed'}
+$expectedLine=@(Get-Content (Join-Path $PSScriptRoot 'msi/windows/expected-payload.tsv')|Where-Object {$_.StartsWith("g3Fernwartung.exe`t")});if($expectedLine.Count -ne 1){throw 'Expected frontend pin missing'}
+$expectedFrontend=($expectedLine[0] -split "`t")[1]
+if((Get-FileHash $exe).Hash.ToLowerInvariant() -ne $expectedFrontend -or (& $exe --get-id|Out-String).Trim() -ne $id -or (Get-FileHash $profile).Hash -ne $hash){throw 'Same-version update payload or preservation failed'}
 @{differentPackageSameVersionUpdated=$true;frontendHashVerified=$true;nativeIdPreserved=$true;mainIdentityCredentialsPreserved=$true}|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot '../outputs/small-update-acceptance.json')

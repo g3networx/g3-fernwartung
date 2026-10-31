@@ -1,4 +1,4 @@
-name: g3.40.1 verified same-version bootstrap repair
+name: g3.40.1 Remote PowerShell with bounded diagnostic result reporting
 on:
   push:
     branches: [g3-remote-powershell-20261031]
@@ -10,7 +10,7 @@ permissions:
 jobs:
   package:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -19,30 +19,44 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: 1.75.0
-      - name: Fetch exact accepted current and prior candidate packages
+      - name: Fetch pinned accepted payload and installer tools
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $accepted=Join-Path $env:RUNNER_TEMP 'accepted-g3401.zip'
-          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/13058545110/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $accepted
-          if((Get-FileHash $accepted).Hash.ToLowerInvariant() -ne 'c38db1b31ddf02b24abad88efb15a18809803c4623f696d949611ab0d8053a36'){throw 'Accepted artifact pin mismatch'}
-          "G3_POWERSHELL_ACCEPTED_ARCHIVE=$accepted"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $archive=Join-Path $env:RUNNER_TEMP 'accepted-wallpaper.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12983117823/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $archive
+          if((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'a329b203fa8735110068172981a49bb293ec8e57077dce2a67c2ee5bbcd35df3'){throw 'Accepted payload digest mismatch'}
+          "G3_WALLPAPER_ACCEPTED_ARCHIVE=$archive"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
           $prior=Join-Path $env:RUNNER_TEMP 'prior-g3401.zip'
           Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/13057592533/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $prior
           if((Get-FileHash $prior).Hash.ToLowerInvariant() -ne '395e771abde1ad62ec74f64c4c6cfe806e8a359b1e822fd7b428d28cd1941080'){throw 'Prior artifact pin mismatch'}
           "G3_PRIOR_POWERSHELL_ARCHIVE=$prior"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Rebuild only wrappers and verify different-package same-version repair
+          $tools=Join-Path $env:RUNNER_TEMP 'g3401-tools'
+          New-Item -ItemType Directory $tools|Out-Null
+          Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
+          if((Get-FileHash "$tools/wix.zip").Hash.ToLowerInvariant() -ne '6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31'){throw 'WiX digest mismatch'}
+          Expand-Archive "$tools/wix.zip" "$tools/wix/bin"
+          "WIX=$tools/wix"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Prepare accepted native core
+        shell: pwsh
+        run: python g3-build/package-powershell.py prepare
+      - name: Build corrected g3.40.1 Flutter frontend and run focused tests
+        shell: pwsh
+        run: ./g3-build/build-powershell-ui.ps1
+      - name: Package g3.40.1 Host and FullClient and test installer regressions
         shell: pwsh
         run: |
-          python g3-build/rebuild-powershell-bootstrap.py
-          if($LASTEXITCODE -ne 0){throw 'Bootstrap build failed'}
+          python g3-build/package-version.py
+          if($LASTEXITCODE -ne 0){throw 'Version mapping failed'}
+          python g3-build/package-powershell.py package
+          if($LASTEXITCODE -ne 0){throw 'Packaging failed'}
           python g3-build/test-process-inspection.py
           if($LASTEXITCODE -ne 0){throw 'Process inspection regression failed'}
           python g3-build/test-setup-progress.py
           if($LASTEXITCODE -ne 0){throw 'Setup progress regression failed'}
           python g3-build/test-update-session-gate.py
-          if($LASTEXITCODE -ne 0){throw 'Session gate regression failed'}
+          if($LASTEXITCODE -ne 0){throw 'Session guard regression failed'}
           ./g3-build/test-small-update.ps1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
