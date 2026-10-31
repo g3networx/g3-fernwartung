@@ -23,4 +23,11 @@ void main() {
   expect(await g3AvailableUpdate(client:MockClient((_) async => http.Response('offline',503))),isNull);
   expect(await g3AvailableUpdate(client:MockClient((_) async => http.Response('not json',200))),isNull);
  });
+ test('g3.33 offers only a strictly newer g3 release', () async {
+  for (final version in ['1.5.0-g3.32', '1.5.0-g3.33', '1.5.0-g3.34']) {
+   expect(await g3AvailableUpdate(current:'1.5.0-g3.33',
+    client:MockClient((_) async => http.Response('{"version":"$version"}',200))),
+    version == '1.5.0-g3.34' ? version : isNull);
+  }
+ });
 }
