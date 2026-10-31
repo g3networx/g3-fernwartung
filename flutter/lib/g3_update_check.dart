@@ -26,7 +26,7 @@ Future<String?> g3AvailableUpdate({String current = g3ClientVersion, http.Client
     if (response.statusCode != 200) return null;
     final body = await response.stream.bytesToString().timeout(const Duration(seconds: 10));
     final data = jsonDecode(body);
-    final version = data is Map ? data['version'] : null;
+    final version = data is Map ? (data['release_version'] ?? data['version']) : null;
     return version is String && g3VersionNewer(version, current) ? version : null;
   } catch (_) {
     return null;

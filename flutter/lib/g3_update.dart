@@ -39,7 +39,9 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
           .timeout(const Duration(seconds: 15));
       if (r.statusCode != 200) throw Exception();
       final data = jsonDecode(r.body) as Map<String, dynamic>;
-      if (!g3VersionIsValid(data['version'] as String)) throw Exception();
+      final version = data['release_version'] ?? data['version'];
+      if (version is! String || !g3VersionIsValid(version)) throw Exception();
+      data['version'] = version;
       if (mounted)
         setState(() {
           release = g3VersionNewer(data['version'], g3ClientVersion) ? data : null;

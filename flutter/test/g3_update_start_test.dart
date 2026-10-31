@@ -17,6 +17,12 @@ void main() {
    client:MockClient((_) async => http.Response('{"version":"1.5.0-g3.40.1"}',200))),
    '1.5.0-g3.40.1');
  });
+ test('new clients compare canonical patch version in a legacy-compatible feed', () async {
+  final client=MockClient((_) async => http.Response(
+   '{"version":"1.5.0-g3.40","release_version":"1.5.0-g3.40.1"}',200));
+  expect(await g3AvailableUpdate(current:'1.5.0-g3.40',client:client),'1.5.0-g3.40.1');
+  expect(await g3AvailableUpdate(current:'1.5.0-g3.40.1',client:client),isNull);
+ });
  test('start check reports a newer release and never installs', () async {
   var requests = 0;
   final client = MockClient((request) async {

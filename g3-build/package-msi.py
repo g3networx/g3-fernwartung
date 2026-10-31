@@ -12,8 +12,8 @@ def tag(parent,name,**attrs):return E.SubElement(parent,'{'+NS+'}'+name,{k:str(v
 def guid(value):return str(uuid.uuid5(uuid.NAMESPACE_URL,'https://g3networx.de/fernwartung/msi/'+value)).upper()
 parser=argparse.ArgumentParser();parser.add_argument('--kind',choices=['windows','host']);parser.add_argument('--version',default='1.5.0-g3.29');options=parser.parse_args()
 version=options.version
-if not re.fullmatch(r'1\.5\.0-g3\.\d{1,3}',version):raise ValueError('Invalid package version')
-msi_version='1.5.'+version.rsplit('.',1)[1]
+import runpy
+msi_version=runpy.run_path(str(ROOT/'g3-build/package-version.py'))['windows_version'](version)
 payload=ROOT/'flutter/build/windows/x64/runner/Release'
 build_date=re.search(r'pub const BUILD_DATE: &str = "([^"]+)";', (ROOT/'src/version.rs').read_text(encoding='utf-8')).group(1)
 results={}

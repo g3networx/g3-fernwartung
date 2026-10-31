@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted'){throw 'Disposable GitHub-hosted Windows runner required'}
 $repo=(Resolve-Path "$PSScriptRoot/..").Path
 $version=$env:G3_BUILD_VERSION
-if($version -notmatch '^1\.5\.0-g3\.\d{1,3}$'){throw 'Missing exact candidate version'}
+if($version -notmatch '^1\.5\.0-g3\.\d{1,3}(?:\.\d{1,5})?$'){throw 'Missing exact candidate version'}
 $output=Join-Path $repo outputs
 $scenario=$env:G3_PAIR_SCENARIO
 if($scenario -notin @('fresh','existing-host')){throw 'Exact disposable pairing scenario required'}
