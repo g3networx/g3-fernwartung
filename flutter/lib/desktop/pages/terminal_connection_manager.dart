@@ -31,9 +31,10 @@ class TerminalConnectionManager {
     // Create new FFI instance for first terminal
     debugPrint('[TerminalConnectionManager] Creating new terminal connection for peer $peerId');
     final ffi = FFI(null);
-    if (terminalLogin != null && terminalLogin['username']!.isNotEmpty) {
-      ffi.g3TerminalLogin = Map<String, String>.from(terminalLogin);
-      bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: 'Y');
+    if (terminalLogin != null) {
+      final administrator = terminalLogin['username']!.isNotEmpty;
+      if (administrator) ffi.g3TerminalLogin = Map<String, String>.from(terminalLogin);
+      bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: administrator ? 'Y' : null);
     }
     terminalLogin?.clear();
     ffi.start(

@@ -8,6 +8,8 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/input_model.dart';
+import 'package:flutter_hbb/models/model.dart' show ConnType;
+import 'package:flutter_hbb/models/platform_model.dart' show bind;
 
 /// must keep the order
 // ignore: constant_identifier_names
@@ -356,6 +358,10 @@ class RustDeskMultiWindowManager {
     String? terminalUsername,
     String? terminalPassword,
   }) async {
+    if (terminalUsername != null && bind.peerGetSessionsCount(id: remoteId, connType: ConnType.terminal.index) > 0) {
+      showToast('Bitte die vorhandene PowerShell-Verbindung zu diesem Gerät zuerst schließen, damit der gewählte Benutzerkontext neu geprüft wird.');
+      return MultiWindowCallResult(kInvalidWindowId, null);
+    }
     // Iterate through terminal windows in reverse order to prioritize
     // the most recently added or used windows, as they are more likely
     // to have an active session.
