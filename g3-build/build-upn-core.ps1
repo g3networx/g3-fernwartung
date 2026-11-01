@@ -19,7 +19,11 @@ Check
 Check
 cargo build --locked --features hwcodec,vram,flutter --lib --release
 Check
+cargo build --locked --release --package dylib_virtual_display
+Check
 $hash=(Get-FileHash target/release/librustdesk.dll).Hash.ToLowerInvariant()
 if($hash -eq 'ce2b6fef64620cb3ee2918d7245259edd758059dadf8f6437a2d47b72426fbec'){throw 'Native fix was not rebuilt'}
 @{source_commit=$env:GITHUB_SHA;native_sha256=$hash;native_rebuilt=$true;windows_logon_parser_tests_passed=3;run_id=$env:GITHUB_RUN_ID}|ConvertTo-Json|Set-Content outputs/upn-core-provenance.json
+# Preserve completed native outputs even if a later UI/package step fails.
+Compress-Archive target/release/librustdesk.dll,target/release/deps/dylib_virtual_display.dll,outputs/upn-core-provenance.json outputs/upn-native-candidate.zip
 "$tools/flutter/bin"|Out-File $env:GITHUB_PATH -Append -Encoding utf8

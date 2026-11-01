@@ -1,4 +1,4 @@
-name: g3.40.2 Windows UPN logon correction complete payload build only
+name: g3.40.2 Windows UPN logon correction with native companion build only
 on:
   push:
     branches: [g3-powershell-upn-fix-20261101]
