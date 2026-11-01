@@ -18,6 +18,7 @@ provenance=json.loads((out/'upn-core-provenance.json').read_text(encoding='utf-8
 assert provenance['source_commit']==os.environ['GITHUB_SHA'] and provenance['native_rebuilt']
 payload=root/'flutter/build/windows/x64/runner/Release'
 assert hashlib.sha256((payload/'librustdesk.dll').read_bytes()).hexdigest()==provenance['native_sha256']
+assert (payload/'dylib_virtual_display.dll').is_file()
 shutil.copy2(root/'LICENCE',payload/'LICENCE')
 (payload/'SOURCE.txt').write_text('https://github.com/g3networx/g3-fernwartung/tree/'+os.environ['GITHUB_SHA']+'\n')
 (root/'src/version.rs').write_text('pub const BUILD_DATE: &str = "2026-11-01";\n')
