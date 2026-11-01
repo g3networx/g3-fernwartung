@@ -2817,16 +2817,19 @@ pub fn send_message_to_hnwd(
     return true;
 }
 
+#[path = "windows_logon.rs"]
+mod windows_logon;
+
 pub fn get_logon_user_token(user: &str, pwd: &str) -> ResultType<HANDLE> {
-    let user_split = user.split("\\").collect::<Vec<&str>>();
-    let wuser = wide_string(user_split.get(1).unwrap_or(&user));
-    let wpc = wide_string(user_split.get(0).unwrap_or(&""));
+    let (username, domain) = windows_logon::logon_user_parts(user);
+    let wuser = wide_string(username);
+    let wpc = domain.map(wide_string);
     let wpwd = wide_string(pwd);
     let mut ph_token: HANDLE = std::ptr::null_mut();
     let res = unsafe {
         LogonUserW(
             wuser.as_ptr(),
-            wpc.as_ptr(),
+            wpc.as_ref().map_or(std::ptr::null(), |value| value.as_ptr()),
             wpwd.as_ptr(),
             LOGON32_LOGON_INTERACTIVE,
             LOGON32_PROVIDER_DEFAULT,
