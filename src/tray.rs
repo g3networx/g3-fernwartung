@@ -86,7 +86,7 @@ fn make_tray() -> hbb_common::ResultType<()> {
         "g3Soforthilfe" => "g3 OpsLinX Soforthilfe".to_owned(),
         _ => crate::get_app_name(),
     };
-    let tooltip = |count: usize| {
+    let tooltip = move |count: usize| {
         if count == 0 {
             format!(
                 "{} {}",

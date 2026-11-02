@@ -45,7 +45,7 @@ jobs:
       - name: Prepare accepted native core
         shell: pwsh
         run: python g3-build/package-ha.py prepare
-      - name: Compile corrected native core and run Windows account regression tests
+      - name: Compile HA native core and verify Windows account handling
         shell: pwsh
         run: ./g3-build/build-ha-core.ps1
       - name: Build corrected g3.50.1 Flutter frontend and run focused tests
