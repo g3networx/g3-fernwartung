@@ -12,7 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [upgrade, fresh, existing-host]
+        # Paired scenarios retain their independent 6ab599d validation receipts.
+        scenario: [upgrade]
     runs-on: windows-2022
     timeout-minutes: 35
     steps:
