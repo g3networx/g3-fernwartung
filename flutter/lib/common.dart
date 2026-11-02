@@ -2401,7 +2401,7 @@ Future<void> redeemG3Session(String token, {bool isTerminal = false, bool isFile
     final client = g3Http.Client();
     try {
       final req =
-          g3Http.Request('GET', Uri.https('rust.g3nx.net', '/client-handoff'));
+          g3Http.Request('GET', Uri.https('linx.g3nx.net', '/client-handoff'));
       req.followRedirects = false;
       req.headers['Authorization'] = 'Bearer $token';
       req.headers['X-G3-Client-ID']=(await bind.mainGetMyId()).replaceAll(' ','');
@@ -3085,7 +3085,8 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = bind.mainGetAppNameSync();
+  final internalName = bind.mainGetAppNameSync();
+  final name = const {'g3Fernwartung': 'g3 OpsLinX', 'g3Host': 'g3 OpsLinX Host', 'g3Soforthilfe': 'g3 OpsLinX Soforthilfe'}[internalName] ?? internalName;
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
       return name;

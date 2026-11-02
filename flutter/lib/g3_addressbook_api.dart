@@ -30,7 +30,7 @@ class G3AddressBookApi {
   Future<Map<String, dynamic>> request(String path,
       {Map<String, dynamic>? body}) async {
     final req = http.Request(body == null ? 'GET' : 'POST',
-        Uri.https('rust.g3nx.net', '/client-addressbook/$path'))
+        Uri.https('linx.g3nx.net', '/client-addressbook/$path'))
       ..followRedirects = false
       ..headers['Accept'] = 'application/json'
       ..headers['X-G3-Native'] = '1';

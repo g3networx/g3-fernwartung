@@ -13,7 +13,7 @@ index 6fe1004..6f78e83 100644
      pub static ref NEW_STORED_PEER_CONFIG: Mutex<HashSet<String>> = Default::default();
      pub static ref DEFAULT_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
 -    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-+    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("custom-rendezvous-server".to_owned(), "rust.g3nx.net".to_owned()), ("relay-server".to_owned(), "rust.g3nx.net:443".to_owned()), ("key".to_owned(), "E88bk6TcFVGTjHPfEhU4naFPZRN7tSv3pjFrPO8MrG4=".to_owned()), ("api-server".to_owned(), "".to_owned())]); if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned()); settings.insert("verification-method".to_owned(),"use-temporary-password".to_owned());} settings});
++    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("custom-rendezvous-server".to_owned(), "linx.g3nx.net".to_owned()), ("relay-server".to_owned(), "linx.g3nx.net:443".to_owned()), ("key".to_owned(), "E88bk6TcFVGTjHPfEhU4naFPZRN7tSv3pjFrPO8MrG4=".to_owned()), ("api-server".to_owned(), "".to_owned())]); if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned()); settings.insert("verification-method".to_owned(),"use-temporary-password".to_owned());} settings});
      pub static ref DEFAULT_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
      pub static ref OVERWRITE_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
      pub static ref DEFAULT_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();

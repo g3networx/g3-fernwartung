@@ -107,7 +107,7 @@ Future<void> runG3PowerShellProbe() async {
     if (!RegExp(r'^\d{6,12}$').hasMatch(localId)) throw StateError('local-device-id-unavailable');
     proof['localNativeId'] = localId;
     final response = await transport.send(http.Request('GET',
-      Uri.https('rust.g3nx.net', '/client-handoff'))
+      Uri.https('linx.g3nx.net', '/client-handoff'))
       ..followRedirects = false
       ..headers['X-G3-Client-ID'] = localId
       ..headers['Authorization'] = 'Bearer ${uri.path.substring(1)}')

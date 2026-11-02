@@ -111,7 +111,7 @@ class _G3Ledger {
           ..removeWhere((k, v) => k.startsWith('_'));
         try {
           final response = await http
-              .post(Uri.https('rust.g3nx.net', '/client-activity'),
+              .post(Uri.https('linx.g3nx.net', '/client-activity'),
                   headers: {
                     'Authorization': 'Bearer $key',
                     'Content-Type': 'application/json'

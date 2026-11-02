@@ -2527,6 +2527,7 @@ class _AboutState extends State<_About> {
         'myId': myId
       };
     }(), hasData: (data) {
+      final isG3 = const {'g3Fernwartung', 'g3Host', 'g3Soforthilfe'}.contains(bind.mainGetAppNameSync());
       final license = data['license'].toString();
       final version = data['version'].toString();
       final buildDate = data['buildDate'].toString();
@@ -2536,7 +2537,7 @@ class _AboutState extends State<_About> {
       final scrollController = ScrollController();
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(title: translate('About RustDesk'), children: [
+        child: _Card(title: isG3 ? '${translate('About')} g3 OpsLinX' : translate('About RustDesk'), children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2544,7 +2545,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text('${translate('Version')}: $version')
+                  child: Text('${translate('Version')}: ${isG3 ? const String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.50.1') : version}')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')
@@ -2576,6 +2577,7 @@ class _AboutState extends State<_About> {
                 translate('Slogan_tip'),
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ).marginSymmetric(vertical: 4.0),
+              if (isG3) const SelectableText('g3 OpsLinX – g3 NetworX UG & Co. KG'),
               G3LegalNotices(license: license, year: DateTime.now().year)
             ],
           ).marginOnly(left: _kContentHMargin)

@@ -32,11 +32,11 @@ fn alive(pid:u32)->bool {
 fn alive(pid:u32)->bool {std::path::Path::new(&format!("/proc/{pid}")).exists()}
 fn http()->Option<reqwest::blocking::Client> {reqwest::blocking::Client::builder().https_only(true).redirect(reqwest::redirect::Policy::none()).use_rustls_tls().timeout(Duration::from_secs(4)).build().ok()}
 fn lease(c:&reqwest::blocking::Client,event:&str,op:&str,key:&str)->Result<bool,()> {
-    let r=c.post("https://rust.g3nx.net/client-session").bearer_auth(key).json(&serde_json::json!({"event":event,"operation":op})).send().map_err(|_|())?;
+    let r=c.post("https://linx.g3nx.net/client-session").bearer_auth(key).json(&serde_json::json!({"event":event,"operation":op})).send().map_err(|_|())?;
     if r.status().as_u16()==409{return Ok(false)}
     if !r.status().is_success(){return Err(())} Ok(r.json::<serde_json::Value>().map_err(|_|())?["allowed"]==true)
 }
-fn report(c:&reqwest::blocking::Client,r:&Record,key:&str)->bool {c.post("https://rust.g3nx.net/client-activity").bearer_auth(key).json(r).send().map(|r|r.status().is_success()).unwrap_or(false)}
+fn report(c:&reqwest::blocking::Client,r:&Record,key:&str)->bool {c.post("https://linx.g3nx.net/client-activity").bearer_auth(key).json(r).send().map(|r|r.status().is_success()).unwrap_or(false)}
 pub struct Session { stop:Arc<AtomicBool>, valid:Arc<AtomicBool> }
 impl Session {
     pub fn valid(&self)->bool {self.valid.load(Ordering::SeqCst)}
@@ -45,7 +45,7 @@ impl Session {
         let event=uuid::Uuid::new_v4().simple().to_string();let key=Config::get_option("g3-activity-token");
         if !key.is_empty() {
             let c=reqwest::Client::builder().https_only(true).redirect(reqwest::redirect::Policy::none()).use_rustls_tls().timeout(Duration::from_secs(4)).build().map_err(|_|"Session admission unavailable")?;
-            let r=c.post("https://rust.g3nx.net/client-session").bearer_auth(&key).json(&serde_json::json!({"event":event,"operation":"acquire"})).send().await.map_err(|_|"Session admission unavailable")?;
+            let r=c.post("https://linx.g3nx.net/client-session").bearer_auth(&key).json(&serde_json::json!({"event":event,"operation":"acquire"})).send().await.map_err(|_|"Session admission unavailable")?;
             if r.status().as_u16()==409{return Err("Customer session limit reached")}
             if !r.status().is_success() || r.json::<serde_json::Value>().await.map_err(|_|"Session admission unavailable")?["allowed"]!=true{return Err("Session admission unavailable")}
         }

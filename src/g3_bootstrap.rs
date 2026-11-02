@@ -39,13 +39,13 @@ fn refresh()->Result<(),()> {
     let client=reqwest::blocking::Client::builder().https_only(true)
         .redirect(reqwest::redirect::Policy::none()).use_rustls_tls()
         .timeout(Duration::from_secs(10)).build().map_err(|_|())?;
-    let url="https://rust.g3nx.net/client-bootstrap";
+    let url="https://linx.g3nx.net/client-bootstrap";
     let response=client.get(url).query(&[("id",id.as_str())]).send().map_err(|_|())?;
     #[cfg(windows)]
     let response=if response.status()==reqwest::StatusCode::NOT_FOUND && crate::get_app_name()=="g3Host" {
         let source=crate::platform::g3_msi_enrollment_source();
         let code=customer_code(&source).ok_or(())?;
-        enroll_customer(&client,"https://rust.g3nx.net",&id,code)?;
+        enroll_customer(&client,"https://linx.g3nx.net",&id,code)?;
         client.get(url).query(&[("id",id.as_str())]).send().map_err(|_|())?
     }else{response};
     let challenge:Value=response.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
@@ -76,7 +76,7 @@ fn refresh()->Result<(),()> {
         if !(8..=128).contains(&password.chars().count()) || !Config::set_permanent_password(password){return Err(())}
         Config::set_option("verification-method".to_owned(),if crate::get_app_name()=="g3Host" {"use-both-passwords"}else{"use-permanent-password"}.to_owned());
         Config::set_option("approve-mode".to_owned(),"password".to_owned());
-        client.post("https://rust.g3nx.net/client-provisioning/confirm")
+        client.post("https://linx.g3nx.net/client-provisioning/confirm")
             .bearer_auth(data["provisioning_token"].as_str().ok_or(())?)
             .json(&serde_json::json!({"device_id":data["device_id"]}))
             .send().map_err(|_|())?.error_for_status().map_err(|_|())?;

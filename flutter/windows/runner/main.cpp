@@ -96,6 +96,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     app_name += L" - Adressbuch-Vorschau";
   }
 
+  // Keep profile and service namespaces independent of the visible product name.
+  if (app_name == L"g3Fernwartung - Adressbuch-Vorschau") {
+    app_name = L"g3 OpsLinX - Adressbuch-Vorschau";
+  } else if (app_name == L"g3Host") {
+    app_name = L"g3 OpsLinX Host";
+  } else if (app_name == L"g3Soforthilfe") {
+    app_name = L"g3 OpsLinX Soforthilfe";
+  } else if (app_name == L"g3Fernwartung") {
+    app_name = L"g3 OpsLinX";
+  }
+
   // Uri links dispatch
   HWND hwnd = ::FindWindowW(getWindowClassName(), app_name.c_str());
   if (hwnd != NULL) {

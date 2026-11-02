@@ -132,7 +132,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
       final start = await api.start(verifier);
       final uri = Uri.parse(start['verification_uri'] as String);
       if (uri.scheme != 'https' ||
-          uri.host != 'rust.g3nx.net' ||
+          !const {'rust.g3nx.net', 'linx.g3nx.net', 'opslinx02.g3nx.net', 'opslinx.g3nx.net', 'opslinx.g3networx.de'}.contains(uri.host) ||
           uri.path != '/client-addressbook/authorize') throw Exception();
       if (!mounted || current != generation) return;
       setState(() => displayCode = start['display_code'] as String);

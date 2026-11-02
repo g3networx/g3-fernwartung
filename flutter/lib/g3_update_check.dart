@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.40.1');
+const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.50.1');
 bool g3VersionIsValid(String version) =>
     RegExp(r'^\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?$').hasMatch(version);
 
@@ -21,7 +21,7 @@ Future<String?> g3AvailableUpdate({String current = g3ClientVersion, http.Client
   final own = client == null;
   final transport = client ?? http.Client();
   try {
-    final request = http.Request('GET', Uri.https('rust.g3nx.net', '/client/update-v2.json'))..followRedirects = false;
+    final request = http.Request('GET', Uri.https('linx.g3nx.net', '/client/update-v2.json'))..followRedirects = false;
     final response = await transport.send(request).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) return null;
     final body = await response.stream.bytesToString().timeout(const Duration(seconds: 10));

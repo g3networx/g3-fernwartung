@@ -31,7 +31,7 @@ Future<void> applyG3Provisioning(String body) async {
       key: 'verification-method', value: bind.mainGetAppNameSync() == 'g3Host' ? 'use-both-passwords' : 'use-permanent-password');
   await bind.mainSetOption(key: 'approve-mode', value: 'password');
   final r = await http
-      .post(Uri.https('rust.g3nx.net', '/client-provisioning/confirm'),
+      .post(Uri.https('linx.g3nx.net', '/client-provisioning/confirm'),
           headers: {
             'Authorization': 'Bearer ${data['provisioning_token']}',
             'Content-Type': 'application/json'
@@ -110,7 +110,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
     });
     final client = http.Client();
     try {
-      final uri = Uri.https('rust.g3nx.net', '/client-enrollment');
+      final uri = Uri.https('linx.g3nx.net', '/client-enrollment');
       final target = await client.get(uri, headers: {
         'Authorization': 'Bearer $token'
       }).timeout(const Duration(seconds: 15));
@@ -241,7 +241,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
   Future<void> load() async {
     try {
       final r = await http.get(
-          Uri.https('rust.g3nx.net', '/client-customer-enrollment'),
+          Uri.https('linx.g3nx.net', '/client-customer-enrollment'),
           headers: {
             'Authorization': 'Bearer ${widget.token}'
           }).timeout(const Duration(seconds: 15));
@@ -276,7 +276,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
         return;
       }
       final r = await http
-          .post(Uri.https('rust.g3nx.net', '/client-customer-enrollment'),
+          .post(Uri.https('linx.g3nx.net', '/client-customer-enrollment'),
               headers: {
                 'Authorization': 'Bearer ${widget.token}',
                 'Content-Type': 'application/json'
@@ -370,12 +370,12 @@ Future<void> g3BootstrapReporting()async{
   for(var i=0;i<20;i++){id=(await bind.mainGetMyId()).replaceAll(' ','');if(RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id))break;await Future<void>.delayed(const Duration(seconds:1));}
   if(!RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id))return;
   http.Response? response;
-  for(var attempt=0;attempt<(g3IsAdhoc()?7:1);attempt++){response=await http.get(Uri.https('rust.g3nx.net','/client-bootstrap',{'id':id,'adhoc':g3IsAdhoc()?'1':'0'})).timeout(const Duration(seconds:15));if(response.statusCode==200)break;await Future<void>.delayed(const Duration(seconds:10));}
+  for(var attempt=0;attempt<(g3IsAdhoc()?7:1);attempt++){response=await http.get(Uri.https('linx.g3nx.net','/client-bootstrap',{'id':id,'adhoc':g3IsAdhoc()?'1':'0'})).timeout(const Duration(seconds:15));if(response.statusCode==200)break;await Future<void>.delayed(const Duration(seconds:10));}
   if(response==null || response.statusCode!=200)return;
   final nonce=(jsonDecode(response.body) as Map<String,dynamic>)['challenge'] as String;
   final signature=bind.mainGetOptionSync(key:'g3-bootstrap-sign:g3-bootstrap-v1:$id:$nonce');
   if(signature.isEmpty)return;
-  final r=await http.post(Uri.https('rust.g3nx.net','/client-bootstrap'),headers:{'Content-Type':'application/json'},body:jsonEncode({'id':id,'challenge':nonce,'signature':signature,'adhoc':g3IsAdhoc(),'name':Platform.localHostname})).timeout(const Duration(seconds:15));
+  final r=await http.post(Uri.https('linx.g3nx.net','/client-bootstrap'),headers:{'Content-Type':'application/json'},body:jsonEncode({'id':id,'challenge':nonce,'signature':signature,'adhoc':g3IsAdhoc(),'name':Platform.localHostname})).timeout(const Duration(seconds:15));
   if(r.statusCode==200){
     final data=jsonDecode(r.body) as Map<String,dynamic>;
     await applyG3Provisioning(r.body);

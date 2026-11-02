@@ -80,17 +80,23 @@ fn make_tray() -> hbb_common::ResultType<()> {
     } else {
         tray_menu.append_items(&[&open_i]).ok();
     }
+    let product_name = match crate::get_app_name().as_str() {
+        "g3Fernwartung" => "g3 OpsLinX".to_owned(),
+        "g3Host" => "g3 OpsLinX Host".to_owned(),
+        "g3Soforthilfe" => "g3 OpsLinX Soforthilfe".to_owned(),
+        _ => crate::get_app_name(),
+    };
     let tooltip = |count: usize| {
         if count == 0 {
             format!(
                 "{} {}",
-                crate::get_app_name(),
+                product_name,
                 translate("Service is running".to_owned()),
             )
         } else {
             format!(
                 "{} - {}\n{}",
-                crate::get_app_name(),
+                product_name,
                 translate("Ready".to_owned()),
                 translate("{".to_string() + &format!("{count}") + "} sessions"),
             )

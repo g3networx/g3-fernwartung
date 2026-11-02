@@ -27,7 +27,7 @@ void main() {
   var requests = 0;
   final client = MockClient((request) async {
    requests++;
-   expect(request.url.toString(), 'https://rust.g3nx.net/client/update-v2.json');
+   expect(request.url.toString(), 'https://linx.g3nx.net/client/update-v2.json');
    expect(request.method, 'GET');
    return http.Response('{"version":"1.5.0-g3.27"}', 200);
   });
