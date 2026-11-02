@@ -1,0 +1,76 @@
+name: g3.50.1 pinned payload upgrade and paired acceptance
+on:
+  push:
+    branches: [g3-ha-commander-20261102]
+    paths: [.github/workflows/g3-ha-upgrade-diagnostic.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [upgrade, fresh, existing-host]
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - name: Reuse exact compiled candidate without rebuilding
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $changed=@(git diff --name-only 9af8ef58a9b6087c6b6c9e46670459ecd95613af HEAD -- src libs Cargo.toml Cargo.lock flutter/lib flutter/windows g3-build/hbb-common.patch g3-build/SetupBootstrap.cs)
+          if($changed.Count){throw 'Production source changed; payload reuse forbidden'}
+          $zip=Join-Path $env:RUNNER_TEMP 'candidate.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/13126006715/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $zip
+          if((Get-FileHash $zip).Hash.ToLowerInvariant() -ne 'ad7f291b3ba86b90a24866eb0d176c704805d8d5401767deadf6ff27b96e595c'){throw 'Candidate artifact pin mismatch'}
+          Expand-Archive $zip outputs
+          $items=Get-Content outputs/g3501-package-hashes.json -Raw|ConvertFrom-Json
+          foreach($property in $items.PSObject.Properties){$item=$property.Value;if((Get-FileHash (Join-Path outputs $item.file)).Hash.ToLowerInvariant() -ne $item.sha256){throw 'Package pin mismatch'}}
+          $python=(Get-Command python).Source
+          & $python -c 'import tomllib'
+          if($LASTEXITCODE -ne 0){
+            $versions=@(Get-ChildItem (Join-Path $env:RUNNER_TOOL_CACHE 'Python') -Directory|Where-Object {$_.Name -match '^3\.(11|12|13|14)\.'}|Sort-Object Name -Descending)
+            if(!$versions.Count){throw 'Python with standard TOML parser required'}
+            $python=Join-Path $versions[0].FullName 'x64/python.exe'
+          }
+          "G3_PROFILE_PYTHON=$python"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Published version upgrade with protected field diagnostics
+        if: matrix.scenario == 'upgrade'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip=Join-Path $env:RUNNER_TEMP 'prior.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/13060744241/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $zip
+          if((Get-FileHash $zip).Hash.ToLowerInvariant() -ne 'd8376ae324be33873816024c4920dcb12a98c38d0abac48f1495cb19b3a7db9d'){throw 'Prior package pin mismatch'}
+          $old=Join-Path $env:RUNNER_TEMP 'prior';Expand-Archive $zip $old
+          ./g3-build/test-ha-upgrade-diagnostic.ps1 -OldRoot $old -CandidateRoot (Join-Path (Get-Location) outputs)
+      - name: Paired fresh and existing Host acceptance
+        if: matrix.scenario != 'upgrade'
+        shell: pwsh
+        env:
+          G3_BUILD_VERSION: 1.5.0-g3.50.1
+          G3_PAIR_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session regression failed'}
+          ./g3-build/test-shared-device-install.ps1
+          ./g3-build/test-ha-window-branding.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g3501-validation-${{ matrix.scenario }}-${{ github.sha }}
+          path: |
+            outputs/*acceptance.json
+            outputs/ha-upgrade-diagnostic.json
+          retention-days: 30
