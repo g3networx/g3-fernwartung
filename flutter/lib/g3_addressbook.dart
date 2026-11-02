@@ -10,6 +10,7 @@ import 'g3_powershell_credentials.dart';
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
   final Future<void> Function(String uri, G3PowerShellLogin login)? onPowerShell;
+  final Future<void> Function(String uri)? onFileExplorer;
   final G3AddressBookApi? api;
   final G3AddressBookCredentials? credentials;
   final G3PowerShellCredentials? powerShellCredentials;
@@ -17,6 +18,7 @@ class G3AddressBook extends StatefulWidget {
       {super.key,
       required this.onConnect,
       this.onPowerShell,
+      this.onFileExplorer,
       this.api,
       this.credentials,
       this.powerShellCredentials});
@@ -226,8 +228,9 @@ class _G3AddressBookState extends State<G3AddressBook> {
     }
   }
 
-  Future<void> open(Map<String, dynamic> device, {bool powerShell = false}) async {
+  Future<void> open(Map<String, dynamic> device, {bool powerShell = false, bool fileExplorer = false}) async {
     if (busy) return;
+    if (fileExplorer && widget.onFileExplorer == null) return;
     if (powerShell && widget.onPowerShell == null) return;
     final login = powerShell ? await showG3PowerShellLogin(context, deviceId: device['rustdesk_id'].toString(), credentials: widget.powerShellCredentials) : null;
     if (powerShell && login == null) return;
@@ -243,7 +246,9 @@ class _G3AddressBookState extends State<G3AddressBook> {
       if (uri.scheme != 'g3fernwartung' || uri.hasQuery || uri.hasFragment) {
         throw Exception();
       }
-      if (powerShell) {
+      if (fileExplorer) {
+        await widget.onFileExplorer!(uri.toString());
+      } else if (powerShell) {
         await widget.onPowerShell!(uri.toString(), login!);
       } else {
         await widget.onConnect(uri.toString());
@@ -474,6 +479,13 @@ class _G3AddressBookState extends State<G3AddressBook> {
                           onPressed: busy ? null : () => open(d, powerShell: true),
                           icon: const Icon(Icons.terminal),
                           label: const Text('Verbinden'))),
+                if (widget.onFileExplorer != null)
+                  Tooltip(
+                      message: 'Dateiexplorer öffnen',
+                      child: FilledButton.icon(
+                          onPressed: busy ? null : () => open(d, fileExplorer: true),
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('Dateiexplorer'))),
               ]),
           if (book['can_edit'] == true)
             Wrap(spacing: 8, children: [

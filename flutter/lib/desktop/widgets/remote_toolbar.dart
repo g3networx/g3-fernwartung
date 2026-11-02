@@ -1,4 +1,5 @@
 import 'package:flutter_hbb/g3_update.dart';
+import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -849,6 +850,23 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     // Do not show keyboard for camera connection type.
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
+    }
+    if (!isWeb && widget.ffi.connType == ConnType.defaultConn &&
+        bind.mainGetAppNameSync() == 'g3Fernwartung') {
+      toolbarItems.add(_IconMenuButton(
+        tooltip: 'Dateiexplorer', icon: const Icon(Icons.folder_open, color: Colors.white, size: 22),
+        color: _ToolbarTheme.blueColor, hoverColor: _ToolbarTheme.hoverBlueColor,
+        onPressed: () async {
+          await rustDeskWinManager.newFileTransfer(widget.id,
+            connToken: bind.sessionGetConnToken(sessionId: widget.ffi.sessionId));
+        }));
+      toolbarItems.add(_IconMenuButton(
+        tooltip: 'Shell', icon: const Icon(Icons.terminal, color: Colors.white, size: 22),
+        color: _ToolbarTheme.blueColor, hoverColor: _ToolbarTheme.hoverBlueColor,
+        onPressed: () async {
+          await rustDeskWinManager.newTerminal(widget.id,
+            connToken: bind.sessionGetConnToken(sessionId: widget.ffi.sessionId));
+        }));
     }
     toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
     if (!isWeb) {

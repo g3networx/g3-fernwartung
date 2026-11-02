@@ -75,6 +75,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     String? opened;
     String? powerShellOpened;
+    String? fileExplorerOpened;
     var connections = 0;
     final client = MockClient((request) async {
       expect(request.headers['Authorization'], 'Bearer ${'a' * 43}');
@@ -97,6 +98,7 @@ void main() {
                 onConnect: (uri) async {
                   opened = uri;
                 },
+                onFileExplorer: (uri) async { fileExplorerOpened = uri; },
                 onPowerShell: (uri, login) async {
                   powerShellOpened = uri;
                 }))));
@@ -145,6 +147,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(powerShellOpened, 'g3fernwartung://g3-session/${'B' * 54}');
     expect(connections, 2);
+    await tester.tap(find.byTooltip('Dateiexplorer öffnen'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pumpAndSettle();
+    expect(fileExplorerOpened, 'g3fernwartung://g3-session/${'B' * 54}');
+    expect(connections, 3);
+    expect(find.text('PowerShell verbinden'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

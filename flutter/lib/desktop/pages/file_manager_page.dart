@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'g3_commander.dart';
+import 'g3_commander_backend.dart';
 
 import 'package:extended_text/extended_text.dart';
 import 'package:flutter_hbb/common/widgets/dialog.dart';
@@ -88,6 +90,7 @@ class _FileManagerPageState extends State<FileManagerPage>
   final _uniqueKey = UniqueKey();
 
   late FFI _ffi;
+  NativeCommanderBackend? _commander;
 
   FileModel get model => _ffi.fileModel;
   JobController get jobController => model.jobController;
@@ -102,6 +105,9 @@ class _FileManagerPageState extends State<FileManagerPage>
         isSharedPassword: widget.isSharedPassword,
         connToken: widget.connToken,
         forceRelay: widget.forceRelay);
+    if (!isWeb && bind.mainGetAppNameSync() == 'g3Fernwartung') {
+      _commander = NativeCommanderBackend(_ffi);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ffi.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
@@ -122,6 +128,7 @@ class _FileManagerPageState extends State<FileManagerPage>
 
   @override
   void dispose() {
+    _commander?.dispose();
     model.close().whenComplete(() {
       _ffi.close();
       _ffi.dialogManager.dismissAll();
@@ -164,7 +171,7 @@ class _FileManagerPageState extends State<FileManagerPage>
       OverlayEntry(builder: (_) {
         return willPopScope(Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          body: Row(
+          body: _commander != null ? G3Commander(backend: _commander!) : Row(
             children: [
               if (!isWeb)
                 Flexible(
