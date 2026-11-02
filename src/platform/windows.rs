@@ -2791,6 +2791,12 @@ pub fn send_message_to_hnwd(
 ) -> bool {
     unsafe {
         let class_name_utf16 = wide_string(class_name);
+        let window_name = match window_name {
+            "g3Fernwartung" => "g3 OpsLinX",
+            "g3Host" => "g3 OpsLinX Host",
+            "g3Soforthilfe" => "g3 OpsLinX Soforthilfe",
+            name => name,
+        };
         let window_name_utf16 = wide_string(window_name);
         let window = FindWindowW(class_name_utf16.as_ptr(), window_name_utf16.as_ptr());
         if window.is_null() {

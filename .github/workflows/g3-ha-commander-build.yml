@@ -97,6 +97,7 @@ jobs:
           python g3-build/test-update-session-gate.py
           if($LASTEXITCODE -ne 0){throw 'Session regression failed'}
           ./g3-build/test-shared-device-install.ps1
+          ./g3-build/test-ha-window-branding.ps1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
