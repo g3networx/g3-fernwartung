@@ -9,7 +9,7 @@ $setup=$buildSource.Substring(0,$boundary).Replace('$source=(Resolve-Path "$PSSc
 # The reused setup validates the historical flat version but does no packaging.
 $env:G3_BUILD_VERSION='1.5.0-g3.40'
 & ([scriptblock]::Create($setup))
-$env:G3_BUILD_VERSION='1.5.0-g3.60.19986'
+$env:G3_BUILD_VERSION='1.5.0-g3.60.19987'
 New-Item -ItemType Directory -Force outputs|Out-Null
 $module=(Join-Path $source 'src/platform/windows_logon.rs').Replace('\','/')
 ('#[path = "'+$module+'"] mod windows_logon;')|Set-Content outputs/windows-logon-tests.rs

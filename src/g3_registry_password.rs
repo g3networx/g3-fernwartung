@@ -258,7 +258,10 @@ fn seed_managed(value:&Persistent,candidate:&str)->Persistent {
     next
 }
 pub(crate) fn seed_web_parameters(candidate:&str)->Result<(),()> {
-    if !managed_instance(){return Err(())}
+    if !managed_instance(){
+        if Config::get_option("g3-service-password").is_empty(){Config::set_option("g3-service-password".into(),candidate.into());}
+        return Ok(());
+    }
     let _guard=CREDENTIAL_LOCK.lock().map_err(|_|())?;let (key,app,id,value)=context()?;
     let next=seed_managed(&value,candidate);
     if next!=value{save(&key,&app,&id,&next)?;}mirror(&next)

@@ -1019,6 +1019,13 @@ async fn handle(data: Data, stream: &mut Connection) {
                     }
                 } else if name == "temporary-password" {
                     password::update_temporary_password();
+                } else if name == "g3-seed-password-parameters" {
+                    #[cfg(windows)]
+                    {updated=crate::g3_registry_password::seed_web_parameters(&value).is_ok();}
+                    #[cfg(not(windows))]
+                    {if Config::get_option("g3-service-password").is_empty(){Config::set_option("g3-service-password".into(),value);}updated=true;}
+                    let ack=if updated {"Y"}else{"N"}.to_owned();
+                    allow_err!(stream.send(&Data::Config((name.clone(),Some(ack)))).await);
                 } else if name == "permanent-password" {
                     if Config::is_disable_change_permanent_password() {
                         log::warn!("Changing permanent password is disabled");
@@ -1571,7 +1578,7 @@ pub async fn start_pa() {
                             let mut buf: Vec<u8> = vec![0; AUDIO_DATA_SIZE_U8];
                             match psimple::Simple::new(
                                 None,                             // Use the default server
-                                &crate::get_app_name(),           // Our application’s name
+                                &crate::get_app_name(),           // Our applicationâ€™s name
                                 pulse::stream::Direction::Record, // We want a record stream
                                 Some(&device),                    // Use the default device
                                 "record",                         // Description of our stream
@@ -1724,6 +1731,16 @@ async fn set_data_async(data: &Data) -> ResultType<()> {
 #[tokio::main(flavor = "current_thread")]
 pub async fn set_config(name: &str, value: String) -> ResultType<()> {
     set_config_async(name, value).await
+}
+
+#[tokio::main(flavor = "current_thread")]
+pub async fn seed_password_parameters(value:String)->ResultType<()> {
+    let mut c=connect(1000,"").await?;
+    c.send_config("g3-seed-password-parameters",value).await?;
+    match c.next_timeout(1000).await? {
+        Some(Data::Config((name,Some(ack)))) if name=="g3-seed-password-parameters" && ack=="Y"=>Ok(()),
+        _=>bail!("Password parameters were not acknowledged by the daemon"),
+    }
 }
 
 pub fn update_temporary_password() -> ResultType<()> {

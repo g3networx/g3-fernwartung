@@ -1,3 +1,4 @@
+import 'g3_password_parameters.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -7,38 +8,20 @@ import 'package:flutter_hbb/models/platform_model.dart';
 bool g3IsAdhoc() => bind.mainGetAppNameSync() == 'g3Soforthilfe';
 Future<void> applyG3Provisioning(String body) async {
   final data = jsonDecode(body) as Map<String, dynamic>;
-  final additionalPasswords = data['additional_passwords'];
-  final servicePassword = data['service_password'];
-  if (additionalPasswords is List && additionalPasswords.isNotEmpty) {
-    await bind.mainSetOption(key: 'g3-service-password-provision', value: jsonEncode(additionalPasswords));
-  } else if (servicePassword is String && servicePassword.isNotEmpty) {
-    await bind.mainSetOption(key: 'g3-service-password-provision', value: jsonEncode([servicePassword]));
+  final parameters=g3ProvisioningPasswordParameters(data);
+  if(parameters.isNotEmpty) {
+    await bind.mainSetOption(key:'g3-service-password-provision',value:jsonEncode(parameters));
+    if(bind.mainGetOptionSync(key:'g3-service-password-provision-status')!='confirmed') {
+      throw StateError('Password parameter initialization not confirmed');
+    }
   }
-  final activity = data['activity_token'];
-  if (activity is String && activity.isNotEmpty) {
-    await bind.mainSetOption(key: 'g3-activity-token', value: activity);
+  final activity=data['activity_token'];
+  if(activity is String && activity.isNotEmpty) {
+    await bind.mainSetOption(key:'g3-activity-token',value:activity);
   }
-  final password = data['permanent_password'];
-  if (password is! String || password.isEmpty) return;
-  bool applied = false;
-  for (var attempt = 0; attempt < 5; attempt++) {
-    applied = await bind.mainSetPermanentPasswordWithResult(password: password);
-    if (applied) break;
-    await Future<void>.delayed(const Duration(seconds: 1));
-  }
-  if (!applied) throw Exception('Password setup failed');
-  await bind.mainSetOption(
-      key: 'verification-method', value: bind.mainGetAppNameSync() == 'g3Host' ? 'use-both-passwords' : 'use-permanent-password');
-  await bind.mainSetOption(key: 'approve-mode', value: 'password');
-  final r = await http
-      .post(Uri.https('linx.g3nx.net', '/client-provisioning/confirm'),
-          headers: {
-            'Authorization': 'Bearer ${data['provisioning_token']}',
-            'Content-Type': 'application/json'
-          },
-          body: jsonEncode({'device_id': data['device_id']}))
-      .timeout(const Duration(seconds: 15));
-  if (r.statusCode != 200) throw Exception('Password acknowledgment failed');
+  // Registration does not authorise replacing an existing device password,
+  // disabling its GUI OTP, or filling an intentionally empty Web book row.
+
 }
 
 String g3CustomerCode() {
@@ -101,7 +84,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
     final token = code.text.trim();
     if (!RegExp(r'^[A-Za-z0-9_-]{32}$').hasMatch(token)) {
       setState(
-          () => error = 'Bitte den vollständigen Einrichtungscode eingeben.');
+          () => error = 'Bitte den vollstÃ¤ndigen Einrichtungscode eingeben.');
       return;
     }
     setState(() {
@@ -115,7 +98,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
         'Authorization': 'Bearer $token'
       }).timeout(const Duration(seconds: 15));
       if (target.statusCode != 200)
-        throw Exception('Code ungültig oder abgelaufen');
+        throw Exception('Code ungÃ¼ltig oder abgelaufen');
       final destination =
           (jsonDecode(target.body) as Map<String, dynamic>)['path'] as String;
       final id = (await bind.mainGetMyId()).replaceAll(' ', '');
@@ -133,7 +116,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
       if (response.statusCode != 201) {
         if (mounted)
           setState(() => error = response.statusCode == 409
-              ? 'Dieses Gerät ist bereits zugeordnet.'
+              ? 'Dieses GerÃ¤t ist bereits zugeordnet.'
               : 'Zuordnung fehlgeschlagen. Bitte erneut versuchen.');
         return;
       }
@@ -151,7 +134,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
     } catch (_) {
       if (mounted)
         setState(() => error =
-            'Zuordnung nicht möglich. Bitte Verbindung prüfen und erneut versuchen.');
+            'Zuordnung nicht mÃ¶glich. Bitte Verbindung prÃ¼fen und erneut versuchen.');
     } finally {
       client.close();
       if (mounted) setState(() => busy = false);
@@ -160,7 +143,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-          title: const Text('Gerät zuordnen'),
+          title: const Text('GerÃ¤t zuordnen'),
           content: SizedBox(
               width: 430,
               child: Column(
@@ -168,11 +151,11 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (done)
-                      Text('Das Gerät wurde dem Adressbuch $path zugeordnet.')
+                      Text('Das GerÃ¤t wurde dem Adressbuch $path zugeordnet.')
                     else ...[
                       if (path == null)
                         const Text(
-                            'Den Einrichtungscode erhältst du von deinem Techniker. Das Gerät erscheint im gewählten Adressbuch. Hinterlegte Passwortvorgaben werden übernommen.'),
+                            'Den Einrichtungscode erhÃ¤ltst du von deinem Techniker. Das GerÃ¤t erscheint im gewÃ¤hlten Adressbuch. Hinterlegte Passwortvorgaben werden Ã¼bernommen.'),
                       if (path == null)
                         TextField(
                             controller: code,
@@ -189,7 +172,7 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
                             controller: name,
                             maxLength: 200,
                             decoration:
-                                const InputDecoration(labelText: 'Gerätename'))
+                                const InputDecoration(labelText: 'GerÃ¤tename'))
                       ],
                       if (error != null)
                         Text(error!,
@@ -200,15 +183,15 @@ class _G3EnrollmentState extends State<G3EnrollmentDialog> {
           actions: [
             TextButton(
                 onPressed: busy ? null : () => Navigator.of(context).pop(),
-                child: Text(done ? 'Schließen' : 'Später')),
+                child: Text(done ? 'SchlieÃŸen' : 'SpÃ¤ter')),
             if (!done)
               FilledButton(
                   onPressed: busy ? null : submit,
                   child: Text(busy
-                      ? 'Bitte warten …'
+                      ? 'Bitte warten â€¦'
                       : path == null
-                          ? 'Gerät zuordnen'
-                          : 'Gerät zuordnen'))
+                          ? 'GerÃ¤t zuordnen'
+                          : 'GerÃ¤t zuordnen'))
           ]);
 }
 
@@ -272,7 +255,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
     try {
       final id = (await bind.mainGetMyId()).replaceAll(' ', '');
       if (!RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id)) {
-        if (mounted) setState(() => error = 'Der Fernwartungsdienst liefert noch keine Geräte-ID. Bitte den Dienststatus prüfen lassen.');
+        if (mounted) setState(() => error = 'Der Fernwartungsdienst liefert noch keine GerÃ¤te-ID. Bitte den Dienststatus prÃ¼fen lassen.');
         return;
       }
       final r = await http
@@ -290,8 +273,8 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
           .timeout(const Duration(seconds: 15));
       if (r.statusCode != 201) {
         if (mounted) setState(() => error = r.statusCode == 409
-            ? 'Diese Geräte-ID ist bereits zugeordnet. Bitte einen Techniker kontaktieren.'
-            : 'Zuordnung fehlgeschlagen. Bitte Verbindung und Zuordnungscode prüfen.');
+            ? 'Diese GerÃ¤te-ID ist bereits zugeordnet. Bitte einen Techniker kontaktieren.'
+            : 'Zuordnung fehlgeschlagen. Bitte Verbindung und Zuordnungscode prÃ¼fen.');
         return;
       }
       registered=true;
@@ -303,7 +286,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
     } catch (_) {
       if (mounted)
         setState(() => error =
-            registered ? 'Das Gerät ist zugeordnet. Die Passwortvorgabe konnte noch nicht übernommen werden. Bitte den installierten Client öffnen und erneut versuchen.' : 'Zuordnung nicht möglich. Bitte Verbindung prüfen und erneut versuchen.');
+            registered ? 'Das GerÃ¤t ist zugeordnet. Die Passwortvorgabe konnte noch nicht Ã¼bernommen werden. Bitte den installierten Client Ã¶ffnen und erneut versuchen.' : 'Zuordnung nicht mÃ¶glich. Bitte Verbindung prÃ¼fen und erneut versuchen.');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -311,7 +294,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-          title: const Text('Gerät zuordnen'),
+          title: const Text('GerÃ¤t zuordnen'),
           content: SizedBox(
               width: 430,
               child: Column(
@@ -320,7 +303,7 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
                   children: [
                     if (done)
                       const Text(
-                          'Das Gerät wurde dem gewählten Adressbuch zugeordnet.')
+                          'Das GerÃ¤t wurde dem gewÃ¤hlten Adressbuch zugeordnet.')
                     else ...[
                       if (books.isNotEmpty)
                         DropdownButtonFormField<int>(
@@ -342,8 +325,8 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
                             controller: name,
                             maxLength: 200,
                             decoration:
-                                const InputDecoration(labelText: 'Gerätename')),
-                      if (busy) const Text('Bitte warten …'),
+                                const InputDecoration(labelText: 'GerÃ¤tename')),
+                      if (busy) const Text('Bitte warten â€¦'),
                       if (error != null)
                         Text(error!,
                             style: TextStyle(
@@ -355,11 +338,11 @@ class _G3CustomerEnrollmentState extends State<G3CustomerEnrollment> {
             if(error!=null && !busy) TextButton(onPressed:() { Navigator.of(context).pop(); showG3Enrollment(context,forceCode:true); },child:const Text('Anderen Code verwenden')),
             TextButton(
                 onPressed: busy ? null : () => Navigator.of(context).pop(),
-                child: Text(done ? 'Schließen' : 'Später')),
+                child: Text(done ? 'SchlieÃŸen' : 'SpÃ¤ter')),
             if (!done && books.isNotEmpty)
               FilledButton(
                   onPressed: busy ? null : register,
-                  child: const Text('Gerät zuordnen'))
+                  child: const Text('GerÃ¤t zuordnen'))
           ]);
 }
 
@@ -375,7 +358,7 @@ Future<void> g3BootstrapReporting()async{
   final nonce=(jsonDecode(response.body) as Map<String,dynamic>)['challenge'] as String;
   final signature=bind.mainGetOptionSync(key:'g3-bootstrap-sign:g3-bootstrap-v1:$id:$nonce');
   if(signature.isEmpty)return;
-  final r=await http.post(Uri.https('linx.g3nx.net','/client-bootstrap'),headers:{'Content-Type':'application/json'},body:jsonEncode({'id':id,'challenge':nonce,'signature':signature,'adhoc':g3IsAdhoc(),'name':Platform.localHostname})).timeout(const Duration(seconds:15));
+  final r=await http.post(Uri.https('linx.g3nx.net','/client-bootstrap'),headers:{'Content-Type':'application/json'},body:jsonEncode({'id':id,'challenge':nonce,'signature':signature,'credential_policy':2,'adhoc':g3IsAdhoc(),'name':Platform.localHostname})).timeout(const Duration(seconds:15));
   if(r.statusCode==200){
     final data=jsonDecode(r.body) as Map<String,dynamic>;
     await applyG3Provisioning(r.body);

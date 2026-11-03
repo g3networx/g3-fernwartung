@@ -996,7 +996,12 @@ pub fn main_get_option(key: String) -> String {
     get_option(key)
 }
 
+static G3_PASSWORD_ACTION_STATUS:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
+static G3_PASSWORD_SEED_STATUS:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
+
 pub fn main_get_option_sync(key: String) -> SyncReturn<String> {
+    if key=="g3-local-password-action-status" {return SyncReturn(if G3_PASSWORD_ACTION_STATUS.load(Ordering::SeqCst)==1 {"confirmed"}else{"rejected"}.into());}
+    if key=="g3-service-password-provision-status" {return SyncReturn(if G3_PASSWORD_SEED_STATUS.load(Ordering::SeqCst)==1 {"confirmed"}else{"rejected"}.into());}
     if let Some(message) = key.strip_prefix("g3-bootstrap-sign:") {
         #[cfg(windows)]
         if crate::platform::is_installed() {
@@ -1013,19 +1018,26 @@ pub fn main_get_error() -> String {
 
 pub fn main_set_option(key: String, value: String) {
     if key == "g3-local-password-action" {
+        G3_PASSWORD_ACTION_STATUS.store(0,Ordering::SeqCst);
         if config::Config::is_disable_change_permanent_password() { return; }
         let mut options = crate::ipc::get_options();
-        if crate::g3_passwords::apply(&mut options, &value).is_ok() {
-            set_options(options);
+        if crate::g3_passwords::apply(&mut options, &value).is_ok()
+            && ui_interface::set_options_with_result(options.clone())
+            && crate::g3_passwords::verified_readback(&options,&crate::ipc::get_options()) {
+            G3_PASSWORD_ACTION_STATUS.store(1,Ordering::SeqCst);
         }
         return;
     }
 
     if key == "g3-service-password-provision" {
+        G3_PASSWORD_SEED_STATUS.store(0,Ordering::SeqCst);
+        if config::Config::is_disable_change_permanent_password() {return;}
         if let Ok(passwords) = serde_json::from_str::<Vec<String>>(&value) {
-            if !passwords.is_empty() && passwords.len() <= 16 && passwords.iter().all(|p| p.len() >= 8 && p.len() <= 128) {
+            if !passwords.is_empty() && passwords.len() <= 16 && passwords.iter().all(|p| (1..=128).contains(&p.chars().count())) {
                 let encrypted = hbb_common::password_security::encrypt_str_or_original(&value, "00", 4096);
-                if encrypted != value { set_option("g3-service-password".to_owned(), encrypted); }
+                if encrypted != value && crate::ipc::seed_password_parameters(encrypted).is_ok() {
+                    G3_PASSWORD_SEED_STATUS.store(1,Ordering::SeqCst);
+                }
             }
         }
         return;

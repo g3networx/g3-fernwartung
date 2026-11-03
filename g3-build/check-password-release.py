@@ -9,6 +9,6 @@ assert runpy.run_path('g3-build/package-version.py')['windows_version'](m['versi
 assert m['windowsVersion']==f"1.60.{(d-datetime.date(2020,1,1)).days*8+m['dailyInternalSequence']}"
 assert 0<=m['dailyInternalSequence']<8
 assert tuple(map(int,m['windowsVersion'].split('.')))>(1,50,2)
-for name in ('src/g3_bootstrap.rs','src/g3_passwords.rs','src/core_main.rs','src/g3_registry_password.rs','src/ipc.rs','src/lib.rs','flutter/lib/g3_password_probe.dart'):
+for name in ('src/g3_bootstrap.rs','src/g3_passwords.rs','src/core_main.rs','src/g3_registry_password.rs','src/ipc.rs','src/lib.rs','src/flutter_ffi.rs','src/ui_interface.rs','flutter/lib/g3_password_parameters.dart','flutter/lib/g3_password_probe.dart'):
  Path(name).read_bytes().decode('utf-8')
 print('Password source encoding and g3.6 display/internal version checks passed')

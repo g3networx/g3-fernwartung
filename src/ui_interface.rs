@@ -410,13 +410,20 @@ pub fn get_sound_inputs() -> Vec<String> {
 
 #[inline]
 pub fn set_options(m: HashMap<String, String>) {
+    set_options_with_result(m);
+}
+
+pub fn set_options_with_result(m: HashMap<String, String>)->bool {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        *OPTIONS.lock().unwrap() = m.clone();
-        ipc::set_options(m).ok();
+        let acknowledged=ipc::set_options(m).is_ok();
+        // Never show a password write as saved before the daemon has accepted it.
+        let confirmed=ipc::get_options();
+        *OPTIONS.lock().unwrap()=confirmed;
+        acknowledged
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    Config::set_options(m);
+    {Config::set_options(m);true}
 }
 
 #[inline]
@@ -450,13 +457,13 @@ pub fn set_option(key: String, value: String) {
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let mut options = OPTIONS.lock().unwrap();
+        let mut options = ipc::get_options();
         if value.is_empty() {
             options.remove(&key);
         } else {
             options.insert(key.clone(), value.clone());
         }
-        ipc::set_options(options.clone()).ok();
+        set_options_with_result(options);
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {

@@ -1,3 +1,4 @@
+import 'g3_password_parameters.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -32,7 +33,7 @@ class _G3PasswordsState extends State<G3Passwords> {
       await bind.mainSetOption(key: 'g3-local-password-action', value: jsonEncode({'action': action, 'label': name, if (action == 'add') 'password': password.text}));
       await Future<void>.delayed(const Duration(milliseconds: 350));
       refresh();
-      final success = action == 'add' ? labels.contains(name) : !labels.contains(name);
+      final success = g3PasswordActionConfirmed(bind.mainGetOptionSync(key:'g3-local-password-action-status'),action,name,labels);
       if (!success) { error = 'Speichern nicht bestätigt. Bitte Sicherheitseinstellungen entsperren und erneut versuchen.'; }
       else { label.clear(); password.clear(); }
     } catch (_) { error = 'Speichern nicht möglich.'; }
