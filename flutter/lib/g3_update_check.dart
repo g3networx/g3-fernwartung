@@ -1,8 +1,15 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.60.19984');
+const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.60.19985');
 const g3DisplayVersion = String.fromEnvironment('G3_CLIENT_DISPLAY_VERSION', defaultValue: 'g3.6 Build 031126');
+String g3VersionLabel(String version) {
+  final m = RegExp(r'^1\.5\.0-g3\.60\.(\d+)$').firstMatch(version);
+  if (m == null) return version;
+  final day = DateTime.utc(2020, 1, 1).add(Duration(days: int.parse(m[1]!) ~/ 8));
+  String two(int value) => value.toString().padLeft(2, '0');
+  return 'g3.6 Build ${two(day.day)}${two(day.month)}${two(day.year % 100)}';
+}
 bool g3VersionIsValid(String version) =>
     RegExp(r'^\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?$').hasMatch(version);
 

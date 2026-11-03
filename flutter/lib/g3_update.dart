@@ -46,8 +46,8 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
         setState(() {
           release = g3VersionNewer(data['version'], g3ClientVersion) ? data : null;
           message = release == null
-              ? 'Dieser Client ist aktuell ($g3ClientVersion).'
-              : 'Version ${data['version']} ist verfügbar. Laufende Fernwartungen verhindern die Installation. Der Client bleibt bis zur sicheren Übergabe aktiv. Auf dem Zielgerät wird dessen eigener Client aktualisiert; diese Funktion aktualisiert diesen Rechner.';
+              ? 'Dieser Client ist aktuell ($g3DisplayVersion).'
+              : 'Version ${g3VersionLabel(data['version'])} ist verfügbar. Laufende Fernwartungen verhindern die Installation. Der Client bleibt bis zur sicheren Übergabe aktiv. Auf dem Zielgerät wird dessen eigener Client aktualisiert; diese Funktion aktualisiert diesen Rechner.';
           busy = false;
         });
     } catch (_) {

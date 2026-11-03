@@ -6,6 +6,8 @@ berlin=subprocess.check_output(['powershell','-NoProfile','-Command',"[TimeZoneI
 assert berlin==d.isoformat(),'Build date must match actual Berlin date'
 assert m['displayVersion']=='g3.6 Build '+d.strftime('%d%m%y')
 assert runpy.run_path('g3-build/package-version.py')['windows_version'](m['version'])==m['windowsVersion']
+assert m['windowsVersion']==f"1.60.{(d-datetime.date(2020,1,1)).days*8+m['dailyInternalSequence']}"
+assert 0<=m['dailyInternalSequence']<8
 assert tuple(map(int,m['windowsVersion'].split('.')))>(1,50,2)
 for name in ('src/g3_bootstrap.rs','src/g3_passwords.rs','src/core_main.rs','flutter/lib/g3_password_probe.dart'):
  Path(name).read_bytes().decode('utf-8')
