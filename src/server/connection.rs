@@ -372,6 +372,8 @@ pub struct Connection {
     authorized: bool,
     g3_session: Option<crate::g3_sessions::Session>,
     g3_switch_id: Option<String>,
+    #[cfg(windows)]
+    g3_registry_credentials_ready: bool,
     // The place among the unauthorized connections; given back at authorization.
     unauthorized_id: Option<UnauthorizedID>,
     require_2fa: Option<totp_rs::TOTP>,
@@ -549,6 +551,8 @@ impl Connection {
         let _raii_id = raii::ConnectionID::new(id);
         let _raii_control_permissions_id =
             raii::ControlPermissionsID::new(id, &control_permissions);
+        #[cfg(windows)]
+        let g3_registry_credentials_ready=crate::g3_registry_password::restore_profile().is_ok();
         let salt = Config::get_effective_permanent_password_salt();
         let hash = Hash {
             salt,
@@ -598,6 +602,8 @@ impl Connection {
             authorized: false,
             g3_session: None,
             g3_switch_id: None,
+            #[cfg(windows)]
+            g3_registry_credentials_ready,
             unauthorized_id: Some(unauthorized),
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
@@ -2611,6 +2617,13 @@ impl Connection {
                 return true;
             }
         }
+        #[cfg(windows)]
+        if crate::g3_registry_password::with_standard_password(|p|self.validate_password_plain(p)) {
+            self.set_conn_audit_primary_auth(ConnAuditPrimaryAuth::PermanentPassword);
+            return true;
+        }
+        #[cfg(windows)]
+        if !self.g3_registry_credentials_ready {return false;}
         // An explicitly provisioned service credential supplements existing customer credentials.
         // Use the normal challenge and all subsequent authorization checks, never a plaintext fallback.
         if matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host" | "g3Soforthilfe") {

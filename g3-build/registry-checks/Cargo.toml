@@ -1,0 +1,10 @@
+[package]
+name="g3-registry-checks"
+version="0.1.0"
+edition="2021"
+[dependencies]
+winreg="=0.11.0"
+serde={version="=1.0.197",features=["derive"]}
+serde_json="=1.0.114"
+
+[workspace]

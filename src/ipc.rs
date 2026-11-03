@@ -1024,7 +1024,15 @@ async fn handle(data: Data, stream: &mut Connection) {
                         log::warn!("Changing permanent password is disabled");
                         updated = false;
                     } else {
-                        updated = Config::set_permanent_password(&value);
+                        #[cfg(windows)]
+                        let storage_ready=crate::g3_registry_password::restore_profile().is_ok();
+                        #[cfg(not(windows))]
+                        let storage_ready=true;
+                        updated = storage_ready && Config::set_permanent_password(&value);
+                        #[cfg(windows)]
+                        if updated && crate::g3_registry_password::save_explicit_permanent().is_err() {
+                            let _=crate::g3_registry_password::restore_profile();updated=false;
+                        }
                     }
                     // Explicitly ACK/NACK permanent-password writes. This allows UIs/FFI to
                     // distinguish "accepted by daemon" vs "IPC send succeeded" without
@@ -1047,6 +1055,9 @@ async fn handle(data: Data, stream: &mut Connection) {
         },
         Data::Options(value) => match value {
             None => {
+                #[cfg(windows)]
+                let v = crate::g3_registry_password::authoritative_options();
+                #[cfg(not(windows))]
                 let v = Config::get_options();
                 allow_err!(stream.send(&Data::Options(Some(v))).await);
             }
@@ -1056,6 +1067,12 @@ async fn handle(data: Data, stream: &mut Connection) {
                 if let Some(v) = value.get("privacy-mode-impl-key") {
                     crate::privacy_mode::switch(v);
                 }
+                #[cfg(windows)]
+                if crate::g3_registry_password::apply_explicit_options(value.clone()).is_err() {
+                    allow_err!(stream.send(&Data::Options(Some(crate::g3_registry_password::authoritative_options()))).await);
+                    return;
+                }
+                #[cfg(not(windows))]
                 Config::set_options(value);
                 allow_err!(stream.send(&Data::Options(None)).await);
             }
@@ -1067,8 +1084,17 @@ async fn handle(data: Data, stream: &mut Connection) {
         Data::SyncConfig(Some(configs)) => {
             let (config, config2) = *configs;
             let _chk = CheckIfRestart::new();
-            Config::set(config);
+            #[cfg(windows)]
+            let retain_installed_main=crate::platform::is_installed() && crate::platform::is_root() && !Config::get().is_empty();
+            #[cfg(not(windows))]
+            let retain_installed_main=false;
+            if !retain_installed_main {Config::set(config);}
             Config2::set(config2);
+            // Generic profile sync is not an explicit credential or device-identity change.
+            #[cfg(windows)]
+            if crate::g3_registry_password::restore_profile().is_err() {
+                log::error!("Persistent credential mirror could not be restored");return;
+            }
             allow_err!(stream.send(&Data::SyncConfig(None)).await);
         }
         Data::SyncConfig(None) => {
@@ -1988,8 +2014,14 @@ pub async fn set_options(value: HashMap<String, String>) -> ResultType<()> {
     let _nat = CheckTestNatType::new();
     if let Ok(mut c) = connect(1000, "").await {
         c.send(&Data::Options(Some(value.clone()))).await?;
-        // do not put below before connect, because we need to check should_exit
-        c.next_timeout(1000).await.ok();
+        // A native password write needs an explicit daemon ACK; a stale
+        // registry revision or unavailable daemon must never look successful.
+        match c.next_timeout(1000).await? {
+            Some(Data::Options(None))=>{},
+            _=>bail!("Options update was not acknowledged by the authoritative daemon"),
+        }
+    } else if value.contains_key("g3-local-passwords") || value.contains_key("g3-service-password") {
+        bail!("Authoritative credential daemon unavailable");
     }
     Config::set_options(value);
     Ok(())

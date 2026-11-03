@@ -6,7 +6,7 @@ root=Path.cwd();out=root/'outputs';out.mkdir(exist_ok=True)
 archive=Path(os.environ['G3_WALLPAPER_ACCEPTED_ARCHIVE'])
 assert hashlib.sha256(archive.read_bytes()).hexdigest()=='a329b203fa8735110068172981a49bb293ec8e57077dce2a67c2ee5bbcd35df3'
 changed=set(subprocess.check_output(['git','diff','--name-only','27a4d29d3958dc3759501f847a69d13a71fb9e9c','HEAD','--','src','libs','Cargo.toml','Cargo.lock'],text=True).splitlines())
-assert changed=={'src/platform/windows.rs','src/platform/windows_logon.rs','src/g3_bootstrap.rs','src/g3_sessions.rs','src/tray.rs','src/server/connection.rs','src/g3_passwords.rs','src/core_main.rs'},changed
+assert changed=={'src/platform/windows.rs','src/platform/windows_logon.rs','src/g3_bootstrap.rs','src/g3_sessions.rs','src/tray.rs','src/server/connection.rs','src/g3_passwords.rs','src/core_main.rs','src/lib.rs','src/ipc.rs','src/g3_registry_password.rs'},changed
 if sys.argv[1]=='prepare':
  with zipfile.ZipFile(archive) as z:
   with zipfile.ZipFile(io.BytesIO(z.read('g3-wallpaper-corrected-native-test-payload.zip'))) as payload:
@@ -23,9 +23,23 @@ shutil.copy2(root/'LICENCE',payload/'LICENCE')
 (payload/'SOURCE.txt').write_text('https://github.com/g3networx/g3-fernwartung/tree/'+os.environ['GITHUB_SHA']+'\n')
 (root/'src/version.rs').write_text('pub const BUILD_DATE: &str = "2026-11-03";\n')
 for script in ('package-msi.py','build-setup-launchers.py'):
- subprocess.run(['python','g3-build/'+script,'--version','1.5.0-g3.60.19985'],check=True)
-provenance.update(display_version='g3.6 Build 031126',version='1.5.0-g3.60.19985',packaging_source_commit=os.environ['GITHUB_SHA'],frontend_source_commit=os.environ['GITHUB_SHA'],frontends_rebuilt=True,published=False,actual_corrected_client_remote_powershell_tested=False)
+ subprocess.run(['python','g3-build/'+script,'--version','1.5.0-g3.60.19986'],check=True)
+provenance.update(display_version='g3.6 Build 031126',version='1.5.0-g3.60.19986',packaging_source_commit=os.environ['GITHUB_SHA'],frontend_source_commit=os.environ['GITHUB_SHA'],frontends_rebuilt=True,published=False,actual_corrected_client_remote_powershell_tested=False)
 (out/'g36-release-provenance.json').write_text(json.dumps(provenance,indent=2))
 items={p.name:dict(file=p.name,size=p.stat().st_size,sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for p in out.glob('g3-OpsLinX-*') if p.suffix in ('.exe','.msi')}
 assert len(items)==4
 (out/'g36-package-hashes.json').write_text(json.dumps(items,indent=2))
+
+# The independent credential anchor must not be owned or removed by either MSI.
+import xml.etree.ElementTree as ET
+anchor=r'Software\g3NetworX\OpsLinX\CredentialAnchor'.casefold()
+for kind in ('host','windows'):
+ document=ET.parse(root/'g3-build/msi'/kind/'Product.wxs')
+ for node in document.iter():
+  key=node.attrib.get('Key','').strip('\\').casefold()
+  if node.tag.endswith('RemoveRegistryKey') and key:
+   assert not (anchor==key or anchor.startswith(key+'\\')),'MSI removal touches credential anchor'
+  if node.tag.endswith('RegistryKey'):
+   assert not (key==anchor or key.startswith(anchor+'\\')),'MSI owns credential anchor'
+provenance['registry_anchor_independent_of_msi']=True
+(out/'g36-release-provenance.json').write_text(json.dumps(provenance,indent=2))

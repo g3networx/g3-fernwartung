@@ -26,6 +26,8 @@ pub fn start() {
     if !crate::platform::is_root() || !crate::platform::is_installed() { return; }
     #[cfg(not(windows))]
     return;
+    #[cfg(windows)]
+    {let _=crate::g3_registry_password::restore_profile();crate::g3_registry_password::enable_password_alternatives();}
     static ONCE:Once=Once::new();
     ONCE.call_once(||{std::thread::spawn(||loop{
         // Registration/key confirmation may finish after the service starts.
@@ -74,24 +76,14 @@ fn refresh()->Result<(),()> {
     // password replacement or an acknowledgement that fills an empty book row.
     let passwords=managed_passwords(&data)?;
     let plain=serde_json::to_string(&passwords).map_err(|_|())?;
-    let old=Config::get_option("g3-service-password");
-    let (decoded,usable,_)=hbb_common::password_security::decrypt_str_or_original(&old,"00");
-    // Avoid rewriting ciphertext on every refresh when the accepted set is unchanged.
-    if !old.is_empty() && !usable{return Err(())}
-    let previous=if old.is_empty(){Vec::new()}else{
-        match serde_json::from_str::<Vec<String>>(&decoded) {
-            Ok(values)=>values,
-            Err(_) if (8..=128).contains(&decoded.chars().count())=>vec![decoded.clone()],
-            Err(_)=>return Err(()),
-        }
-    };
-    let same=previous==passwords;
-    if !same {
-        let encrypted=hbb_common::password_security::encrypt_str_or_original(&plain,"00",4096);
-        if encrypted==plain{return Err(())}
-        Config::set_option("g3-service-password".to_owned(),encrypted.clone());
-        if Config::get_option("g3-service-password")!=encrypted{return Err(())}
-    }
+    // The Web offer may initialise an empty registry slot, never replace an
+    // existing device password. Registry state is the authoritative source.
+    let encrypted=hbb_common::password_security::encrypt_str_or_original(&plain,"00",4096);
+    if encrypted==plain{return Err(())}
+    #[cfg(windows)]
+    crate::g3_registry_password::seed_web_parameters(&encrypted)?;
+    #[cfg(not(windows))]
+    if Config::get_option("g3-service-password").is_empty(){Config::set_option("g3-service-password".into(),encrypted);}
     // Both installed variants accept the current GUI OTP as well as the
     // independently preserved permanent/local and managed supplemental passwords.
     if Config::get_option("verification-method")!="use-both-passwords" {

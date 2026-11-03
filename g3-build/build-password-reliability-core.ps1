@@ -9,7 +9,7 @@ $setup=$buildSource.Substring(0,$boundary).Replace('$source=(Resolve-Path "$PSSc
 # The reused setup validates the historical flat version but does no packaging.
 $env:G3_BUILD_VERSION='1.5.0-g3.40'
 & ([scriptblock]::Create($setup))
-$env:G3_BUILD_VERSION='1.5.0-g3.60.19985'
+$env:G3_BUILD_VERSION='1.5.0-g3.60.19986'
 New-Item -ItemType Directory -Force outputs|Out-Null
 $module=(Join-Path $source 'src/platform/windows_logon.rs').Replace('\','/')
 ('#[path = "'+$module+'"] mod windows_logon;')|Set-Content outputs/windows-logon-tests.rs
@@ -21,6 +21,7 @@ cargo build --locked --features hwcodec,vram,flutter --lib --release
 Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_passwords::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter g3_registry_password::tests;Check
 cargo build --locked --release --package dylib_virtual_display
 Check
 $hash=(Get-FileHash target/release/librustdesk.dll).Hash.ToLowerInvariant()
