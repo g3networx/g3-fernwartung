@@ -17,6 +17,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
           persist-credentials: false
+      - name: Validate native source encoding before dependency setup
+        run: python g3-build/check-session-privacy-encoding.py
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: 1.75.0

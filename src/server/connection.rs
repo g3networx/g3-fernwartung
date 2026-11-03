@@ -4021,7 +4021,7 @@ impl Connection {
                                 if !accounting.prepare_switch(&uuid).await {
                                     let mut misc = Misc::new();
                                     misc.set_chat_message(ChatMessage {
-                                        text: "Richtungswechsel derzeit nicht verfügbar. Die aktuelle Verbindung bleibt bestehen.".into(),
+                                        text: "Richtungswechsel derzeit nicht verf\u{00fc}gbar. Die aktuelle Verbindung bleibt bestehen.".into(),
                                         ..Default::default()
                                     });
                                     let mut msg = Message::new();
