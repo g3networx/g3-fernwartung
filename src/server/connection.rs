@@ -371,6 +371,7 @@ pub struct Connection {
     tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
     authorized: bool,
     g3_session: Option<crate::g3_sessions::Session>,
+    g3_switch_id: Option<String>,
     // The place among the unauthorized connections; given back at authorization.
     unauthorized_id: Option<UnauthorizedID>,
     require_2fa: Option<totp_rs::TOTP>,
@@ -596,6 +597,7 @@ impl Connection {
             tx_to_cm,
             authorized: false,
             g3_session: None,
+            g3_switch_id: None,
             unauthorized_id: Some(unauthorized),
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
@@ -1903,7 +1905,7 @@ impl Connection {
             return false;
         }
         let kind = if self.file_transfer.is_some() {"file"} else if self.terminal {"terminal"} else if self.is_port_forward() {"tunnel"} else {"desktop"};
-        match crate::g3_sessions::Session::start(self.lr.my_id.clone(), kind).await {
+        match crate::g3_sessions::Session::start(self.lr.my_id.clone(), kind, self.g3_switch_id.take()).await {
             Ok(s) => self.g3_session = Some(s),
             Err(e) => { self.send_login_error(e).await; return false; }
         }
@@ -2766,6 +2768,7 @@ impl Connection {
     }
 
     fn reset_session_scope_for_login(&mut self) {
+        self.g3_switch_id = None;
         self.file_transfer = None;
         self.view_camera = false;
         self.terminal = false;
@@ -3212,6 +3215,7 @@ impl Connection {
                                 return false;
                             }
                             self.from_switch = true;
+                            self.g3_switch_id = Some(uuid.simple().to_string());
                             self.set_conn_audit_primary_auth(ConnAuditPrimaryAuth::SwitchSides);
                             if !self.send_logon_response_and_keep_alive().await {
                                 return false;
@@ -4013,6 +4017,19 @@ impl Connection {
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::SwitchSidesRequest(s)) => {
                         if let Ok(uuid) = uuid::Uuid::from_slice(&s.uuid.to_vec()[..]) {
+                            if let Some(accounting) = self.g3_session.as_ref() {
+                                if !accounting.prepare_switch(&uuid).await {
+                                    let mut misc = Misc::new();
+                                    misc.set_chat_message(ChatMessage {
+                                        text: "Richtungswechsel derzeit nicht verfügbar. Die aktuelle Verbindung bleibt bestehen.".into(),
+                                        ..Default::default()
+                                    });
+                                    let mut msg = Message::new();
+                                    msg.set_misc(misc);
+                                    self.send(msg).await;
+                                    return true;
+                                }
+                            }
                             if crate::server::insert_pending_switch_sides_uuid(
                                 self.lr.my_id.clone(),
                                 uuid.clone(),

@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Dur
 fn now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() }
 fn folder() -> PathBuf { Config::file().parent().unwrap().join("g3-session-journal") }
 #[derive(Clone, Serialize, Deserialize)]
-struct Record { event:String, sequence:u64, started:u64, elapsed:u64, closed:bool, interrupted:bool, peer_id:String, kind:String, pid:u32 }
+struct Record { event:String, sequence:u64, started:u64, elapsed:u64, closed:bool, interrupted:bool, peer_id:String, kind:String, pid:u32, #[serde(default, skip_serializing_if="Option::is_none")] switch_id:Option<String> }
 fn store(r:&Record) -> bool {
     let dir=folder(); if std::fs::create_dir_all(&dir).is_err(){return false;}
     let path=dir.join(format!("{}.json",r.event));let tmp=path.with_extension("tmp");
@@ -37,11 +37,22 @@ fn lease(c:&reqwest::blocking::Client,event:&str,op:&str,key:&str)->Result<bool,
     if !r.status().is_success(){return Err(())} Ok(r.json::<serde_json::Value>().map_err(|_|())?["allowed"]==true)
 }
 fn report(c:&reqwest::blocking::Client,r:&Record,key:&str)->bool {c.post("https://linx.g3nx.net/client-activity").bearer_auth(key).json(r).send().map(|r|r.status().is_success()).unwrap_or(false)}
-pub struct Session { stop:Arc<AtomicBool>, valid:Arc<AtomicBool> }
+pub struct Session { event:String, stop:Arc<AtomicBool>, valid:Arc<AtomicBool> }
 impl Session {
+    /// Bind an authenticated direction switch to this exact first-owner chain.
+    /// Failure leaves the established desktop connection running.
+    pub async fn prepare_switch(&self,uuid:&uuid::Uuid)->bool {
+        let key=Config::get_option("g3-activity-token");
+        if key.is_empty(){return true;} // Unmanaged legacy sessions have no ledger attribution.
+        let c=match reqwest::Client::builder().https_only(true).redirect(reqwest::redirect::Policy::none()).use_rustls_tls().timeout(Duration::from_secs(4)).build(){Ok(c)=>c,Err(_)=>return false};
+        match c.post("https://linx.g3nx.net/client-activity/switch").bearer_auth(&key).json(&serde_json::json!({"event":self.event,"switch_id":uuid.simple().to_string()})).send().await {
+            Ok(r) if r.status().is_success()=>r.json::<serde_json::Value>().await.map(|v|v["registered"]==true).unwrap_or(false),
+            _=>false,
+        }
+    }
     pub fn valid(&self)->bool {self.valid.load(Ordering::SeqCst)}
     pub fn close(&self){self.stop.store(true,Ordering::SeqCst);}
-    pub async fn start(peer:String,kind:&str)->Result<Self,&'static str> {
+    pub async fn start(peer:String,kind:&str,switch_id:Option<String>)->Result<Self,&'static str> {
         let event=uuid::Uuid::new_v4().simple().to_string();let key=Config::get_option("g3-activity-token");
         if !key.is_empty() {
             let c=reqwest::Client::builder().https_only(true).redirect(reqwest::redirect::Policy::none()).use_rustls_tls().timeout(Duration::from_secs(4)).build().map_err(|_|"Session admission unavailable")?;
@@ -49,7 +60,8 @@ impl Session {
             if r.status().as_u16()==409{return Err("Customer session limit reached")}
             if !r.status().is_success() || r.json::<serde_json::Value>().await.map_err(|_|"Session admission unavailable")?["allowed"]!=true{return Err("Session admission unavailable")}
         }
-        let mut r=Record{event,sequence:0,started:now(),elapsed:0,closed:false,interrupted:false,peer_id:peer,kind:kind.to_owned(),pid:std::process::id()};
+        let session_event=event.clone();
+        let mut r=Record{event,sequence:0,started:now(),elapsed:0,closed:false,interrupted:false,peer_id:peer,kind:kind.to_owned(),pid:std::process::id(),switch_id};
         if !store(&r){return Err("Session journal unavailable")}
         let stop=Arc::new(AtomicBool::new(false));let valid=Arc::new(AtomicBool::new(true));let s=stop.clone();let v=valid.clone();
         std::thread::spawn(move||{
@@ -66,7 +78,7 @@ impl Session {
                 if r.closed{break;}std::thread::sleep(Duration::from_secs(1));
             }
         });
-        Ok(Self{stop,valid})
+        Ok(Self{event:session_event,stop,valid})
     }
 }
 impl Drop for Session {fn drop(&mut self){self.close();}}
