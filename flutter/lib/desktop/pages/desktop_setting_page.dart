@@ -1,3 +1,4 @@
+import '../../g3_update_check.dart' show g3DisplayVersion;
 import '../widgets/g3_legal_notices.dart';
 import '../../g3_passwords.dart';
 import 'dart:async';
@@ -2545,7 +2546,7 @@ class _AboutState extends State<_About> {
                 height: 8.0,
               ),
               SelectionArea(
-                  child: Text('${translate('Version')}: ${isG3 ? const String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.50.1') : version}')
+                  child: Text('${translate('Version')}: ${isG3 ? g3DisplayVersion : version}')
                       .marginSymmetric(vertical: 4.0)),
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')

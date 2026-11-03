@@ -1,5 +1,5 @@
 //! Provision only in the installed SYSTEM host, independent of logged-on users.
-use hbb_common::{config::Config,log};
+use hbb_common::{config::Config};
 use serde_json::Value;
 use std::{sync::Once,time::Duration};
 
@@ -33,6 +33,18 @@ pub fn start() {
         std::thread::sleep(Duration::from_secs(30));
     });});
 }
+fn managed_passwords(data:&Value)->Result<Vec<String>,()> {
+    if data["credential_policy"]!=2{return Err(())}
+    let values=data["additional_passwords"].as_array().ok_or(())?;
+    if values.is_empty() || values.len()>16{return Err(())}
+    let mut passwords=Vec::<String>::new();
+    for (index,value) in values.iter().enumerate() {
+        let value=value.as_str().ok_or(())?;
+        if !((if index==0 {8}else{1})..=128).contains(&value.chars().count()){return Err(())}
+        if !passwords.iter().any(|p|p==value){passwords.push(value.to_owned());}
+    }
+    Ok(passwords)
+}
 fn refresh()->Result<(),()> {
     let id=Config::get_id();
     if id.is_empty(){return Err(())}
@@ -52,35 +64,41 @@ fn refresh()->Result<(),()> {
     let nonce=challenge["challenge"].as_str().ok_or(())?;
     let signature=crate::ipc::g3_bootstrap_signature(&format!("g3-bootstrap-v1:{}:{}",id,nonce));
     if signature.is_empty(){return Err(())}
-    let data:Value=client.post(url).json(&serde_json::json!({"id":id,"challenge":nonce,"signature":signature}))
+    let data:Value=client.post(url).json(&serde_json::json!({"id":id,"challenge":nonce,"signature":signature,"credential_policy":2}))
         .send().map_err(|_|())?.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
     if data["registered"]!=true{return Err(())}
-    if crate::get_app_name()=="g3Host" && Config::get_option("g3-host-password-ui").is_empty() {
-        if Config::get_option("verification-method")=="use-permanent-password" {
-            Config::set_option("verification-method".to_owned(),"use-both-passwords".to_owned());
-        }
-        Config::set_option("g3-host-password-ui".to_owned(),"1".to_owned());
-    }
     let activity=data["activity_token"].as_str().ok_or(())?;
     if activity.len()!=43{return Err(())}
     Config::set_option("g3-activity-token".to_owned(),activity.to_owned());
-    let mut passwords:Vec<String>=data["additional_passwords"].as_array().map(|a|a.iter().filter_map(|s|s.as_str().map(str::to_owned)).collect()).unwrap_or_default();
-    if passwords.is_empty(){if let Some(p)=data["service_password"].as_str(){passwords.push(p.to_owned());}}
-    if !passwords.is_empty() && passwords.len()<=16 && passwords.iter().all(|p|(8..=128).contains(&p.chars().count())){
-        let plain=serde_json::to_string(&passwords).map_err(|_|())?;
+    // Older servers may report activity, but must not trigger legacy permanent
+    // password replacement or an acknowledgement that fills an empty book row.
+    let passwords=managed_passwords(&data)?;
+    let plain=serde_json::to_string(&passwords).map_err(|_|())?;
+    let old=Config::get_option("g3-service-password");
+    let (decoded,usable,_)=hbb_common::password_security::decrypt_str_or_original(&old,"00");
+    // Avoid rewriting ciphertext on every refresh when the accepted set is unchanged.
+    if !old.is_empty() && !usable{return Err(())}
+    let previous=if old.is_empty(){Vec::new()}else{
+        match serde_json::from_str::<Vec<String>>(&decoded) {
+            Ok(values)=>values,
+            Err(_) if (8..=128).contains(&decoded.chars().count())=>vec![decoded.clone()],
+            Err(_)=>return Err(()),
+        }
+    };
+    let same=previous==passwords;
+    if !same {
         let encrypted=hbb_common::password_security::encrypt_str_or_original(&plain,"00",4096);
         if encrypted==plain{return Err(())}
-        Config::set_option("g3-service-password".to_owned(),encrypted);
+        Config::set_option("g3-service-password".to_owned(),encrypted.clone());
+        if Config::get_option("g3-service-password")!=encrypted{return Err(())}
     }
-    if let Some(password)=data["permanent_password"].as_str(){
-        if !(8..=128).contains(&password.chars().count()) || !Config::set_permanent_password(password){return Err(())}
-        Config::set_option("verification-method".to_owned(),if crate::get_app_name()=="g3Host" {"use-both-passwords"}else{"use-permanent-password"}.to_owned());
-        Config::set_option("approve-mode".to_owned(),"password".to_owned());
-        client.post("https://linx.g3nx.net/client-provisioning/confirm")
-            .bearer_auth(data["provisioning_token"].as_str().ok_or(())?)
-            .json(&serde_json::json!({"device_id":data["device_id"]}))
-            .send().map_err(|_|())?.error_for_status().map_err(|_|())?;
-        log::info!("g3 host password provisioning confirmed");
+    // Both installed variants accept the current GUI OTP as well as the
+    // independently preserved permanent/local and managed supplemental passwords.
+    if Config::get_option("verification-method")!="use-both-passwords" {
+        Config::set_option("verification-method".to_owned(),"use-both-passwords".to_owned());
+    }
+    if crate::get_app_name()=="g3Host" && Config::get_option("g3-host-password-ui").is_empty() {
+        Config::set_option("g3-host-password-ui".to_owned(),"1".to_owned());
     }
     Ok(())
 }
@@ -88,6 +106,18 @@ fn refresh()->Result<(),()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn managed_credentials_require_explicit_policy_and_keep_all_alternatives() {
+        let v=serde_json::json!({"credential_policy":2,"additional_passwords":["standard-fixture","custom-fixture","standard-fixture"]});
+        assert_eq!(managed_passwords(&v).unwrap(),vec!["standard-fixture","custom-fixture"]);
+        assert!(managed_passwords(&serde_json::json!({"credential_policy":2,"additional_passwords":["standard-fixture","old6"]})).is_ok());
+        for invalid in [serde_json::json!({"additional_passwords":["standard-fixture"]}),
+                        serde_json::json!({"credential_policy":2,"additional_passwords":["standard-fixture",7]}),
+                        serde_json::json!({"credential_policy":2,"additional_passwords":[]}),
+                        serde_json::json!({"credential_policy":2,"additional_passwords":["short"]})] {
+            assert!(managed_passwords(&invalid).is_err());
+        }
+    }
     #[test]
     fn customer_installers_retain_the_scoped_enrollment_authority() {
         let code="A".repeat(32);

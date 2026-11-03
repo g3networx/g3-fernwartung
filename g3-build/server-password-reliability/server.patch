@@ -1,0 +1,55 @@
+--- a/provisioning.py
++++ b/provisioning.py
+@@ -23,6 +23,26 @@
+   try:return m.dec((m.KEYS/'service-password').read_text(encoding='utf-8').strip())
+   except OSError:return ''
+  app.config['SERVICE_PASSWORD']=service_password
++ def standard_credential():
++  plain=app.config['SERVICE_PASSWORD']()
++  return m.enc(plain) if plain else ''
++ def connection_credential(d):
++  return d['credential'] or standard_credential()
++ def credential_offer(did):
++  # Called only after the existing one-use Ed25519 device proof.
++  d=m.db().execute('SELECT * FROM devices WHERE id=?',(did,)).fetchone()
++  if not d:abort(404)
++  standard=app.config['SERVICE_PASSWORD']()
++  if not isinstance(standard,str) or not 8<=len(standard)<=128:abort(503)
++  values=[standard]
++  for encrypted in (d['credential'],password(d['customer_id'])):
++   if encrypted:
++    plain=m.dec(encrypted)
++    if not isinstance(plain,str) or not 1<=len(plain)<=128:abort(503)
++    if plain not in values:values.append(plain)
++  return dict(credential_policy=2,additional_passwords=values)
++ app.config['CONNECTION_CREDENTIAL']=connection_credential
++ app.config['CREDENTIAL_OFFER']=credential_offer
+  def offer(did,cid,capable):
+   activity=app.config['ACTIVITY_OFFER'](did,capable)
+   if capable and app.config['SERVICE_PASSWORD']():activity['service_password']=app.config['SERVICE_PASSWORD']()
+--- a/handoff.py
++++ b/handoff.py
+@@ -12,8 +12,7 @@
+     m.run("ALTER TABLE client_handoffs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reveal'")
+  m.init=init
+  def connection_credential(d):
+-  if d['credential']:return d['credential']
+-  return app.config.get('PROVISION_PASSWORD',lambda cid:'')(d['customer_id'])
++  return app.config['CONNECTION_CREDENTIAL'](d)
+  def connect(did):
+   d=m.device(did);m.limited('connect:'+str(g.user['uid']),120)
+   if not m.access(d['customer_id'],'reveal') or not connection_credential(d):
+--- a/bootstrap_client.py
++++ b/bootstrap_client.py
+@@ -48,6 +48,11 @@
+     d={'id':did}
+    m.db().commit()
+   g.verified_device_id=d['id']
++  if data.get('credential_policy')==2:
++   result=app.config['ACTIVITY_OFFER'](d['id'],True)
++   result.update(app.config['CREDENTIAL_OFFER'](d['id']))
++   result['registered']=True
++   return result
+   pending=m.db().execute('SELECT d.customer_id FROM devices d JOIN device_provisioning p ON p.device_id=d.id WHERE d.id=? AND p.applied=0',(d['id'],)).fetchone()
+   result=app.config['PROVISION_OFFER'](d['id'],pending['customer_id'],True) if pending else app.config['ACTIVITY_OFFER'](d['id'],True)
+   result['registered']=True

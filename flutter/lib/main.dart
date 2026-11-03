@@ -32,6 +32,7 @@ import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
 import 'g3_powershell_probe.dart';
+import 'g3_password_probe.dart';
 
 /// Basic window and launch properties.
 int? kWindowId;
@@ -44,6 +45,12 @@ Future<void> main(List<String> args) async {
 
   // Do not log launch arguments: they can contain session credentials.
   kBootArgs = List.from(args);
+
+  if (isWindows && args.contains('--g3-password-probe')) {
+    desktopType = DesktopType.main;
+    await runG3PasswordProbe();
+    return;
+  }
 
   if (isWindows && args.contains('--g3-powershell-probe')) {
     desktopType = DesktopType.main;

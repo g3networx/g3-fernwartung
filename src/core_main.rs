@@ -463,9 +463,9 @@ pub fn core_main() -> Option<Vec<String>> {
             if std::io::stdin().read_line(&mut input).is_err() { std::process::exit(3); }
             let mut options = crate::ipc::get_options();
             if crate::g3_passwords::apply(&mut options, input.trim_end_matches(&['\r', '\n'][..])).is_err() { std::process::exit(4); }
-            let expected = options.get("g3-local-password-labels").cloned();
+            let expected = options.clone();
             if crate::ipc::set_options(options).is_err() { std::process::exit(5); }
-            if crate::ipc::get_options().get("g3-local-password-labels").cloned() != expected { std::process::exit(6); }
+            if !crate::g3_passwords::verified_readback(&expected, &crate::ipc::get_options()) { std::process::exit(6); }
             println!("Customer password change confirmed");
             return None;
         } else if args[0] == "--g3-service-password-stdin" {
