@@ -23,8 +23,8 @@ shutil.copy2(root/'LICENCE',payload/'LICENCE')
 (payload/'SOURCE.txt').write_text('https://github.com/g3networx/g3-fernwartung/tree/'+os.environ['GITHUB_SHA']+'\n')
 (root/'src/version.rs').write_text('pub const BUILD_DATE: &str = "2026-11-04";\n')
 for script in ('package-msi.py','build-setup-launchers.py'):
- subprocess.run(['python','g3-build/'+script,'--version','1.5.0-g3.60.19993'],check=True)
-provenance.update(display_version='g3.6 Build 041126',version='1.5.0-g3.60.19993',packaging_source_commit=os.environ['GITHUB_SHA'],frontend_source_commit=os.environ['GITHUB_SHA'],frontends_rebuilt=True,published=False,actual_corrected_client_remote_powershell_tested=False)
+ subprocess.run(['python','g3-build/'+script,'--version','1.5.0-g3.60.19994'],check=True)
+provenance.update(display_version='g3.6 Build 041126',version='1.5.0-g3.60.19994',packaging_source_commit=os.environ['GITHUB_SHA'],frontend_source_commit=os.environ['GITHUB_SHA'],frontends_rebuilt=True,published=False,actual_corrected_client_remote_powershell_tested=False)
 (out/'g36-release-provenance.json').write_text(json.dumps(provenance,indent=2))
 items={p.name:dict(file=p.name,size=p.stat().st_size,sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for p in out.glob('g3-OpsLinX-*') if p.suffix in ('.exe','.msi')}
 assert len(items)==4

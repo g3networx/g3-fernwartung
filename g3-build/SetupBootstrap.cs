@@ -200,7 +200,17 @@ internal sealed class SetupForm:Form {
   public void Restore(){if(!stopped)return;using(var service=new ServiceController("g3Fernwartung")){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
  }
- static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName}){var processes=Process.GetProcessesByName(name);try{if(processes.Length!=0)return true;}finally{foreach(var p in processes)p.Dispose();}}return false;}
+ [DllImport("kernel32.dll",SetLastError=true)]static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
+ [DllImport("kernel32.dll",SetLastError=true)]static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+ [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
+ internal static bool ProcessCouldBeActive(int pid){
+  // Windows can enumerate a terminated process while another handle retains it.
+  // Query only normal limited rights; an unreadable state remains busy.
+  IntPtr handle=OpenProcess(0x1000,false,pid);if(handle==IntPtr.Zero)return true;
+  try{uint code;return !GetExitCodeProcess(handle,out code)||code==259;}
+  finally{CloseHandle(handle);}
+ }
+ static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName}){var processes=Process.GetProcessesByName(name);try{foreach(var p in processes)if(ProcessCouldBeActive(p.Id))return true;}finally{foreach(var p in processes)p.Dispose();}}return false;}
  static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
   if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
