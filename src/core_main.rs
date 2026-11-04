@@ -136,6 +136,10 @@ pub fn core_main() -> Option<Vec<String>> {
         base::platform::windows::start_cpu_performance_monitor();
     }
     #[cfg(windows)]
+    if args.as_slice() == ["--g3-current-otp-sealed"] {
+        crate::g3_otp_handoff::run_cli();
+    }
+    #[cfg(windows)]
     crate::g3_update_gate::watch_idle_process(&args);
     #[cfg(feature = "flutter")]
     if _is_flutter_invoke_new_connection {

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 import 'g3_addressbook_api.dart';
 import 'g3_addressbook_credentials.dart';
+import 'g3_otp_handoff.dart';
 import 'generated_bridge.dart';
 import 'models/platform_model.dart';
 
@@ -21,13 +22,17 @@ Future<void> runG3PasswordProbe() async {
   final session=UuidValue(const Uuid().v4()); final done=Completer<void>();
   StreamSubscription<EventToUI>? subscription;
   var added=false, password='';
+  G3OtpHandoff? otpHandoff;
+  final inputLines=StreamIterator<String>(stdin.transform(utf8.decoder).transform(const LineSplitter()));
   try {
-    final input=jsonDecode(await stdin.transform(utf8.decoder).join()
-      .timeout(const Duration(seconds:15))) as Map<String,dynamic>;
+    if(!await inputLines.moveNext().timeout(const Duration(seconds:15))) throw StateError('invalid-input');
+    final input=jsonDecode(inputLines.current) as Map<String,dynamic>;
     final row=input['deviceId'], id=input['expectedNativeId'], kind=input['credentialKind'];
+    final sealedOtp=input['sealedOtpHandoff']==true;
     password=input['password'] as String? ?? ''; input.clear();
     if(row is! int || id is! String || !RegExp(r'^\d{6,12}$').hasMatch(id) ||
-       !const ['book','standard','otp'].contains(kind)) throw StateError('invalid-input');
+       !const ['book','standard','otp'].contains(kind) ||
+       (sealedOtp && (kind!='otp' || password.isNotEmpty))) throw StateError('invalid-input');
     proof.addAll({'deviceId':row,'nativeId':id,'credentialKind':kind});
     await platformFFI.init('main'); await bind.mainCheckConnectStatus();
     final deadline=DateTime.now().add(const Duration(seconds:10));
@@ -41,6 +46,17 @@ Future<void> runG3PasswordProbe() async {
     final tree=await api.request('tree');
     if((tree['devices'] as List).where((d)=>d['id']==row && d['rustdesk_id']==id).length!=1)
       throw StateError('addressbook-identity-mismatch');
+    if(sealedOtp) {
+      otpHandoff=G3OtpHandoff();
+      final nonce=const Uuid().v4().replaceAll('-', '');
+      final request=otpHandoff.begin(id,nonce);
+      stdout.writeln('G3_OTP_REQUEST=${jsonEncode(request)}');
+      await stdout.flush();
+      if(!await inputLines.moveNext().timeout(const Duration(seconds:25))) throw StateError('otp-handoff-unavailable');
+      final envelope=jsonDecode(inputLines.current) as Map<String,dynamic>;
+      password=otpHandoff.open(envelope);envelope.clear();
+      proof['currentOtpSealedHandoffVerified']=true;
+    }
     if(kind=='book') {
       final grant=await api.request('connect',body:{'device_id':row});
       final uri=Uri.parse(grant['uri'] as String);
@@ -84,6 +100,10 @@ Future<void> runG3PasswordProbe() async {
         proof['ownSessionClosed']=true;
       } catch(_) { proof['ownSessionClosed']=false; }
     }
+    try { otpHandoff?.cancel(); }
+    catch(_) { proof['otpKeyCleanupVerified']=false; }
+    try { await inputLines.cancel(); }
+    catch(_) { proof['inputClosedVerified']=false; }
     await subscription?.cancel();api.close();transport.close();
     stdout.writeln('G3_PASSWORD_PROBE=${jsonEncode(proof)}');
   }
