@@ -1805,6 +1805,11 @@ impl<T: InvokeUiSession> Interface for Session<T> {
     fn handle_peer_info(&self, mut pi: PeerInfo) {
         log::debug!("handle_peer_info :{:?}", pi);
         self.lc.write().unwrap().peer_info = Some(pi.clone());
+        #[cfg(windows)]
+        if crate::g3_otp_handoff::read_only_password_probe() {
+            self.set_peer_info(&pi);
+            return;
+        }
         if pi.current_display as usize >= pi.displays.len() {
             pi.current_display = 0;
         }

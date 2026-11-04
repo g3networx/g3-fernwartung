@@ -2857,6 +2857,23 @@ struct ConnToken {
     session_id: u64,
 }
 
+#[cfg(all(test, windows))]
+mod g3_password_probe_persistence_tests {
+    use super::*;
+    #[test]
+    fn probe_keeps_password_only_in_memory() {
+        crate::g3_otp_handoff::with_read_only_probe_test(|| {
+            let id=format!("g3-probe-fixture-{}",uuid::Uuid::new_v4());
+            let mut handler=LoginConfigHandler::default();handler.id=id.clone();
+            let mut config=PeerConfig::default();config.password=vec![7;32];
+            handler.save_config(config);
+            assert_eq!(handler.config.password,vec![7;32]);
+            assert!(PeerConfig::load(&id).password.is_empty());
+        });
+        assert!(!crate::g3_otp_handoff::read_only_password_probe());
+    }
+}
+
 /// Login config handler for [`Client`].
 #[derive(Default)]
 pub struct LoginConfigHandler {
@@ -3084,6 +3101,11 @@ impl LoginConfigHandler {
     ///
     /// * `config` - [`PeerConfig`] to save.
     pub fn save_config(&mut self, config: PeerConfig) {
+        #[cfg(windows)]
+        if crate::g3_otp_handoff::read_only_password_probe() {
+            self.config = config;
+            return;
+        }
         config.store(&self.id);
         self.config = config;
     }

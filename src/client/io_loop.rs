@@ -1583,6 +1583,12 @@ impl<T: InvokeUiSession> Remote<T> {
                             self.handler.handle_login_error(crate::g3_self_connection::ERROR);
                             return false;
                         }
+                        #[cfg(windows)]
+                        if crate::g3_otp_handoff::read_only_password_probe() {
+                            self.handler.handle_peer_info(pi);
+                            self.is_connected = true;
+                            return true;
+                        }
                         let peer_version = pi.version.clone();
                         let peer_platform = pi.platform.clone();
                         self.set_peer_info(&pi);

@@ -22,6 +22,7 @@ Future<void> runG3PasswordProbe() async {
   final session=UuidValue(const Uuid().v4()); final done=Completer<void>();
   StreamSubscription<EventToUI>? subscription;
   var added=false, password='';
+  final elapsed=Stopwatch()..start();
   G3OtpHandoff? otpHandoff;
   final inputLines=StreamIterator<String>(stdin.transform(utf8.decoder).transform(const LineSplitter()));
   try {
@@ -72,6 +73,7 @@ Future<void> runG3PasswordProbe() async {
       password=credential['password'];credential.clear();
     }
     if(password.isEmpty || password.runes.length>128) throw StateError('password-unavailable');
+    if(sealedOtp && elapsed.elapsed>=const Duration(seconds:80)) throw StateError('otp-handoff-unavailable');
     final error=bind.sessionAddSync(sessionId:session,id:id,isFileTransfer:true,
       isViewCamera:false,isPortForward:false,isRdp:false,isTerminal:false,
       switchUuid:'',forceRelay:true,password:password,isSharedPassword:false);
@@ -89,7 +91,9 @@ Future<void> runG3PasswordProbe() async {
         }
       } catch(_) { if(!done.isCompleted) done.completeError(StateError('native-event-failed')); }
     },onError:(Object _) { if(!done.isCompleted) done.completeError(StateError('native-stream-failed')); });
-    await done.future.timeout(const Duration(seconds:40));
+    final remaining=const Duration(seconds:80)-elapsed.elapsed;
+    final authTimeout=sealedOtp && remaining<const Duration(seconds:40) ? remaining : const Duration(seconds:40);
+    await done.future.timeout(authTimeout);
     proof['status']='native-password-accepted';
   } catch(error) {
     proof['status']=error is StateError ? error.message : 'native-password-not-verified';

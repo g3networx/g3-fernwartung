@@ -8,6 +8,21 @@ use serde::{Deserialize, Serialize};
 const PURPOSE: &str = "OpsLinX-current-OTP-v1";
 const KEY_TTL: Duration = Duration::from_secs(60);
 
+pub(crate) fn read_only_password_probe() -> bool {
+    #[cfg(test)]
+    if READ_ONLY_TEST.with(|flag|flag.get()) { return true; }
+    std::env::args().skip(1).any(|arg|arg=="--g3-password-probe")
+}
+#[cfg(test)]
+thread_local! { static READ_ONLY_TEST:std::cell::Cell<bool>=std::cell::Cell::new(false); }
+#[cfg(test)]
+pub(crate) fn with_read_only_probe_test<T>(test:impl FnOnce()->T)->T {
+    struct Reset(bool);
+    impl Drop for Reset {fn drop(&mut self){READ_ONLY_TEST.with(|flag|flag.set(self.0));}}
+    let _reset=Reset(READ_ONLY_TEST.with(|flag|flag.replace(true)));
+    test()
+}
+
 struct ProbeKey {
     public: box_::PublicKey,
     secret: box_::SecretKey,
