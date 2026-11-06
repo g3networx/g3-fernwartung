@@ -1,39 +1,66 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
+import 'g3_local_addressbook_crypto.dart';
 
 class G3LocalEntry {
-  final String id, name, group, notes;
+  final String id, name, group, notes, passwordProtected;
   G3LocalEntry(
       {required this.id,
       required this.name,
       this.group = '',
-      this.notes = ''}) {
+      this.notes = '',
+      this.passwordProtected = ''}) {
     if (!RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id) ||
         name.trim().isEmpty ||
         name.length > 160 ||
         group.length > 160 ||
-        notes.length > 2000) {
+        notes.length > 2000 ||
+        passwordProtected.length > 24000 ||
+        (passwordProtected.isNotEmpty &&
+            !passwordProtected.startsWith(G3LocalPasswordCipher.prefix))) {
       throw const FormatException('Ungültiger Adressbucheintrag.');
     }
   }
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'group': group, 'notes': notes};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'group': group,
+        'notes': notes,
+        if (passwordProtected.isNotEmpty) 'passwordProtected': passwordProtected
+      };
+
+  G3LocalEntry withPassword(String protected) => G3LocalEntry(
+      id: id,
+      name: name,
+      group: group,
+      notes: notes,
+      passwordProtected: protected);
 
   factory G3LocalEntry.fromJson(dynamic value) {
     if (value is! Map<String, dynamic> ||
-        value.keys.any((k) => !['id', 'name', 'group', 'notes'].contains(k)) ||
+        value.keys.any((k) => ![
+              'id',
+              'name',
+              'group',
+              'notes',
+              'passwordProtected'
+            ].contains(k)) ||
         value['id'] is! String ||
         value['name'] is! String ||
         (value.containsKey('group') && value['group'] is! String) ||
-        (value.containsKey('notes') && value['notes'] is! String)) {
+        (value.containsKey('notes') && value['notes'] is! String) ||
+        (value.containsKey('passwordProtected') &&
+            value['passwordProtected'] is! String)) {
       throw const FormatException('Ungültiger Adressbucheintrag.');
     }
     return G3LocalEntry(
         id: value['id'],
         name: value['name'],
         group: value['group'] ?? '',
-        notes: value['notes'] ?? '');
+        notes: value['notes'] ?? '',
+        passwordProtected: value['passwordProtected'] ?? '');
   }
 }
 
@@ -41,6 +68,7 @@ class G3LocalAddressBookStore {
   static const maxBytes = 2 * 1024 * 1024;
   static const maxEntries = 5000;
   final File file;
+  final _passwordCipher = G3LocalPasswordCipher();
   G3LocalAddressBookStore(this.file);
 
   factory G3LocalAddressBookStore.forCurrentPc() {
@@ -62,7 +90,7 @@ class G3LocalAddressBookStore {
         jsonDecode(text.startsWith('\uFEFF') ? text.substring(1) : text);
     if (data is! Map<String, dynamic> ||
         data['format'] != 'g3-local-addressbook' ||
-        data['version'] != 1 ||
+        ![1, 2].contains(data['version']) ||
         data['entries'] is! List ||
         data.keys.any((k) => !['format', 'version', 'entries'].contains(k)) ||
         (data['entries'] as List).length > maxEntries) {
@@ -71,6 +99,11 @@ class G3LocalAddressBookStore {
     }
     final entries =
         (data['entries'] as List).map(G3LocalEntry.fromJson).toList();
+    if (data['version'] == 1 &&
+        entries.any((e) => e.passwordProtected.isNotEmpty)) {
+      throw const FormatException(
+          'Ungültige Adressbuchversion für gespeicherte Kennwörter.');
+    }
     if (entries.map((e) => e.id).toSet().length != entries.length) {
       throw const FormatException('Die Datei enthält doppelte Geräte-IDs.');
     }
@@ -80,7 +113,7 @@ class G3LocalAddressBookStore {
   static String encode(List<G3LocalEntry> entries) {
     final text = const JsonEncoder.withIndent('  ').convert({
       'format': 'g3-local-addressbook',
-      'version': 1,
+      'version': 2,
       'entries': entries.map((e) => e.toJson()).toList(),
     });
     decode(text);
@@ -95,13 +128,13 @@ class G3LocalAddressBookStore {
     return decode(await file.readAsString());
   }
 
-  Future<T> _change<T>(T Function(List<G3LocalEntry>) change) async {
+  Future<T> _change<T>(FutureOr<T> Function(List<G3LocalEntry>) change) async {
     await file.parent.create(recursive: true);
     final lock = await File('${file.path}.lock').open(mode: FileMode.append);
     try {
       await lock.lock(FileLock.exclusive);
       final entries = await read();
-      final result = change(entries);
+      final result = await change(entries);
       final text = encode(entries);
       final pending = File(
           '${file.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp');
@@ -117,7 +150,10 @@ class G3LocalAddressBookStore {
     }
   }
 
-  Future<void> put(G3LocalEntry entry, {String? previousId}) =>
+  Future<void> put(G3LocalEntry entry,
+          {String? previousId,
+          String? password,
+          bool removePassword = false}) =>
       _change((entries) {
         if (entries.any((e) => e.id == entry.id && e.id != previousId)) {
           throw const FormatException('Diese Geräte-ID ist bereits vorhanden.');
@@ -127,12 +163,75 @@ class G3LocalAddressBookStore {
           throw const FormatException(
               'Der Eintrag wurde inzwischen entfernt. Bitte neu laden.');
         }
+        final previous = index < 0 ? null : entries[index];
+        var protected = previous?.passwordProtected ?? entry.passwordProtected;
+        if (removePassword) {
+          protected = '';
+        } else if (password != null && password.isNotEmpty) {
+          protected = _passwordCipher.protect(password, entry.id);
+        } else if (previous != null &&
+            previous.id != entry.id &&
+            protected.isNotEmpty) {
+          protected = _passwordCipher.protect(
+              _passwordCipher.unprotect(protected, previous.id), entry.id);
+        }
+        final saved = entry.withPassword(protected);
         if (index < 0) {
-          entries.add(entry);
+          entries.add(saved);
         } else {
-          entries[index] = entry;
+          entries[index] = saved;
         }
       });
+
+  Future<String> passwordFor(G3LocalEntry entry) async =>
+      _passwordCipher.unprotect(entry.passwordProtected, entry.id);
+
+  Future<String> encryptedExport(String password) async {
+    final entries = await read();
+    final payload = jsonEncode({
+      'format': 'g3-local-addressbook-transfer',
+      'version': 1,
+      'entries': [
+        for (final e in entries)
+          {
+            'id': e.id,
+            'name': e.name,
+            'group': e.group,
+            'notes': e.notes,
+            'password': await passwordFor(e),
+          }
+      ]
+    });
+    return G3LocalBookExportCipher.encrypt(payload, password);
+  }
+
+  Future<List<G3LocalEntry>> openEncryptedExport(
+      String text, String password) async {
+    final clear = await G3LocalBookExportCipher.decrypt(text, password);
+    final data = jsonDecode(clear);
+    if (data is! Map<String, dynamic> ||
+        data['format'] != 'g3-local-addressbook-transfer' ||
+        data['version'] != 1 ||
+        data['entries'] is! List ||
+        data.keys.any((k) => !['format', 'version', 'entries'].contains(k)) ||
+        (data['entries'] as List).length > maxEntries) {
+      throw const FormatException('Ungültiger Inhalt der Exportdatei.');
+    }
+    final entries = <G3LocalEntry>[];
+    for (final value in data['entries'] as List) {
+      if (value is! Map<String, dynamic> ||
+          value['password'] is! String ||
+          value.containsKey('passwordProtected')) {
+        throw const FormatException('Ungültiger Eintrag in der Exportdatei.');
+      }
+      final metadata = Map<String, dynamic>.from(value)..remove('password');
+      final entry = G3LocalEntry.fromJson(metadata);
+      entries.add(entry
+          .withPassword(_passwordCipher.protect(value['password'], entry.id)));
+    }
+    encode(entries);
+    return entries;
+  }
 
   Future<void> remove(String id) => _change((entries) {
         entries.removeWhere((e) => e.id == id);

@@ -3,18 +3,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_hbb/g3_local_addressbook.dart';
 import 'package:flutter_hbb/g3_local_addressbook_store.dart';
+import 'package:flutter_hbb/g3_local_addressbook_crypto.dart';
 
 class WidgetBookStore extends G3LocalAddressBookStore {
   List<G3LocalEntry> entries = [
-    G3LocalEntry(id: '123456789', name: 'Büro', group: 'Steinmeier'),
+    G3LocalEntry(
+        id: '123456789',
+        name: 'Büro',
+        group: 'Steinmeier',
+        passwordProtected: G3LocalPasswordCipher()
+            .protect('Local-Test-Password! ', '123456789')),
     G3LocalEntry(id: '987654321', name: 'Labor'),
   ];
   WidgetBookStore() : super(File('unused-widget-fixture'));
   @override
   Future<List<G3LocalEntry>> read() async => List.of(entries);
   @override
-  Future<void> put(G3LocalEntry entry, {String? previousId}) async {
-    entries = [entry, ...entries.where((e) => e.id != previousId)];
+  Future<void> put(G3LocalEntry entry,
+      {String? previousId,
+      String? password,
+      bool removePassword = false}) async {
+    final previous =
+        entries.firstWhere((e) => e.id == previousId, orElse: () => entry);
+    final protected = removePassword
+        ? ''
+        : password == null
+            ? previous.passwordProtected
+            : G3LocalPasswordCipher().protect(password, entry.id);
+    entries = [
+      entry.withPassword(protected),
+      ...entries.where((e) => e.id != previousId)
+    ];
   }
 }
 
@@ -97,7 +116,8 @@ void main() {
           home: Scaffold(
               body: G3LocalAddressBook(
                   store: widgetStore,
-                  onConnect: (id, files) async {
+                  onConnect: (id, files, password) async {
+                    expect(password, 'Local-Test-Password! ');
                     connected.add('$id:$files');
                   }))));
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -126,6 +146,8 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text('Büro geändert'), findsOneWidget);
+    expect(await widgetStore.passwordFor(widgetStore.entries.first),
+        'Local-Test-Password! ');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

@@ -320,8 +320,8 @@ class _ConnectionPageState extends State<ConnectionPage>
             SizedBox(height: 12),
             Divider().paddingOnly(right: 12),
             Expanded(child: bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()
-                ? G3AddressBooks(onLocalConnect: (id, files) async {
-                    await connect(context, id, isFileTransfer: files, forceRelay: true);
+                ? G3AddressBooks(onLocalConnect: (id, files, password) async {
+                    await connect(context, id, password: password.isEmpty ? null : password, isFileTransfer: files, forceRelay: true);
                   }, remote: G3AddressBook(onConnect: (value) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {

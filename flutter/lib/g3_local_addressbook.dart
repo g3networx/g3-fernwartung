@@ -1,11 +1,15 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'g3_local_addressbook_store.dart';
+import 'g3_local_addressbook_crypto.dart';
+import 'g3_local_addressbook_password_dialog.dart';
 
 class G3AddressBooks extends StatefulWidget {
   final Widget remote;
-  final Future<void> Function(String id, bool files) onLocalConnect;
+  final Future<void> Function(String id, bool files, String password)
+      onLocalConnect;
   const G3AddressBooks(
       {super.key, required this.remote, required this.onLocalConnect});
 
@@ -35,7 +39,7 @@ class _G3AddressBooksState extends State<G3AddressBooks> {
 }
 
 class G3LocalAddressBook extends StatefulWidget {
-  final Future<void> Function(String id, bool files) onConnect;
+  final Future<void> Function(String id, bool files, String password) onConnect;
   final G3LocalAddressBookStore? store;
   const G3LocalAddressBook({super.key, required this.onConnect, this.store});
   @override
@@ -92,80 +96,117 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
     var id = entry?.id ?? '';
     var group = entry?.group ?? '';
     var notes = entry?.notes ?? '';
+    var password = '';
+    var removePassword = false;
     final value = await showDialog<G3LocalEntry>(
         context: context,
-        builder: (context) => AlertDialog(
-              title: Text(entry == null
-                  ? 'Lokalen Eintrag hinzufügen'
-                  : 'Lokalen Eintrag bearbeiten'),
-              content: SizedBox(
-                  width: 440,
-                  child: SingleChildScrollView(
-                      child: Form(
-                          key: form,
-                          child:
-                              Column(mainAxisSize: MainAxisSize.min, children: [
-                            TextFormField(
-                                initialValue: name,
-                                onSaved: (value) => name = (value ?? '').trim(),
-                                autofocus: true,
-                                maxLength: 160,
-                                decoration:
-                                    const InputDecoration(labelText: 'Name'),
-                                validator: (v) => (v ?? '').trim().isEmpty
-                                    ? 'Bitte einen Namen eingeben.'
-                                    : null),
-                            TextFormField(
-                                initialValue: id,
-                                onSaved: (value) => id = (value ?? '').trim(),
-                                maxLength: 40,
-                                decoration: const InputDecoration(
-                                    labelText: 'Geräte-ID'),
-                                validator: (v) => RegExp(
-                                            r'^[A-Za-z0-9_-]{6,40}$')
-                                        .hasMatch((v ?? '').trim())
-                                    ? null
-                                    : 'Bitte eine gültige Geräte-ID eingeben.'),
-                            TextFormField(
-                                initialValue: group,
-                                onSaved: (value) =>
-                                    group = (value ?? '').trim(),
-                                maxLength: 160,
-                                decoration: const InputDecoration(
-                                    labelText: 'Gruppe (optional)')),
-                            TextFormField(
-                                initialValue: notes,
-                                onSaved: (value) =>
-                                    notes = (value ?? '').trim(),
-                                maxLength: 2000,
-                                minLines: 2,
-                                maxLines: 4,
-                                decoration: const InputDecoration(
-                                    labelText: 'Notiz (optional)')),
-                          ])))),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Abbrechen')),
-                FilledButton(
-                    onPressed: () {
-                      if (form.currentState!.validate()) {
-                        form.currentState!.save();
-                        Navigator.pop(
-                            context,
-                            G3LocalEntry(
-                                id: id,
-                                name: name,
-                                group: group,
-                                notes: notes));
-                      }
-                    },
-                    child: const Text('Speichern')),
-              ],
-            ));
+        builder: (context) => StatefulBuilder(
+            builder: (context, updateDialog) => AlertDialog(
+                  title: Text(entry == null
+                      ? 'Lokalen Eintrag hinzufügen'
+                      : 'Lokalen Eintrag bearbeiten'),
+                  content: SizedBox(
+                      width: 440,
+                      child: SingleChildScrollView(
+                          child: Form(
+                              key: form,
+                              child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextFormField(
+                                        initialValue: name,
+                                        onSaved: (value) =>
+                                            name = (value ?? '').trim(),
+                                        autofocus: true,
+                                        maxLength: 160,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Name'),
+                                        validator: (v) =>
+                                            (v ?? '').trim().isEmpty
+                                                ? 'Bitte einen Namen eingeben.'
+                                                : null),
+                                    TextFormField(
+                                        initialValue: id,
+                                        onSaved: (value) =>
+                                            id = (value ?? '').trim(),
+                                        maxLength: 40,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Geräte-ID'),
+                                        validator: (v) => RegExp(
+                                                    r'^[A-Za-z0-9_-]{6,40}$')
+                                                .hasMatch((v ?? '').trim())
+                                            ? null
+                                            : 'Bitte eine gültige Geräte-ID eingeben.'),
+                                    TextFormField(
+                                        initialValue: group,
+                                        onSaved: (value) =>
+                                            group = (value ?? '').trim(),
+                                        maxLength: 160,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Gruppe (optional)')),
+                                    TextFormField(
+                                        initialValue: notes,
+                                        onSaved: (value) =>
+                                            notes = (value ?? '').trim(),
+                                        maxLength: 2000,
+                                        minLines: 2,
+                                        maxLines: 4,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Notiz (optional)')),
+                                    TextFormField(
+                                        obscureText: true,
+                                        autocorrect: false,
+                                        enableSuggestions: false,
+                                        enabled: !removePassword,
+                                        maxLength: 1024,
+                                        onSaved: (value) =>
+                                            password = value ?? '',
+                                        decoration: InputDecoration(
+                                            labelText:
+                                                'Verbindungskennwort (optional)',
+                                            helperText: entry?.passwordProtected
+                                                        .isNotEmpty ==
+                                                    true
+                                                ? 'Leer lassen, um das gespeicherte Kennwort beizubehalten.'
+                                                : 'Wird für diesen Windows-Benutzer verschlüsselt gespeichert.')),
+                                    if (entry?.passwordProtected.isNotEmpty ==
+                                        true)
+                                      CheckboxListTile(
+                                          contentPadding: EdgeInsets.zero,
+                                          title: const Text(
+                                              'Gespeichertes Kennwort entfernen'),
+                                          value: removePassword,
+                                          onChanged: (value) => updateDialog(
+                                              () => removePassword =
+                                                  value ?? false)),
+                                  ])))),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Abbrechen')),
+                    FilledButton(
+                        onPressed: () {
+                          if (form.currentState!.validate()) {
+                            form.currentState!.save();
+                            Navigator.pop(
+                                context,
+                                G3LocalEntry(
+                                    id: id,
+                                    name: name,
+                                    group: group,
+                                    notes: notes));
+                          }
+                        },
+                        child: const Text('Speichern')),
+                  ],
+                )));
     if (value != null && mounted) {
       await run(() async {
-        await store!.put(value, previousId: entry?.id);
+        await store!.put(value,
+            previousId: entry?.id,
+            password: password.isEmpty ? null : password,
+            removePassword: removePassword);
+        password = '';
         await reload();
       });
     }
@@ -205,11 +246,29 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
               'Die ausgewählte Datei ist nicht verfügbar.');
         }
         final file = File(path);
-        if (await file.length() > G3LocalAddressBookStore.maxBytes) {
-          throw const FormatException('Die Datei ist zu groß (maximal 2 MB).');
+        if (await file.length() > G3LocalBookExportCipher.maxFileBytes) {
+          throw const FormatException(
+              'Die Exportdatei ist zu groß (maximal 4 MB).');
         }
-        final imported =
-            G3LocalAddressBookStore.decode(await file.readAsString());
+        var text = await file.readAsString();
+        if (text.startsWith('\uFEFF')) text = text.substring(1);
+        final header = jsonDecode(text);
+        List<G3LocalEntry> imported;
+        if (header is Map &&
+            header['format'] == 'g3-local-addressbook' &&
+            header['version'] == 1) {
+          imported = G3LocalAddressBookStore.decode(text);
+        } else if (header is Map &&
+            header['format'] == G3LocalBookExportCipher.format) {
+          if (!mounted) return;
+          final password =
+              await showG3LocalExportPassword(context, exporting: false);
+          if (password == null) return;
+          imported = await store!.openEncryptedExport(text, password);
+        } else {
+          throw const FormatException(
+              'Bitte eine Exportdatei aus dem lokalen Adressbuch auswählen.');
+        }
         if (!mounted) return;
         final confirmed = await showDialog<bool>(
             context: context,
@@ -237,7 +296,9 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
       });
 
   Future<void> exportBook() => run(() async {
-        final data = await store!.read();
+        final password =
+            await showG3LocalExportPassword(context, exporting: true);
+        if (password == null) return;
         final path = await FilePicker.platform.saveFile(
             dialogTitle: 'Lokales Adressbuch exportieren',
             fileName: 'g3-lokales-adressbuch.json',
@@ -245,16 +306,24 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
             allowedExtensions: ['json']);
         if (path == null) return;
         if (File(path).absolute.path.toLowerCase() ==
-            store!.file.absolute.path.toLowerCase()) {
+                store!.file.absolute.path.toLowerCase() ||
+            (await File(path).exists() &&
+                await store!.file.exists() &&
+                await FileSystemEntity.identical(path, store!.file.path))) {
           throw const FormatException(
               'Bitte eine separate Exportdatei auswählen.');
         }
-        await File(path)
-            .writeAsString(G3LocalAddressBookStore.encode(data), flush: true);
+        final encrypted = await store!.encryptedExport(password);
+        await File(path).writeAsString(encrypted, flush: true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Lokales Adressbuch exportiert.')));
         }
+      });
+
+  Future<void> connectEntry(G3LocalEntry entry, bool files) => run(() async {
+        final password = await store!.passwordFor(entry);
+        await widget.onConnect(entry.id, files, password);
       });
 
   @override
@@ -327,8 +396,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                                   tooltip: 'Desktop verbinden',
                                   onPressed: busy
                                       ? null
-                                      : () => run(() =>
-                                          widget.onConnect(entry.id, false)),
+                                      : () => connectEntry(entry, false),
                                   icon: const Icon(Icons.desktop_windows)),
                               PopupMenuButton<String>(
                                   enabled: !busy,
@@ -337,8 +405,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                                     if (action == 'edit') edit(entry);
                                     if (action == 'delete') remove(entry);
                                     if (action == 'files') {
-                                      run(() =>
-                                          widget.onConnect(entry.id, true));
+                                      connectEntry(entry, true);
                                     }
                                   },
                                   itemBuilder: (_) => const [
