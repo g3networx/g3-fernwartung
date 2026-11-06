@@ -16,6 +16,7 @@ import 'package:flutter_hbb/models/peer_model.dart';
 
 import '../../common.dart';
 import '../../g3_addressbook.dart';
+import '../../g3_local_addressbook.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
@@ -319,7 +320,9 @@ class _ConnectionPageState extends State<ConnectionPage>
             SizedBox(height: 12),
             Divider().paddingOnly(right: 12),
             Expanded(child: bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()
-                ? G3AddressBook(onConnect: (value) async {
+                ? G3AddressBooks(onLocalConnect: (id, files) async {
+                    await connect(context, id, isFileTransfer: files, forceRelay: true);
+                  }, remote: G3AddressBook(onConnect: (value) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
                       await redeemG3Session(uri.path.substring(1));
@@ -346,7 +349,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
-                  })
+                  }))
                 : const SizedBox.shrink()),
           ],
         ).paddingOnly(left: 12.0)),
