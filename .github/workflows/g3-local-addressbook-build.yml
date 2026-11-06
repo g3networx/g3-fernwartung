@@ -1,0 +1,92 @@
+# Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
+# Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
+name: g3.6.1 Build 061126 release
+on:
+  push:
+    branches: [g3-local-addressbook-20261106]
+    paths: [.github/workflows/g3-local-addressbook-build.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate native source encoding before dependency setup
+        run: |
+          python g3-build/check-session-privacy-encoding.py
+          python g3-build/check-local-addressbook-release.py
+          ./g3-build/test-bootstrap-process-exit.ps1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.75.0
+      - name: Test authoritative registry crypto, ACL, priority and stale-write rejection
+        shell: pwsh
+        run: |
+          $vs=& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          Import-Module "$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          ./g3-build/test-password-postinstall-policy.ps1
+          cargo test --locked --manifest-path g3-build/registry-checks/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Authoritative registry tests failed'}
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0
+        with:
+          version: '15.0.6'
+      - name: Fetch pinned accepted payload and installer tools
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive=Join-Path $env:RUNNER_TEMP 'accepted-wallpaper.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/12983117823/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $archive
+          if((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'a329b203fa8735110068172981a49bb293ec8e57077dce2a67c2ee5bbcd35df3'){throw 'Accepted payload digest mismatch'}
+          "G3_WALLPAPER_ACCEPTED_ARCHIVE=$archive"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $prior=Join-Path $env:RUNNER_TEMP 'prior-g3401.zip'
+          Invoke-WebRequest 'https://api.github.com/repos/g3networx/g3-fernwartung/actions/artifacts/13060744241/zip' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $prior
+          if((Get-FileHash $prior).Hash.ToLowerInvariant() -ne 'd8376ae324be33873816024c4920dcb12a98c38d0abac48f1495cb19b3a7db9d'){throw 'Prior artifact pin mismatch'}
+          "G3_PRIOR_POWERSHELL_ARCHIVE=$prior"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $tools=Join-Path $env:RUNNER_TEMP 'g3401-tools'
+          New-Item -ItemType Directory $tools|Out-Null
+          Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile "$tools/wix.zip"
+          if((Get-FileHash "$tools/wix.zip").Hash.ToLowerInvariant() -ne '6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31'){throw 'WiX digest mismatch'}
+          Expand-Archive "$tools/wix.zip" "$tools/wix/bin"
+          "WIX=$tools/wix"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Prepare accepted native core
+        shell: pwsh
+        run: python g3-build/package-local-addressbook.py prepare
+      - name: Compile HA native core and verify Windows account handling
+        shell: pwsh
+        run: ./g3-build/build-local-addressbook-core.ps1
+      - name: Build corrected g3.6.1 Build 061126 Flutter frontend and run focused tests
+        shell: pwsh
+        run: ./g3-build/build-local-addressbook-ui.ps1
+      - name: Package g3.6.1 Build 061126 Host and FullClient and test installer regressions
+        shell: pwsh
+        run: |
+          python g3-build/package-version.py
+          if($LASTEXITCODE -ne 0){throw 'Version mapping failed'}
+          python g3-build/package-local-addressbook.py package
+          if($LASTEXITCODE -ne 0){throw 'Packaging failed'}
+          python g3-build/test-process-inspection.py
+          if($LASTEXITCODE -ne 0){throw 'Process inspection regression failed'}
+          python g3-build/test-setup-progress.py
+          if($LASTEXITCODE -ne 0){throw 'Setup progress regression failed'}
+          python g3-build/test-update-session-gate.py
+          if($LASTEXITCODE -ne 0){throw 'Session guard regression failed'}
+      - name: Verify MSI metadata, embedded runtime and variant preservation without installation
+        shell: pwsh
+        run: python g3-build/verify-local-addressbook-msi.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: g361-release-${{ github.sha }}
+          path: outputs/*
+          retention-days: 30
+
