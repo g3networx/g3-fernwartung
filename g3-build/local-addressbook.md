@@ -64,3 +64,44 @@ Pakete bleiben unverändert. Veröffentlichung und Rollout sind eigene Schritte.
 Alle übrigen Funktionsänderungen befinden sich in neuen Featuredateien. Die
 Server-API, zentrale Adressbuchdaten, native Authentifizierung und Host-Ansicht
 werden nicht umgebaut.
+
+## Erweiterung vom 07.11.2026: lokale Unteradressbücher und Kopien
+
+Entwicklungsstand, noch kein neu gebautes oder veröffentlichtes Releasepaket.
+
+- Lokale Unteradressbücher werden über „Unteradressbuch“ angelegt. Die
+  Zielauswahl unterstützt bis zu acht Ebenen und 500 Adressbücher. Leere
+  Adressbücher bleiben gespeichert und können gelöscht werden, sofern sie
+  keine Einträge oder Unteradressbücher enthalten.
+- Einträge erhalten ein optionales `book`-Pfadfeld. Beim Bearbeiten kann das
+  Zieladressbuch geändert werden; bestehende Gruppen und Kennwörter bleiben
+  erhalten. Die Ansicht bietet alle Einträge, die oberste Ebene und einzelne
+  Unteradressbücher an.
+- Die lokale Datei verwendet Version 3, sobald Adressbuchpfade vorkommen;
+  Versionen 1 und 2 bleiben lesbar. Ohne Unteradressbücher bleibt das bisherige
+  Version-2-Format bestehen. Ältere Clients können Version 3 nicht lesen und
+  weisen sie zurück, ohne sie zu überschreiben.
+- Der kennwortgeschützte Export transportiert auch leere Unteradressbücher
+  (inneres Transferformat Version 2). Ältere Transferdateien bleiben lesbar.
+  DPAPI und die bestehende authentifizierte Exportverschlüsselung bleiben
+  erhalten.
+- „In lokales Adressbuch kopieren“ übernimmt Name und Geräte-ID des sichtbaren
+  öffentlichen Eintrags in ein gewähltes lokales Ziel. Auch reine Leserechte
+  genügen. Serverkennwörter und Freigabetokens werden nicht übernommen; ein
+  eigenes Verbindungskennwort kann im Kopierdialog eingegeben werden.
+  Doppelte Geräte-IDs werden abgewiesen. Der öffentliche Eintrag wird nicht
+  verändert. Beim Wechsel zum lokalen Reiter wird dessen Inhalt neu geladen.
+
+Regression-Surface-Prüfung: `g3_local_addressbook_store.dart` erweitert nur die
+lokale Persistenz und den lokalen Transfer um Adressbuchpfade;
+`g3_local_addressbook.dart` ergänzt deren Verwaltung/Zielauswahl und aktualisiert
+den lokalen Reiter; `g3_addressbook.dart` ergänzt die lokale Kopieraktion in der
+Gerätedetailansicht. Der neue Kopierdialog liegt separat in
+`g3_local_addressbook_copy.dart`. Die Änderungen an beiden vorhandenen
+Adressbuch-Testdateien prüfen diese Bedienwege. Keine Änderungen an nativer
+Verbindung, Server-API, Update- oder Installerpfaden.
+
+Validierung: 18 Adressbuch-/Kryptografie-/Widgettests erfolgreich; gezielte
+Dart-Analyse aller sechs betroffenen Dart-Dateien ohne Befund. Die drei neuen
+Tests prüfen verschachtelte/leere Adressbücher samt Kennworttransfer, lokale
+Ansicht/Neuanlage und öffentliches Kopieren ohne Servermutation/Überschreiben.

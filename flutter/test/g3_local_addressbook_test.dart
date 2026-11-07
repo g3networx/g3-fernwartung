@@ -19,6 +19,9 @@ class WidgetBookStore extends G3LocalAddressBookStore {
   @override
   Future<List<G3LocalEntry>> read() async => List.of(entries);
   @override
+  Future<List<String>> readBooks() async =>
+      G3LocalAddressBookStore.bookPaths(entries.map((e) => e.book));
+  @override
   Future<void> put(G3LocalEntry entry,
       {String? previousId,
       String? password,
@@ -104,6 +107,69 @@ void main() {
     await store.file.writeAsString('{broken');
     await expectLater(store.importEntries(imported), throwsFormatException);
     expect(await store.file.readAsString(), '{broken');
+  });
+
+  test('nested and empty local books survive encrypted transfer and edits',
+      () async {
+    await store.addBook('Steinmeier/Buero');
+    await store.addBook('Steinmeier/Leer');
+    await store.put(
+        G3LocalEntry(id: '123456789', name: 'PC', book: 'Steinmeier/Buero'),
+        password: 'Stored password!');
+    await store.put(
+        G3LocalEntry(id: '123456789', name: 'PC', book: 'Steinmeier'),
+        previousId: '123456789');
+    expect(await store.passwordFor((await store.read()).single),
+        'Stored password!');
+    final target =
+        G3LocalAddressBookStore(File('${directory.path}/target.json'));
+    final opened = await target.openEncryptedBook(
+        await store.encryptedExport('Export password 123!'),
+        'Export password 123!');
+    await target.importEntries(opened.entries, books: opened.books);
+    expect(await target.readBooks(),
+        ['Steinmeier', 'Steinmeier/Buero', 'Steinmeier/Leer']);
+    expect((await target.read()).single.book, 'Steinmeier');
+    expect(await target.passwordFor((await target.read()).single),
+        'Stored password!');
+    await expectLater(target.removeBook('Steinmeier'), throwsFormatException);
+    await target.removeBook('Steinmeier/Leer');
+    expect(await target.readBooks(), ['Steinmeier', 'Steinmeier/Buero']);
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  testWidgets('local book view filters entries and creates empty subbooks',
+      (tester) async {
+    await tester.runAsync(() async {
+      await store.addBook('Kunde/Buero');
+      await store.put(G3LocalEntry(
+          id: '123456789', name: 'Buerorechner', book: 'Kunde/Buero'));
+      await store.put(G3LocalEntry(id: '987654321', name: 'Sonstiger PC'));
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: G3LocalAddressBook(
+                  store: store, onConnect: (_, __, ___) async {}))));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alle lokalen Einträge'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kunde/Buero').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Buerorechner'), findsOneWidget);
+    expect(find.text('Sonstiger PC'), findsNothing);
+    await tester.runAsync(() => tester.tap(find.text('Unteradressbuch')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'Leer');
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Anlegen'));
+      await tester.pump(const Duration(milliseconds: 350));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    expect(await tester.runAsync(() => store.readBooks()),
+        contains('Kunde/Buero/Leer'));
+    expect(find.text('Buerorechner'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(

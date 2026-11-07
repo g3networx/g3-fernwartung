@@ -6,6 +6,8 @@ import 'g3_addressbook_edit.dart';
 import 'g3_addressbook_credentials.dart';
 import 'g3_powershell_login.dart';
 import 'g3_powershell_credentials.dart';
+import 'g3_local_addressbook_copy.dart';
+import 'g3_local_addressbook_store.dart';
 
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
@@ -14,6 +16,7 @@ class G3AddressBook extends StatefulWidget {
   final G3AddressBookApi? api;
   final G3AddressBookCredentials? credentials;
   final G3PowerShellCredentials? powerShellCredentials;
+  final G3LocalAddressBookStore? localStore;
   const G3AddressBook(
       {super.key,
       required this.onConnect,
@@ -21,7 +24,8 @@ class G3AddressBook extends StatefulWidget {
       this.onFileExplorer,
       this.api,
       this.credentials,
-      this.powerShellCredentials});
+      this.powerShellCredentials,
+      this.localStore});
   @override
   State<G3AddressBook> createState() => _G3AddressBookState();
 }
@@ -341,6 +345,22 @@ class _G3AddressBookState extends State<G3AddressBook> {
   bool matches(Map<String, dynamic> d, String query) =>
       '${d['name']} ${d['rustdesk_id']}'.toLowerCase().contains(query);
 
+  Future<void> copyToLocal(Map<String, dynamic> device) async {
+    if (busy) return;
+    setState(() { busy = true; error = null; });
+    try {
+      await showG3CopyToLocalBook(context,
+          id: device['rustdesk_id'] as String, name: device['name'] as String,
+          store: widget.localStore);
+    } on FormatException catch (e) {
+      if (mounted) setState(() => error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => error = 'Kopieren nicht möglich. Vorhandene Einträge bleiben erhalten.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   List<Widget> tree(int? parent, String query,
       [int depth = 0, Set<int> ancestors = const {}]) {
     final rows = <Widget>[];
@@ -499,6 +519,10 @@ class _G3AddressBookState extends State<G3AddressBook> {
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Löschen')),
             ]),
+          TextButton.icon(
+              onPressed: busy ? null : () => copyToLocal(d),
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('In lokales Adressbuch kopieren')),
         ]));
   }
 

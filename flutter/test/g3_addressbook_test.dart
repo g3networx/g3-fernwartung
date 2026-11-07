@@ -8,6 +8,7 @@ import 'package:flutter_hbb/g3_addressbook.dart';
 import 'package:flutter_hbb/g3_addressbook_api.dart';
 import 'package:flutter_hbb/g3_addressbook_credentials.dart';
 import 'package:flutter_hbb/g3_powershell_credentials.dart';
+import 'package:flutter_hbb/g3_local_addressbook_store.dart';
 
 class FixturePowerShellCredentials extends G3PowerShellCredentials {
   @override
@@ -64,6 +65,61 @@ void main() {
             headers: {'content-type': 'application/json; charset=utf-8'})));
     expect((await api.request('tree'))['username'], 'fixture@g3.test');
     api.close();
+  });
+
+  testWidgets('read-only public entry copies locally without server mutation or overwrite', (tester) async {
+    final directory = (await tester.runAsync(() => Directory.systemTemp.createTemp('g3-copy-local-test-')))!;
+    final local = G3LocalAddressBookStore(File('${directory.path}/book.json'));
+    await tester.runAsync(() => local.addBook('Kunde/Buero'));
+    final requests = <String>[];
+    final api = G3AddressBookApi(client: MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+      return http.Response(jsonEncode(tree), 200,
+          headers: {'content-type': 'application/json; charset=utf-8'});
+    }));
+    try {
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: G3AddressBook(
+          api: api, credentials: FixtureCredentials(), localStore: local,
+          onConnect: (_) async {}))));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '123456789');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('TEST-SERVER'));
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(find.text('In lokales Adressbuch kopieren'), findsOneWidget,
+          reason: tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).join(' | '));
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.runAsync(() async {
+          await tester.tap(find.text('In lokales Adressbuch kopieren'));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Oberste Ebene'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Kunde/Buero').last);
+        await tester.pumpAndSettle();
+        if (attempt == 1) await tester.enterText(find.byType(TextFormField).first, 'Do not overwrite');
+        await tester.runAsync(() async {
+          await tester.tap(find.text('Kopieren'));
+          await tester.pump(const Duration(milliseconds: 350));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pumpAndSettle();
+      }
+      final entry = (await tester.runAsync(() => local.read()))!.single;
+      expect(entry.name, 'TEST-SERVER');
+      expect(entry.id, '123456789');
+      expect(entry.book, 'Kunde/Buero');
+      expect(entry.passwordProtected, isEmpty);
+      expect(find.text('Diese Geräte-ID ist bereits vorhanden.'), findsOneWidget);
+      expect(find.text('TEST-SERVER'), findsWidgets);
+      expect(requests.every((r) => r == 'GET /client-addressbook/tree'), isTrue);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() => directory.delete(recursive: true));
+    }
   });
 
   testWidgets('Restores login, filters nested tree, shows details and connects',

@@ -19,12 +19,16 @@ class G3AddressBooks extends StatefulWidget {
 
 class _G3AddressBooksState extends State<G3AddressBooks> {
   int selected = 0;
+  final localKey = GlobalKey<_G3LocalAddressBookState>();
   @override
   Widget build(BuildContext context) => DefaultTabController(
         length: 2,
         child: Column(children: [
           TabBar(
-              onTap: (index) => setState(() => selected = index),
+              onTap: (index) {
+                setState(() => selected = index);
+                if (index == 1) localKey.currentState?.load();
+              },
               tabs: const [
                 Tab(text: 'g3-Adressbuch'),
                 Tab(text: 'Lokales Adressbuch')
@@ -32,7 +36,7 @@ class _G3AddressBooksState extends State<G3AddressBooks> {
           Expanded(
               child: IndexedStack(index: selected, children: [
             widget.remote,
-            G3LocalAddressBook(onConnect: widget.onLocalConnect)
+            G3LocalAddressBook(key: localKey, onConnect: widget.onLocalConnect)
           ])),
         ]),
       );
@@ -49,6 +53,8 @@ class G3LocalAddressBook extends StatefulWidget {
 class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
   G3LocalAddressBookStore? store;
   List<G3LocalEntry> entries = [];
+  List<String> books = [];
+  String? selectedBook;
   String query = '';
   String? error;
   bool busy = false;
@@ -82,12 +88,119 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
   Future<void> load() => run(() async {
         store ??= widget.store ?? G3LocalAddressBookStore.forCurrentPc();
         final data = await store!.read();
-        if (mounted) setState(() => entries = data);
+        final paths = await store!.readBooks();
+        if (mounted) {
+          setState(() {
+            entries = data;
+            books = paths;
+            if (selectedBook != '' && !books.contains(selectedBook)) {
+              selectedBook = null;
+            }
+          });
+        }
       });
 
   Future<void> reload() async {
     final data = await store!.read();
-    if (mounted) setState(() => entries = data);
+    final paths = await store!.readBooks();
+    if (mounted) {
+      setState(() {
+        entries = data;
+        books = paths;
+        if (selectedBook != '' && !books.contains(selectedBook)) {
+          selectedBook = null;
+        }
+      });
+    }
+  }
+
+  Future<void> addBook() async {
+    var parent = selectedBook ?? '';
+    var name = '';
+    final form = GlobalKey<FormState>();
+    final path = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Lokales Unteradressbuch hinzufügen'),
+                content: SizedBox(
+                    width: 440,
+                    child: Form(
+                        key: form,
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          DropdownButtonFormField<String>(
+                              value: parent,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                  labelText: 'Übergeordnetes Adressbuch'),
+                              items: [
+                                const DropdownMenuItem(
+                                    value: '',
+                                    child: Text('Lokales Adressbuch')),
+                                ...books.map((b) =>
+                                    DropdownMenuItem(value: b, child: Text(b)))
+                              ],
+                              onChanged: (value) => parent = value ?? ''),
+                          TextFormField(
+                              autofocus: true,
+                              maxLength: 80,
+                              decoration: const InputDecoration(
+                                  labelText: 'Adressbuchname'),
+                              onChanged: (value) => name = value.trim(),
+                              validator: (_) => name.isEmpty ||
+                                      name.contains('/') ||
+                                      !G3LocalAddressBookStore.validBook(
+                                          parent.isEmpty
+                                              ? name
+                                              : '$parent/$name')
+                                  ? 'Bitte einen gültigen Namen eingeben (maximal 8 Ebenen).'
+                                  : null),
+                        ]))),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Abbrechen')),
+                  FilledButton(
+                      onPressed: () {
+                        if (form.currentState!.validate()) {
+                          Navigator.pop(
+                              context, parent.isEmpty ? name : '$parent/$name');
+                        }
+                      },
+                      child: const Text('Anlegen'))
+                ]));
+    if (path != null && mounted) {
+      await run(() async {
+        await store!.addBook(path);
+        await reload();
+        if (mounted) setState(() => selectedBook = path);
+      });
+    }
+  }
+
+  Future<void> removeBook() async {
+    final path = selectedBook;
+    if (path == null || path.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Lokales Adressbuch löschen?'),
+                content: Text(
+                    '„$path“ löschen? Nur leere Adressbücher ohne Unteradressbücher können entfernt werden.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Abbrechen')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Löschen'))
+                ]));
+    if (confirmed == true && mounted) {
+      await run(() async {
+        await store!.removeBook(path);
+        await reload();
+      });
+    }
   }
 
   Future<void> edit([G3LocalEntry? entry]) async {
@@ -95,6 +208,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
     var name = entry?.name ?? '';
     var id = entry?.id ?? '';
     var group = entry?.group ?? '';
+    var book = entry?.book ?? selectedBook ?? '';
     var notes = entry?.notes ?? '';
     var password = '';
     var removePassword = false;
@@ -144,6 +258,20 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                                         maxLength: 160,
                                         decoration: const InputDecoration(
                                             labelText: 'Gruppe (optional)')),
+                                    DropdownButtonFormField<String>(
+                                        value: book,
+                                        isExpanded: true,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Lokales Adressbuch'),
+                                        items: [
+                                          const DropdownMenuItem(
+                                              value: '',
+                                              child: Text('Oberste Ebene')),
+                                          ...books.map((b) => DropdownMenuItem(
+                                              value: b, child: Text(b)))
+                                        ],
+                                        onChanged: (value) =>
+                                            book = value ?? ''),
                                     TextFormField(
                                         initialValue: notes,
                                         onSaved: (value) =>
@@ -194,6 +322,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                                     id: id,
                                     name: name,
                                     group: group,
+                                    book: book,
                                     notes: notes));
                           }
                         },
@@ -254,17 +383,21 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
         if (text.startsWith('\uFEFF')) text = text.substring(1);
         final header = jsonDecode(text);
         List<G3LocalEntry> imported;
+        List<String> importedBooks;
         if (header is Map &&
             header['format'] == 'g3-local-addressbook' &&
             header['version'] == 1) {
           imported = G3LocalAddressBookStore.decode(text);
+          importedBooks = G3LocalAddressBookStore.decodeBooks(text);
         } else if (header is Map &&
             header['format'] == G3LocalBookExportCipher.format) {
           if (!mounted) return;
           final password =
               await showG3LocalExportPassword(context, exporting: false);
           if (password == null) return;
-          imported = await store!.openEncryptedExport(text, password);
+          final book = await store!.openEncryptedBook(text, password);
+          imported = book.entries;
+          importedBooks = book.books;
         } else {
           throw const FormatException(
               'Bitte eine Exportdatei aus dem lokalen Adressbuch auswählen.');
@@ -275,7 +408,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
             builder: (context) => AlertDialog(
                   title: const Text('Lokales Adressbuch importieren'),
                   content: Text(
-                      '${imported.length} Einträge einlesen? Vorhandene Geräte-IDs werden übersprungen. Bestehende Einträge werden nicht überschrieben.'),
+                      '${imported.length} Einträge und ${importedBooks.length} lokale Adressbücher einlesen? Vorhandene Geräte-IDs werden übersprungen. Bestehende Einträge werden nicht überschrieben.'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -286,7 +419,8 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                   ],
                 ));
         if (confirmed != true || !mounted) return;
-        final added = await store!.importEntries(imported);
+        final added =
+            await store!.importEntries(imported, books: importedBooks);
         await reload();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -329,7 +463,8 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
   @override
   Widget build(BuildContext context) {
     final filtered = entries
-        .where((e) => '${e.name} ${e.id} ${e.group} ${e.notes}'
+        .where((e) => selectedBook == null || e.book == selectedBook)
+        .where((e) => '${e.name} ${e.id} ${e.group} ${e.notes} ${e.book}'
             .toLowerCase()
             .contains(query.toLowerCase()))
         .toList()
@@ -346,6 +481,10 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                 icon: const Icon(Icons.add),
                 label: const Text('Hinzufügen')),
             OutlinedButton.icon(
+                onPressed: busy || store == null ? null : addBook,
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: const Text('Unteradressbuch')),
+            OutlinedButton.icon(
                 onPressed: busy || store == null ? null : importBook,
                 icon: const Icon(Icons.file_open_outlined),
                 label: const Text('Importieren')),
@@ -357,6 +496,32 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                 tooltip: 'Neu laden',
                 onPressed: busy ? null : load,
                 icon: const Icon(Icons.refresh)),
+          ]),
+          Row(children: [
+            Expanded(
+                child: DropdownButtonFormField<String>(
+                    value: selectedBook ?? '\u0000all',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Lokales Adressbuch anzeigen'),
+                    items: [
+                      const DropdownMenuItem(
+                          value: '\u0000all',
+                          child: Text('Alle lokalen Einträge')),
+                      const DropdownMenuItem(
+                          value: '', child: Text('Oberste Ebene')),
+                      ...books.map(
+                          (b) => DropdownMenuItem(value: b, child: Text(b)))
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (value) => setState(() => selectedBook =
+                            value == '\u0000all' ? null : value))),
+            if (selectedBook != null && selectedBook!.isNotEmpty)
+              IconButton(
+                  tooltip: 'Leeres lokales Adressbuch löschen',
+                  onPressed: busy ? null : removeBook,
+                  icon: const Icon(Icons.folder_delete_outlined)),
           ]),
           TextField(
               onChanged: (value) => setState(() => query = value),
@@ -374,7 +539,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
               child: filtered.isEmpty
                   ? Center(
                       child: Text(query.isEmpty
-                          ? 'Noch keine lokalen Einträge. Über „Hinzufügen“ oder „Importieren“ beginnen.'
+                          ? 'Keine Einträge in dieser Ansicht. Über „Hinzufügen“ oder „Importieren“ beginnen.'
                           : 'Keine passenden Einträge.'))
                   : ListView.builder(
                       itemCount: filtered.length,
@@ -385,6 +550,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                             subtitle: Text(
                                 [
                                   entry.id,
+                                  if (entry.book.isNotEmpty) entry.book,
                                   if (entry.group.isNotEmpty) entry.group,
                                   if (entry.notes.isNotEmpty) entry.notes
                                 ].join(' · '),
