@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.61.20008');
-const g3DisplayVersion = String.fromEnvironment('G3_CLIENT_DISPLAY_VERSION', defaultValue: 'g3.6.1 Build 061126');
+const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.61.20024');
+const g3DisplayVersion = String.fromEnvironment('G3_CLIENT_DISPLAY_VERSION', defaultValue: 'g3.6.1 Build 081126');
 String g3VersionLabel(String version) {
   final m = RegExp(r'^1\.5\.0-g3\.(60|61)\.(\d+)$').firstMatch(version);
   if (m == null) return version;
