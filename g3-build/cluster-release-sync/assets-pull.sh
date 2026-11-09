@@ -48,6 +48,20 @@ for name in ['current.json','downloads.json']:
  if not local.exists():continue
  existing=json.loads(local.read_text());incoming=documents[name]
  assert version(incoming['version'])>=version(existing['version']),'Refusing release downgrade: '+name
+ # Soforthilfe can advance independently of the FullClient release.
+ if existing.get('adhoc'):
+  old=existing['adhoc'];new=incoming.get('adhoc')
+  assert isinstance(new,dict),'Missing existing Soforthilfe package'
+  def adhoc_version(item):
+   match=re.search(r'(\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?)-adhoc\.exe$',item.get('file',''),re.I)
+   assert match,'Invalid Soforthilfe package version'
+   value=match[1]
+   assert item.get('version',value)==value,'Inconsistent Soforthilfe package version'
+   return version(value)
+  assert adhoc_version(new)>=adhoc_version(old),'Refusing Soforthilfe downgrade: '+name
+  if adhoc_version(new)==adhoc_version(old):
+   assert all(new.get(k)==old.get(k) for k in ['file','size','sha256']),'Conflicting Soforthilfe package'
+   assert incoming.get('adhoc_source')==existing.get('adhoc_source'),'Conflicting Soforthilfe source'
  if version(incoming['version'])==version(existing['version']):
   for key in ['windows','windows_msi','host','host_msi','source']:
    assert incoming.get(key)==existing.get(key),'Conflicting immutable release: '+key
