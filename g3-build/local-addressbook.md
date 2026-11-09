@@ -137,3 +137,27 @@ sind die neue Versionskennung, der Vorversionshash 081126 und der Release-Workfl
 Die Update-Freigabe muss nach der Veröffentlichung aktuelle, passende Metadaten
 in `current.json` und `downloads.json` verwenden; eine Versionsroute allein
 veröffentlicht kein Angebot für den eingebauten Update-Button.
+
+## Einheitlicher Download-Stand im Cluster
+
+`g3-build/cluster-release-sync/assets-pull.sh` ist der geprüfte Download-Sync.
+Der Standby übernimmt neue Pakete und wählt den Katalog erst nach Größen-/SHA256-
+Prüfung aller Referenzen. Bereits freigegebene neuere Client- oder Plattform-
+Versionen dürfen durch einen älteren Peer-Katalog nicht zurückgestuft werden.
+Gleich benannte Versionen mit abweichenden Paketen werden ebenfalls abgewiesen.
+Ein inzwischen aktiver Schreibknoten übernimmt keine Peer-Auswahl.
+
+Aktive Installation auf beiden Servern:
+`/usr/local/lib/opslinx-release-sync/assets-pull.sh`, eingebunden durch
+`/etc/systemd/system/opslinx-ha-assets.service.d/30-release-monotonic.conf`.
+Der bestehende Sync-Timer bleibt zuständig; ein Austausch des älteren Scripts
+unter `/usr/local/sbin` überschreibt diese Einbindung nicht. Für weitere
+Änderungen an der Auswahl verwenden Veröffentlichung und Sync gemeinsam
+`/opt/opslinx-ha/assets.lock`. Die Veröffentlichung prüft anschließend beide
+Knoten sowie die HA-Adresse gegen dieselben Paket-Prüfsummen.
+
+Regressionen: gültiges Upgrade mit geprüften Paketen, abgewiesener Altstand,
+abgewiesene Paketbeschädigung und keine Übernahme nach Aktivierung des Writers.
+Die drei Tests laufen mit temporären Verzeichnissen und ändern keine echten
+Release-Auswahldateien. Client-Installationen erfolgen gemäß Projektvorgabe
+ausschließlich über die Update-Funktion der Software.
