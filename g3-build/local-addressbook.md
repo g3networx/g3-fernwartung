@@ -52,6 +52,13 @@ Der native Build übernimmt die vorhandenen Core- und Sitzungsschutztests mit
 neuer Versionskennung. Die bisherigen Releaseabläufe und veröffentlichten
 Pakete bleiben unverändert. Veröffentlichung und Rollout sind eigene Schritte.
 
+Die Setup-EXE ist ein Download-Bootstrapper: Sie lädt auch dann das MSI über
+`https://rust.g3nx.net/client/releases/<Version>/windows_msi`, wenn eine MSI-Datei
+neben ihr liegt. Vor Übergabe eines normal startbaren Installers müssen die
+signierten Pakete und das versionsgebundene Manifest veröffentlicht und über
+die öffentlichen Servernamen mit Größen-/SHA256-Prüfung abgerufen werden.
+Das Kopieren beider Dateien in denselben Ordner ersetzt diesen Schritt nicht.
+
 ## Bestehende betroffene Pfade
 
 - `flutter/lib/desktop/pages/connection_page.dart`: nur im bestehenden
