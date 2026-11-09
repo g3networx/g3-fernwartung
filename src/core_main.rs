@@ -109,7 +109,9 @@ pub fn core_main() -> Option<Vec<String>> {
         #[cfg(target_os = "windows")]
         let should_check_start_tray = crate::platform::is_self_service_running()
             && crate::platform::is_cur_exe_the_installed();
-        if should_check_start_tray && !crate::check_process("--tray", true) {
+        if should_check_start_tray &&
+            ((cfg!(windows) && matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host"))
+                || !crate::check_process("--tray", true)) {
             #[cfg(target_os = "linux")]
             hbb_common::allow_err!(crate::platform::check_autostart_config());
             hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
@@ -403,7 +405,9 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
         } else if args[0] == "--tray" {
-            if !crate::check_process("--tray", true) {
+            // The session mutex in start_tray is authoritative for g3 on Windows.
+            if (cfg!(windows) && matches!(crate::get_app_name().as_str(), "g3Fernwartung" | "g3Host"))
+                || !crate::check_process("--tray", true) {
                 crate::tray::start_tray();
             }
             return None;

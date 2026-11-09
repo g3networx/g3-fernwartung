@@ -30,7 +30,7 @@ def render(size):
 
 master=render(1024)
 master.save(root/'res/g3-remote-app.png')
-for path in ['res/icon.ico','flutter/windows/runner/resources/app_icon.ico']:
+for path in ['res/icon.ico','res/tray-icon.ico','flutter/windows/runner/resources/app_icon.ico']:
     master.save(root/path,format='ICO',sizes=[(s,s) for s in sizes if s<=256])
 for path,size in [('res/icon.png',256),('res/32x32.png',32),('res/64x64.png',64),('res/128x128.png',128),('res/128x128@2x.png',256),('res/mac-icon.png',1024)]:
     render(size).save(root/path)

@@ -1,8 +1,8 @@
 {
-  "version": "1.5.0-g3.61.20024",
-  "displayVersion": "g3.6.1 Build 081126",
-  "buildDate": "2026-11-08",
-  "windowsVersion": "1.61.20024",
+  "version": "1.5.0-g3.61.20032",
+  "displayVersion": "g3.6.1 Build 091126",
+  "buildDate": "2026-11-09",
+  "windowsVersion": "1.61.20032",
   "dailyInternalSequence": 0,
   "feature": "local-fullclient-addressbook"
 }

@@ -112,3 +112,28 @@ Validierung: 18 Adressbuch-/Kryptografie-/Widgettests erfolgreich; gezielte
 Dart-Analyse aller sechs betroffenen Dart-Dateien ohne Befund. Die drei neuen
 Tests prüfen verschachtelte/leere Adressbücher samt Kennworttransfer, lokale
 Ansicht/Neuanlage und öffentliches Kopieren ohne Servermutation/Überschreiben.
+
+## Icon-Korrektur, Build 091126
+
+Die bisherige Tray-ICO enthielt ein anderes Motiv als die EXE-Ressource.
+Beide enthalten jetzt dieselbe genehmigte Grafik einschließlich aller
+Windows-Größen. `generate-app-icon.py` hält beide Dateien künftig zusammen;
+`check-windows-icons.py` prüft dies vor jedem Release-Build.
+
+`src/core_main.rs` lässt den Windows-g3-Tray durch den bereits vorhandenen
+Sitzungsmutex entscheiden, ob er starten darf. Die vorgelagerte Prozesssuche
+kann dessen Entscheidung nicht mehr verhindern. Andere Plattformen und
+Produktnamen behalten ihren bisherigen Startpfad.
+
+`flutter/windows/runner/main.cpp` setzt vor dem ersten Fenster eine feste
+AppUserModelID je g3-Produkt; die Vorschau erhält eine eigene ID. Die
+Startmenü-Verknüpfung aus `package-msi.py` erhält dieselbe Eigenschaft.
+`CMakeLists.txt` verknüpft dafür shell32. Der MSI-Inhaltsprüfer liest die
+tatsächlich erzeugte MsiShortcutProperty-Tabelle und prüft die Produkt-ID.
+Grundlage: https://learn.microsoft.com/en-us/windows/win32/shell/appids
+
+Dies sind die bestehenden Laufzeit-/Paketpfade der Korrektur. Weitere Änderungen
+sind die neue Versionskennung, der Vorversionshash 081126 und der Release-Workflow.
+Die Update-Freigabe muss nach der Veröffentlichung aktuelle, passende Metadaten
+in `current.json` und `downloads.json` verwenden; eine Versionsroute allein
+veröffentlicht kein Angebot für den eingebauten Update-Button.

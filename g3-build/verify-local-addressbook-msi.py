@@ -50,6 +50,8 @@ for kind,file in [('windows','g3-OpsLinX-'+version+'-install.msi'),('host','g3-O
  upgrade_code=[string(r,1) for r in rows("SELECT `Value` FROM `Property` WHERE `Property`='UpgradeCode'")]
  assert len(upgrade_code)==1
  expected_app='g3Host' if kind=='host' else 'g3Fernwartung'
+ shortcut_ids=[(string(r,1),string(r,2)) for r in rows('SELECT `PropertyKey`,`PropVariantValue` FROM `MsiShortcutProperty`')]
+ assert shortcut_ids==[('System.AppUserModel.ID','g3NetworX.OpsLinX.'+expected_app)],'Shortcut taskbar identity differs from runtime'
  services=[(string(r,1),string(r,2),string(r,3)) for r in rows('SELECT `Name`,`Arguments`,`StartType` FROM `ServiceInstall`')]
  assert services==[(expected_app,'--service','2')],'MSI variant or service configuration differs'
  tables={string(r,1) for r in rows('SELECT `Name` FROM `_Tables`')}

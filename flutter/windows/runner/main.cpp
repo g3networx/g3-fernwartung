@@ -3,6 +3,7 @@
 #include <tchar.h>
 #include <uni_links_desktop/uni_links_desktop_plugin.h>
 #include <windows.h>
+#include <shobjidl.h>
 
 #include <algorithm>
 #include <iostream>
@@ -86,6 +87,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     wchar_t app_name_buffer[512] = {0};
     if (get_rustdesk_app_name(app_name_buffer, 512) == 0) {
       app_name = std::wstring(app_name_buffer);
+    }
+  }
+
+  if (app_name == L"g3Fernwartung" || app_name == L"g3Host" ||
+      app_name == L"g3Soforthilfe") {
+    std::wstring app_id = L"g3NetworX.OpsLinX." + app_name;
+    if (std::find(command_line_arguments.begin(), command_line_arguments.end(),
+                  "--g3-addressbook-preview") != command_line_arguments.end()) {
+      app_id += L".Preview";
+    }
+    const HRESULT result = SetCurrentProcessExplicitAppUserModelID(app_id.c_str());
+    if (FAILED(result)) {
+      std::cerr << "Failed to set g3 taskbar identity: " << result << std::endl;
     }
   }
 
