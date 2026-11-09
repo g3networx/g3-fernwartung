@@ -30,7 +30,7 @@ jobs:
         \ req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})\n\
         \ with urllib.request.urlopen(req,timeout=30) as response:data=json.load(response)\n for artifact in data.get('artifacts',[]):\n\
         \  match=re.fullmatch(r'g3-(macos|linux)-(x86_64|aarch64)-[a-f0-9]{40}',artifact['name'])\n  if not match or artifact['expired']:continue\n\
-        \  kind,arch=match.groups();runner={('macos','x86_64'):'macos-15-intel',('macos','aarch64'):'macos-15',('linux','x86_64'):'ubuntu-22.04',('linux','aarch64'):'ubuntu-22.04-arm'}[(kind,arch)]\n\
+        \  kind,arch=match.groups();runner={('macos','x86_64'):'macos-15-intel',('macos','aarch64'):'macos-26',('linux','x86_64'):'ubuntu-22.04',('linux','aarch64'):'ubuntu-22.04-arm'}[(kind,arch)]\n\
         \  rows.append(dict(platform=kind,arch=arch,runner=runner,source_run=rid,artifact=artifact['name'])) if rid==os.environ['MACOS_RUN' if kind=='macos' else 'LINUX_RUN'] else None\nwith open(os.environ['GITHUB_OUTPUT'],'a')\
         \ as out:\n out.write('ready='+str(bool(rows)).lower()+'\\n');out.write('matrix='+json.dumps({'include':rows})+'\\n')\nprint('Architecture\
         \ packages found:',len(rows))\nPY\n"

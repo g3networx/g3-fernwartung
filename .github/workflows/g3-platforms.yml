@@ -9,6 +9,7 @@ name: g3 OpsLinX g3.6.1 Linux and macOS build
         - all
         - macos
         - linux
+        - macos_arm64
         default: all
 permissions:
   contents: read
@@ -34,17 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job:
-        - target: x86_64-apple-darwin
-          os: macos-15-intel
-          extra-build-args: ''
-          arch: x86_64
-          vcpkg-triplet: x64-osx
-        - target: aarch64-apple-darwin
-          os: macos-15
-          extra-build-args: --screencapturekit
-          arch: aarch64
-          vcpkg-triplet: arm64-osx
+        job: ${{ fromJSON(inputs.build_scope == 'macos_arm64' && '[{"target":"aarch64-apple-darwin","os":"macos-26","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]' || '[{"target":"x86_64-apple-darwin","os":"macos-15-intel","extra-build-args":"","arch":"x86_64","vcpkg-triplet":"x64-osx"},{"target":"aarch64-apple-darwin","os":"macos-15","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]') }}
     steps:
     - name: Checkout source code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -325,4 +316,4 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     timeout-minutes: 360
-    if: ${{ inputs.build_scope != 'macos' }}
+    if: ${{ inputs.build_scope == 'all' || inputs.build_scope == 'linux' }}
