@@ -21,7 +21,9 @@ class _G3AddressBooksState extends State<G3AddressBooks> {
   int selected = 0;
   final localKey = GlobalKey<_G3LocalAddressBookState>();
   @override
-  Widget build(BuildContext context) => DefaultTabController(
+  Widget build(BuildContext context) => !Platform.isWindows
+      ? widget.remote
+      : DefaultTabController(
         length: 2,
         child: Column(children: [
           TabBar(

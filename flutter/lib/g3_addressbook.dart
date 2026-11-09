@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'g3_addressbook_api.dart';
@@ -519,7 +520,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Löschen')),
             ]),
-          TextButton.icon(
+          if (Platform.isWindows || widget.localStore != null) TextButton.icon(
               onPressed: busy ? null : () => copyToLocal(d),
               icon: const Icon(Icons.copy_outlined),
               label: const Text('In lokales Adressbuch kopieren')),
