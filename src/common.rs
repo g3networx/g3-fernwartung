@@ -1124,6 +1124,9 @@ pub fn get_custom_rendezvous_server(custom: String) -> String {
 
 #[inline]
 pub fn get_api_server(api: String, custom: String) -> String {
+    if crate::g3_api_policy::skip_inferred_rustdesk_api(&get_app_name(), &api) {
+        return String::new();
+    }
     if Config::no_register_device() {
         return "".to_owned();
     }

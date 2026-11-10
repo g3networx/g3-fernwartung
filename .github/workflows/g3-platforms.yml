@@ -24,7 +24,7 @@ env:
   VCPKG_COMMIT_ID: 9e593bb18ea69cc5095e012465dcd675a822ed0d
   VCPKG_CMAKE_VERSION: 4.3.0
   UPLOAD_ARTIFACT: 'true'
-  VERSION: 1.5.0-g3.61.20032
+  VERSION: 1.5.0-g3.61.20040
   CARGO_BUILD_JOBS: '2'
   VCPKG_MAX_CONCURRENCY: '2'
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: ${{ fromJSON(inputs.build_scope == 'macos_arm64' && '[{"target":"aarch64-apple-darwin","os":"macos-26","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]' || '[{"target":"x86_64-apple-darwin","os":"macos-15-intel","extra-build-args":"","arch":"x86_64","vcpkg-triplet":"x64-osx"},{"target":"aarch64-apple-darwin","os":"macos-15","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]') }}
+        job: ${{ fromJSON(inputs.build_scope == 'macos_arm64' && '[{"target":"aarch64-apple-darwin","os":"macos-26","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]' || '[{"target":"x86_64-apple-darwin","os":"macos-15-intel","extra-build-args":"","arch":"x86_64","vcpkg-triplet":"x64-osx"},{"target":"aarch64-apple-darwin","os":"macos-26","extra-build-args":"--screencapturekit","arch":"aarch64","vcpkg-triplet":"arm64-osx"}]') }}
     steps:
     - name: Checkout source code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

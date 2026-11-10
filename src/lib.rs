@@ -77,6 +77,7 @@ mod kcp_stream;
 mod g3_sessions;
 mod g3_self_connection;
 mod g3_bootstrap;
+mod g3_api_policy;
 
 mod g3_passwords;
 #[cfg(windows)]

@@ -1,6 +1,6 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3.6.1 Build 091126 release
+name: g3.6.1 Build 101126 release
 on:
   push:
     branches: [g3-local-addressbook-20261106]
@@ -65,10 +65,10 @@ jobs:
       - name: Compile HA native core and verify Windows account handling
         shell: pwsh
         run: ./g3-build/build-local-addressbook-core.ps1
-      - name: Build g3.6.1 Build 091126 Flutter frontend and run focused tests
+      - name: Build g3.6.1 Build 101126 Flutter frontend and run focused tests
         shell: pwsh
         run: ./g3-build/build-local-addressbook-ui.ps1
-      - name: Package g3.6.1 Build 091126 Host and FullClient and test installer regressions
+      - name: Package g3.6.1 Build 101126 Host and FullClient and test installer regressions
         shell: pwsh
         run: |
           python g3-build/package-version.py
@@ -81,6 +81,9 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Setup progress regression failed'}
           python g3-build/test-update-session-gate.py
           if($LASTEXITCODE -ne 0){throw 'Session guard regression failed'}
+      - name: Preserve exact runtime for portable Soforthilfe signing
+        shell: pwsh
+        run: Compress-Archive flutter/build/windows/x64/runner/Release/* outputs/g361-runtime-payload.zip
       - name: Verify MSI metadata, embedded runtime and variant preservation without installation
         shell: pwsh
         run: python g3-build/verify-local-addressbook-msi.py
