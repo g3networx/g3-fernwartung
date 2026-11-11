@@ -1,4 +1,4 @@
-name: Sign OpsLinX Android 111126.2
+name: Sign OpsLinX Android 111126.3
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -19,27 +19,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          run=43095615417
+          commit=ed7bc0129d9147dcae08b62f1fe74d76283e3c45
           while true; do
-            active=0
-            for candidate in \
-              43051699270:259dc25dc095490fb7343e1cdee9f0b2241ccb14:g3-android-review \
-              43048650393:e10e7ef086a3849e0bc6229329569ba00fa34c0b:g3-android-lab; do
-              IFS=: read -r run commit branch <<< "$candidate"
-              build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
-              jq -e --arg commit "$commit" --arg branch "$branch" '.head_sha == $commit and .head_branch == $branch' <<< "$build" >/dev/null
-              if [[ $(jq -r .status <<< "$build") != completed ]]; then
-                active=1
-                continue
-              fi
-              if [[ $(jq -r .conclusion <<< "$build") == success ]]; then
-                artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
-                printf 'run=%s\nartifact=%s\n' "$run" "$artifact" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            done
-            [[ $active == 1 ]] || { echo 'Both reviewed Android builds failed.'; exit 1; }
+            build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
+            jq -e --arg commit "$commit" '.head_sha == $commit and .head_branch == "g3-android-review"' <<< "$build" >/dev/null
+            [[ $(jq -r .status <<< "$build") == completed ]] && break
             sleep 30
           done
+          jq -e '.conclusion == "success"' <<< "$build" >/dev/null
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
+          printf 'run=%s\nartifact=%s\n' "$run" "$artifact" >> "$GITHUB_OUTPUT"
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
     needs: select-apk
@@ -67,8 +57,9 @@ jobs:
           src=unsigned/app-arm64-v8a-release.apk
           badging=$("${sdk%/*}/aapt" dump badging "$src")
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
-          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22052' versionName='3.6.2'" <<< "$badging" \
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22054' versionName='3.6.2'" <<< "$badging" \
             || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
+          grep -Fxq "application-label:'g3 OpsLinX'" <<< "$badging" || { echo 'Unexpected APK display name.'; exit 1; }
           python - "$work" <<'PY'
           import base64, json, os, pathlib, sys
           directory = pathlib.Path(sys.argv[1])
@@ -78,7 +69,7 @@ jobs:
           PY
           unset OPSLINX_ANDROID_SIGNING
           mkdir signed
-          apk=signed/g3-OpsLinX-Android-1.5.0-g3.62.20052-arm64.apk
+          apk=signed/g3-OpsLinX-Android-1.5.0-g3.62.20054-arm64.apk
           "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android \
             --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "$apk" "$src"
           "$sdk" verify --verbose --print-certs "$apk" | tee "$work/verification"
@@ -90,7 +81,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.0-g3.62.20052', 'version_code': 22052, 'file': apk.name,
+          item = {'version': '1.5.0-g3.62.20054', 'version_code': 22054, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
