@@ -40,7 +40,7 @@ class _G3RelaySettingState extends State<G3RelaySetting> {
   Widget build(BuildContext context) => SwitchListTile(
         title: const Text('Immer über Relais verbinden'),
         subtitle: const Text(
-            'Ausgeschaltet versucht der Client zuerst eine Direktverbindung.'),
+            'Ausgeschaltet: direkt im eigenen Netz, sonst über Relais.'),
         value: _enabled,
         onChanged: _saving || isOptionFixed(_relaySetting) ? null : _setEnabled,
       );

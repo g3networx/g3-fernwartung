@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     ffi::c_void,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     ops::Deref,
     str::FromStr,
     sync::{
@@ -366,6 +366,49 @@ fn opslinx_always_relay() -> bool {
     LocalConfig::get_option("g3-always-relay") == "Y"
 }
 
+fn is_lan_ipv4_peer(local: Ipv4Addr, peer: Ipv4Addr, prefix: u8) -> bool {
+    if local == peer
+        || !(1..32).contains(&prefix)
+        || local.is_unspecified()
+        || local.is_loopback()
+        || peer.is_unspecified()
+        || peer.is_loopback()
+        || peer.is_multicast()
+        || peer.is_broadcast()
+    {
+        return false;
+    }
+    let mask = u32::MAX << (32 - prefix);
+    let peer = u32::from(peer);
+    let host = peer & !mask;
+    (u32::from(local) & mask) == (peer & mask) && (prefix == 31 || (host != 0 && host != !mask))
+}
+
+#[cfg(not(all(target_os = "ios", target_arch = "x86_64")))]
+fn is_on_opslinx_lan(is_local: bool, local: SocketAddr, peer: SocketAddr) -> bool {
+    if !is_local || peer.port() == 0 {
+        return false;
+    }
+    let ipv4 = |address| match address {
+        IpAddr::V4(ip) => Some(ip),
+        IpAddr::V6(ip) => ip.to_ipv4_mapped(),
+    };
+    let (Some(local), Some(peer)) = (ipv4(local.ip()), ipv4(peer.ip())) else {
+        return false;
+    };
+    default_net::get_interfaces().iter().any(|interface| {
+        interface.ipv4.iter().any(|network| {
+            network.addr == local && is_lan_ipv4_peer(local, peer, network.prefix_len)
+        })
+    })
+}
+
+// Interface enumeration is unavailable on the x86_64 iOS simulator (see lan.rs).
+#[cfg(all(target_os = "ios", target_arch = "x86_64"))]
+fn is_on_opslinx_lan(_: bool, _: SocketAddr, _: SocketAddr) -> bool {
+    false
+}
+
 // The first value can be saved to the peer; the second applies to this connection.
 fn relay_preferences(
     opslinx: bool,
@@ -383,7 +426,7 @@ fn relay_preferences(
 
 #[cfg(test)]
 mod relay_preference_tests {
-    use super::relay_preferences;
+    use super::{is_lan_ipv4_peer, relay_preferences};
 
     #[test]
     fn opslinx_direct_first_ignores_saved_address_book_override() {
@@ -395,6 +438,17 @@ mod relay_preference_tests {
         assert_eq!(relay_preferences(true, true, false, false), (false, true));
         assert_eq!(relay_preferences(true, false, false, true), (false, true));
         assert_eq!(relay_preferences(false, false, true, false), (true, true));
+    }
+
+    #[test]
+    fn lan_peer_must_be_a_distinct_unicast_address_on_the_same_network() {
+        let local = "10.42.10.19".parse().unwrap();
+        assert!(is_lan_ipv4_peer(local, "10.42.10.3".parse().unwrap(), 23));
+        assert!(is_lan_ipv4_peer(local, "10.42.11.3".parse().unwrap(), 23));
+        assert!(!is_lan_ipv4_peer(local, "10.42.12.3".parse().unwrap(), 23));
+        assert!(!is_lan_ipv4_peer(local, "10.42.11.255".parse().unwrap(), 23));
+        assert!(!is_lan_ipv4_peer(local, local, 23));
+        assert!(!is_lan_ipv4_peer(local, "10.42.10.3".parse().unwrap(), 0));
     }
 }
 
@@ -538,7 +592,10 @@ impl Client {
 
         // Same relay gate as the v6 socket below: under any forced relay the v6 punch cannot
         // be used, so probing v6 reachability is wasted work on every such connection.
-        if crate::get_ipv6_punch_enabled() && !interface.is_force_relay() {
+        // OpsLinX checks the rendezvous LAN result before trying a direct TCP connection.
+        // The other direct transports cannot establish that the peer is on that LAN.
+        let allow_non_lan_punch = !is_opslinx_client();
+        if allow_non_lan_punch && crate::get_ipv6_punch_enabled() && !interface.is_force_relay() {
             crate::test_ipv6().await;
         }
 
@@ -546,7 +603,7 @@ impl Client {
         let udp =
         // no need to care about multiple rendezvous servers case, since it is acutally not used any more.
         // Shared state for UDP NAT test result
-        if crate::get_udp_punch_enabled() && !interface.is_force_relay() {
+        if allow_non_lan_punch && crate::get_udp_punch_enabled() && !interface.is_force_relay() {
             if let Ok((socket, addr)) = new_direct_udp_for_unverified(&rendezvous_server).await {
                 let udp_port = Arc::new(Mutex::new(0));
                 let up_cloned = udp_port.clone();
@@ -564,15 +621,16 @@ impl Client {
         };
         // Under force-relay a direct IPv6 path is not allowed, so don't bind the v6 socket;
         // the controlled side likewise skips v6 when relaying.
-        let ipv6 = if crate::get_ipv6_punch_enabled() && !interface.is_force_relay() {
-            crate::get_ipv6_socket().await
-        } else {
-            None
-        };
+        let ipv6 =
+            if allow_non_lan_punch && crate::get_ipv6_punch_enabled() && !interface.is_force_relay() {
+                crate::get_ipv6_socket().await
+            } else {
+                None
+            };
         // WebRTC uses its own ICE sockets and does not depend on the legacy UDP punch socket.
         // When this request carries an offer, `_start_inner` keeps its rendezvous socket solely
         // for trickle signaling; a separate offer-less request owns any TCP punch attempt.
-        let webrtc_offerer = if Self::should_create_webrtc_offerer(&interface) {
+        let webrtc_offerer = if allow_non_lan_punch && Self::should_create_webrtc_offerer(&interface) {
             // ICE policy follows relay-by-POLICY, not force_relay: under WebSocket the
             // latter is set for the classic paths, but ICE opens its own sockets and may
             // still go direct - that is the only P2P path ws deployments have.
@@ -899,7 +957,9 @@ impl Client {
         let mut is_local = false;
         let mut feedback = 0;
         use hbb_common::protobuf::Enum;
-        let nat_type = if interface.is_force_relay() {
+        // The rendezvous server still requests a LAN address for an intranet peer.
+        // For other peers this selects the existing relay branch on the receiving client.
+        let nat_type = if interface.is_force_relay() || is_opslinx_client() {
             NatType::SYMMETRIC
         } else {
             NatType::from_i32(my_nat_type).unwrap_or(NatType::UNKNOWN_NAT)
@@ -977,7 +1037,7 @@ impl Client {
             .map(|stream| stream.local_endpoint().to_owned())
             .unwrap_or_default();
         let allow_tcp_punch = !interface.is_force_relay()
-            && tcp_punch_allowed()
+            && (is_opslinx_client() || tcp_punch_allowed())
             && request_allows_tcp_punch(&webrtc_sdp_offer);
         // Every direct transport this round carries, not one of them: a round can carry several
         // at once (a NAT port and an offer and a v6 address), and since the TCP punch became a
@@ -1515,7 +1575,11 @@ impl Client {
         // Each attempt carries whether its path is direct (4th field). TCP/UDP/IPv6 punch are
         // always direct; WebRTC is direct only when ICE nominated a non-TURN pair.
         let mut direct_futures = Vec::new();
-        if allow_tcp_punch {
+        let try_tcp = !is_opslinx_client()
+            || (!interface.is_force_relay()
+                && !signed_id_pk.is_empty()
+                && is_on_opslinx_lan(is_local, local_addr, peer));
+        if allow_tcp_punch && try_tcp {
             let fut = connect_tcp_local(peer, Some(local_addr), connect_timeout);
             direct_futures.push(
                 async move {
@@ -1629,15 +1693,24 @@ impl Client {
             start.elapsed(),
             punch_type
         );
-        let res = Self::secure_connection(peer_id, signed_id_pk.clone(), key, &mut conn).await;
+        let verify_lan_identity = is_opslinx_client() && direct;
+        let handshake = Self::secure_connection(peer_id, signed_id_pk.clone(), key, &mut conn);
+        let res = if verify_lan_identity {
+            match timeout(connect_timeout, handshake).await {
+                Ok(Ok(pk)) if pk.is_some() && conn.is_secured() => Ok(pk),
+                Ok(Err(error)) => Err(error),
+                _ => Err(anyhow!("Could not verify the device ID on the LAN connection")),
+            }
+        } else {
+            handshake.await
+        };
         let pk: Option<Vec<u8>> = match res {
             Ok(pk) => pk,
-            Err(e) if typ == "WebRTC" && !relay_server.is_empty() => {
-                // WebRTC won the race but identity/DTLS binding failed; fall back to a freshly
-                // coordinated relay instead of failing the whole attempt. The guard is dropped
-                // first so the bad pc is closed promptly.
-                log::warn!("WebRTC secure handshake failed ({}), falling back to relay", e);
+            Err(e) if (typ == "WebRTC" || verify_lan_identity) && !relay_server.is_empty() => {
+                // Drop the unverified transport before trying the existing relay path.
+                log::warn!("{} secure handshake failed ({}), falling back to relay", typ, e);
                 drop(webrtc_guard.take());
+                drop(conn);
                 match Self::request_relay(
                     peer_id,
                     relay_server.to_owned(),
@@ -1669,7 +1742,7 @@ impl Client {
                     Err(relay_e) => {
                         interface.update_direct(Some(direct));
                         bail!(
-                            "WebRTC secure failed ({}); relay fallback also failed: {}",
+                            "Direct handshake failed ({}); relay fallback also failed: {}",
                             e,
                             relay_e
                         );
