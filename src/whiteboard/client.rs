@@ -40,13 +40,10 @@ pub fn get_key_cursor(conn_id: i32) -> String {
 }
 
 pub fn register_whiteboard(k: String) {
-    std::thread::spawn(|| {
-        allow_err!(start_whiteboard_());
-    });
     let mut conns = CONNS.write().unwrap();
     if !conns.contains_key(&k) {
         conns.insert(
-            k,
+            k.clone(),
             Conn {
                 last_cursor_pos: (0.0, 0.0),
                 last_cursor_evt: LastCursorEvent {
@@ -57,6 +54,10 @@ pub fn register_whiteboard(k: String) {
             },
         );
     }
+    drop(conns);
+    std::thread::spawn(move || {
+        allow_err!(start_whiteboard_(&k));
+    });
 }
 
 pub fn unregister_whiteboard(k: String) {
@@ -134,19 +135,26 @@ fn tx_send_event(conn: &mut Conn, k: String, event: CustomEvent) {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn start_whiteboard_() -> ResultType<()> {
+async fn start_whiteboard_(key: &str) -> ResultType<()> {
+    // The connection must be able to hide its cursor and close while the
+    // target is on the Windows sign-in screen.
+    while crate::platform::is_prelogin() {
+        if !CONNS.read().unwrap().contains_key(key) {
+            return Ok(());
+        }
+        sleep(1.).await;
+    }
+    let conns = CONNS.read().unwrap();
+    if !conns.contains_key(key) {
+        return Ok(());
+    }
     let mut tx_whiteboard = TX_WHITEBOARD.write().unwrap();
+    drop(conns);
     if tx_whiteboard.is_some() {
         log::warn!("Whiteboard already started");
         return Ok(());
     }
 
-    loop {
-        if !crate::platform::is_prelogin() {
-            break;
-        }
-        sleep(1.).await;
-    }
     let mut stream = None;
     if let Ok(s) = ipc::connect(1000, "_whiteboard").await {
         stream = Some(s);
