@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
+import 'package:flutter_hbb/common/widgets/g3_relay_setting.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
@@ -55,6 +56,7 @@ enum SettingsTabKey {
   general,
   safety,
   network,
+  connection,
   display,
   account,
   printer,
@@ -74,6 +76,7 @@ class DesktopSettingPage extends StatefulWidget {
     if (!bind.isDisableSettings() &&
         bind.mainGetBuildinOption(key: kOptionHideNetworkSetting) != 'Y')
       SettingsTabKey.network,
+    if (showG3RelaySetting) SettingsTabKey.connection,
     if (!bind.isIncomingOnly()) SettingsTabKey.display,
     if (!bind.isDisableAccount()) SettingsTabKey.account,
     if (isWindows &&
@@ -199,6 +202,10 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
           settingTabs
               .add(_TabInfo(tab, 'Network', Icons.link_outlined, Icons.link));
           break;
+        case SettingsTabKey.connection:
+          settingTabs
+              .add(_TabInfo(tab, 'Verbindung', Icons.link_outlined, Icons.link));
+          break;
         case SettingsTabKey.display:
           settingTabs.add(_TabInfo(tab, 'Display',
               Icons.desktop_windows_outlined, Icons.desktop_windows));
@@ -232,6 +239,11 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
           break;
         case SettingsTabKey.network:
           children.add(const _Network());
+          break;
+        case SettingsTabKey.connection:
+          children.add(ListView(children: [
+            _Card(title: 'Verbindung', children: [const G3RelaySetting()]),
+          ]));
           break;
         case SettingsTabKey.display:
           children.add(const _Display());

@@ -355,6 +355,49 @@ fn tcp_punch_allowed() -> bool {
             || crate::get_webrtc_enabled())
 }
 
+fn is_opslinx_client() -> bool {
+    matches!(
+        crate::get_app_name().as_str(),
+        "g3Fernwartung" | "g3Host" | "g3Soforthilfe"
+    )
+}
+
+fn opslinx_always_relay() -> bool {
+    LocalConfig::get_option("g3-always-relay") == "Y"
+}
+
+// The first value can be saved to the peer; the second applies to this connection.
+fn relay_preferences(
+    opslinx: bool,
+    always_relay: bool,
+    saved_peer_relay: bool,
+    requested_relay: bool,
+) -> (bool, bool) {
+    if opslinx {
+        (false, always_relay || requested_relay)
+    } else {
+        let peer_relay = saved_peer_relay || requested_relay;
+        (peer_relay, peer_relay)
+    }
+}
+
+#[cfg(test)]
+mod relay_preference_tests {
+    use super::relay_preferences;
+
+    #[test]
+    fn opslinx_direct_first_ignores_saved_address_book_override() {
+        assert_eq!(relay_preferences(true, false, true, false), (false, false));
+    }
+
+    #[test]
+    fn opslinx_relay_setting_and_explicit_requests_stay_out_of_peer_config() {
+        assert_eq!(relay_preferences(true, true, false, false), (false, true));
+        assert_eq!(relay_preferences(true, false, false, true), (false, true));
+        assert_eq!(relay_preferences(false, false, true, false), (true, true));
+    }
+}
+
 impl Client {
     const CLIENT_CLIPBOARD_NAME: &'static str = "client-clipboard";
 
@@ -433,6 +476,12 @@ impl Client {
     )> {
         if config::is_incoming_only() && !is_switch_sides_back(conn_type, &interface).await {
             bail!("Incoming only mode");
+        }
+        if is_opslinx_client()
+            && opslinx_always_relay()
+            && (hbb_common::is_ip_str(peer) || hbb_common::is_domain_port_str(peer))
+        {
+            bail!("Immer über Relais verbinden ist aktiv. Bitte die Geräte-ID eingeben.");
         }
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
@@ -927,7 +976,9 @@ impl Client {
             .and_then(|g| g.stream())
             .map(|stream| stream.local_endpoint().to_owned())
             .unwrap_or_default();
-        let allow_tcp_punch = tcp_punch_allowed() && request_allows_tcp_punch(&webrtc_sdp_offer);
+        let allow_tcp_punch = !interface.is_force_relay()
+            && tcp_punch_allowed()
+            && request_allows_tcp_punch(&webrtc_sdp_offer);
         // Every direct transport this round carries, not one of them: a round can carry several
         // at once (a NAT port and an offer and a v6 address), and since the TCP punch became a
         // switch it can carry none — a single name had to misreport both. `relay` is not a punch,
@@ -3027,10 +3078,16 @@ impl LoginConfigHandler {
         // Three scopes: what was decided about this PEER, what this CLIENT is set up as (proxy),
         // and what its TRANSPORT forces (ws). Only the first may be written back to the peer's
         // config — persisting the others would make a local setup a permanent peer property.
-        self.peer_relay =
-            config::option2bool("force-always-relay", &self.get_option("force-always-relay"))
-                || force_relay;
-        self.policy_relay = self.peer_relay || Config::is_proxy();
+        let saved_peer_relay =
+            config::option2bool("force-always-relay", &self.get_option("force-always-relay"));
+        let (peer_relay, connection_relay) = relay_preferences(
+            is_opslinx_client(),
+            opslinx_always_relay(),
+            saved_peer_relay,
+            force_relay,
+        );
+        self.peer_relay = peer_relay;
+        self.policy_relay = connection_relay || Config::is_proxy();
         self.force_relay = self.policy_relay || use_ws();
         if let Some((real_id, server, key)) = &self.other_server {
             let other_server_key = self.get_option("other-server-key");
