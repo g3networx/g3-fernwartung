@@ -8,7 +8,7 @@ internal static class G3ProcessExitRegressionTests {
  static Process Start(string command){return Process.Start(new ProcessStartInfo(Environment.GetEnvironmentVariable("SystemRoot")+@"\System32\cmd.exe","/c "+command){UseShellExecute=false,CreateNoWindow=true});}
  public static int Main(){
   using(var live=Start("ping -n 3 127.0.0.1 >nul")){var held=live.Handle;Require(SetupForm.ProcessCouldBeActive(live.Id),"live process remains busy");live.WaitForExit();}
-  foreach(int code in new[]{0,7})using(var exited=Start("exit /b "+code)){var held=exited.Handle;exited.WaitForExit();Require(!SetupForm.ProcessCouldBeActive(exited.Id),"confirmed exited process "+code+" does not block");}
+  foreach(int code in new[]{0,7,259})using(var exited=Start("exit /b "+code)){var held=exited.Handle;exited.WaitForExit();Require(!SetupForm.ProcessCouldBeActive(exited.Id),"confirmed exited process "+code+" does not block");}
   Require(SetupForm.ProcessCouldBeActive(int.MaxValue),"unreadable process state remains busy");
   return 0;
  }

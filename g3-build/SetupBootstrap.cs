@@ -34,7 +34,18 @@ using Microsoft.Win32.SafeHandles;
 
 [assembly:AssemblyVersion("1.5.29.0")]
 
-internal sealed class UpdateBusyException:Exception {public UpdateBusyException():base("Update zurückgestellt: Eine Fernwartung oder ein anderer Client ist noch aktiv. Bitte nach Sitzungsende erneut versuchen.") {}}
+internal sealed class UpdateBusyException:Exception {
+ internal const string Gate="session_gate", Unrecognized="unrecognized_client", Shutdown="client_shutdown", Installer="windows_installer";
+ internal readonly string Reason;
+ public UpdateBusyException(string reason=Gate):base(Describe(reason)){Reason=reason;}
+ static string Describe(string reason){switch(reason){
+  case Gate:return "Update zurückgestellt: Eine Fernwartung oder ein paralleles Update hält die Sitzungssperre. Bitte anschließend erneut versuchen.";
+  case Unrecognized:return "Update zurückgestellt: Die installierte Client-Version unterstützt keine überprüfbare Sitzungsfreigabe. Bitte den Client vollständig beenden und erneut versuchen.";
+  case Shutdown:return "Update zurückgestellt: Ein Client-Prozess hat die Programmdateien noch nicht freigegeben. Bitte erneut versuchen.";
+  case Installer:return "Update zurückgestellt: Der Windows Installer ist durch eine andere Installation belegt.";
+  default:return "Update zurückgestellt. Der Grund steht im Installationsprotokoll unter ProgramData.";
+ }}
+}
 internal sealed class UpdateSessionGate:IDisposable {
  readonly FileStream file;
  [StructLayout(LayoutKind.Sequential)]struct Overlapped {public UIntPtr Internal,InternalHigh;public uint Offset,OffsetHigh;public IntPtr Event;}
@@ -138,7 +149,7 @@ internal sealed class SetupForm:Form {
    workerLog=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version,"install.log");
    status.Text="Windows bereitet die Installation vor und wartet auf das sichere Sitzungsende …";
 
-   await Task.Run(()=>p.WaitForExit());if(p.ExitCode==1618)throw new UpdateBusyException();if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
+   await Task.Run(()=>p.WaitForExit());if(p.ExitCode==1618)throw new UpdateBusyException(ReadBusyReason());if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
 
   }
 
@@ -152,6 +163,13 @@ internal sealed class SetupForm:Form {
  }catch(Exception ex){working=false;progressTimer.Stop();workerLog=null;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;detail.Text="Laufzeit: "+elapsed.Elapsed.ToString(@"mm\:ss");start.Enabled=true;start.Text="Erneut versuchen";if(previous>0&&previousHash!=null)try{if(File.Exists(InstalledExe)&&Digest(InstalledExe)==previousHash&&!PreviousRunning())OpenClient();}catch{}}}
 
  bool PreviousRunning(){try{using(var p=Process.GetProcessById(previous))return !p.HasExited;}catch(ArgumentException){return false;}}
+ string ReadBusyReason(){try{
+  var path=Path.Combine(Path.GetDirectoryName(workerLog),"result.txt");
+  const string prefix="deferred_update: ";
+  if(File.GetLastWriteTimeUtc(path)<workerStarted)return null;
+  var line=File.ReadAllText(path);
+  return line.StartsWith(prefix,StringComparison.Ordinal)?line.Substring(prefix.Length):null;
+ }catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
  static void RequireCompanionProtocol(){
   if(Kind!="host_msi")return;
   using(var key=Registry.LocalMachine.OpenSubKey(@"Software\g3Fernwartung\InstallState\g3Fernwartung")){
@@ -168,7 +186,7 @@ internal sealed class SetupForm:Form {
     if(key==null||Convert.ToInt32(key.GetValue("WindowsInstaller",0))!=1)return;
     exe=Path.Combine(Convert.ToString(key.GetValue("InstallLocation")),"g3Fernwartung.exe");
     string root=Path.GetDirectoryName(exe),native=Path.Combine(root,"librustdesk.dll");
-    if((File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0||!File.Exists(native)||Array.IndexOf(GateDllHashes.Split(';'),Digest(native))<0)throw new UpdateBusyException();
+    if((File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0||!File.Exists(native)||Array.IndexOf(GateDllHashes.Split(';'),Digest(native))<0)throw new UpdateBusyException(UpdateBusyException.Unrecognized);
     gate=new UpdateSessionGate(Path.Combine(root,"g3-update-session.lock"));
    }
   }
@@ -179,7 +197,7 @@ internal sealed class SetupForm:Form {
    }
    using(var service=new ServiceController("g3Fernwartung")){if(service.Status!=ServiceControllerStatus.Stopped){service.Stop();stopped=true;service.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}
    var deadline=DateTime.UtcNow.AddSeconds(40);while(Remains()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
-   if(Remains())throw new UpdateBusyException();
+   if(Remains())throw new UpdateBusyException(UpdateBusyException.Shutdown);
   }
   static void PlainDirectory(string path){for(var dir=new DirectoryInfo(path);dir!=null;dir=dir.Parent)if(dir.Exists&&(dir.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Konfigurationspfad darf keine Umleitung enthalten.");}
   public void InitializeNewHostProfile(){
@@ -205,13 +223,13 @@ internal sealed class SetupForm:Form {
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
  }
  [DllImport("kernel32.dll",SetLastError=true)]static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
- [DllImport("kernel32.dll",SetLastError=true)]static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+ [DllImport("kernel32.dll",SetLastError=true)]static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
  [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
  internal static bool ProcessCouldBeActive(int pid){
   // Windows can enumerate a terminated process while another handle retains it.
-  // Query only normal limited rights; an unreadable state remains busy.
-  IntPtr handle=OpenProcess(0x1000,false,pid);if(handle==IntPtr.Zero)return true;
-  try{uint code;return !GetExitCodeProcess(handle,out code)||code==259;}
+  // Wait for the process signal, which is independent of the exit code.
+  IntPtr handle=OpenProcess(0x00100000,false,pid);if(handle==IntPtr.Zero)return true;
+  try{return WaitForSingleObject(handle,0)!=0;}
   finally{CloseHandle(handle);}
  }
  static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName}){var processes=Process.GetProcessesByName(name);try{foreach(var p in processes)if(ProcessCouldBeActive(p.Id))return true;}finally{foreach(var p in processes)p.Dispose();}}return false;}
@@ -230,10 +248,10 @@ internal sealed class SetupForm:Form {
   string gatePath=Path.Combine(Path.GetDirectoryName(InstalledExe),"g3-update-session.lock");
   string native=Path.Combine(Path.GetDirectoryName(InstalledExe),"librustdesk.dll");
   bool compatible=File.Exists(native)&&Array.IndexOf(GateDllHashes.Split(';'),Digest(native))>=0;
-  if((!File.Exists(gatePath)||!compatible)&&OwnProcessesRemain())throw new UpdateBusyException();
+  if((!File.Exists(gatePath)||!compatible)&&OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Unrecognized);
   if(!File.Exists(gatePath)){
    // Legacy clients cannot prove absence of sessions. Never shut them down.
-   if(OwnProcessesRemain())throw new UpdateBusyException();
+   if(OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Unrecognized);
    Directory.CreateDirectory(Path.GetDirectoryName(gatePath));
    using(var f=new FileStream(gatePath,FileMode.CreateNew,FileAccess.Write,FileShare.None)){f.Flush();}
   }
@@ -243,12 +261,12 @@ internal sealed class SetupForm:Form {
   // lease is held. Incoming/outgoing session acquisition is now blocked.
   using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();stoppedByUs=true;svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
   var deadline=DateTime.UtcNow.AddSeconds(40);while(OwnProcessesRemain()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
-  if(OwnProcessesRemain())throw new UpdateBusyException();
+  if(OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Shutdown);
 
   bool repair=String.Equals(Convert.ToString(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\"+AppName+@"\InstallState\"+AppName,"MsiProductCode",null)),ProductCode,StringComparison.OrdinalIgnoreCase);
-  var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn "+(repair?"REINSTALL=ALL REINSTALLMODE=vamus ":"")+"REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}companion.Restore();File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
+  var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn "+(repair?"REINSTALL=ALL REINSTALLMODE=vamus ":"")+"REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;if(code==1618)throw new UpdateBusyException(UpdateBusyException.Installer);bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}companion.Restore();File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
 
- }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_active_session: "+ex.Message);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
+ }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_update: "+ex.Reason);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
 
  [STAThread]static int Main(string[] args){if(args.Length==2&&args[0]=="--g3-install-worker")return Worker(args[1]);int pid=0;if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new SetupForm(pid));return 0;}
 
