@@ -50,6 +50,7 @@ $manifest = foreach ($name in $names) {
     if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $thumbprint -or !$signature.TimeStamperCertificate) {
         throw "Signature verification failed for $newName"
     }
+    $file.Refresh()
     $digest = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
     $identity = [Text.Encoding]::ASCII.GetBytes("opslinx-release-v1`n$newName`n$digest`n")
     $content = [Security.Cryptography.Pkcs.ContentInfo]::new($identity)
