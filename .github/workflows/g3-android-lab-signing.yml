@@ -1,4 +1,4 @@
-name: Sign OpsLinX Android Lab g3.6.2
+name: Sign OpsLinX Android 111126.2
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -6,16 +6,41 @@ on:
 permissions:
   actions: read
 jobs:
+  select-apk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 100
+    outputs:
+      artifact: ${{ steps.apk.outputs.artifact }}
+    steps:
+      - name: Wait for the pinned Android build
+        id: apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=43048650393
+          while true; do
+            build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
+            jq -e '.head_sha == "e10e7ef086a3849e0bc6229329569ba00fa34c0b" and .head_branch == "g3-android-lab"' <<< "$build" >/dev/null
+            if [[ $(jq -r .status <<< "$build") == completed ]]; then
+              jq -e '.conclusion == "success"' <<< "$build" >/dev/null
+              break
+            fi
+            sleep 30
+          done
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    needs: select-apk
     runs-on: ubuntu-22.04
     environment: signing
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: 13861881406
-          run-id: 43029376133
+          artifact-ids: ${{ needs.select-apk.outputs.artifact }}
+          run-id: 43048650393
           github-token: ${{ github.token }}
           path: unsigned
       - name: Check APK identity, sign and verify
@@ -32,7 +57,7 @@ jobs:
           src=unsigned/app-arm64-v8a-release.apk
           badging=$("${sdk%/*}/aapt" dump badging "$src")
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
-          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22050' versionName='3.6.2'" <<< "$badging" \
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22052' versionName='3.6.2'" <<< "$badging" \
             || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
           python - "$work" <<'PY'
           import base64, json, os, pathlib, sys
@@ -43,7 +68,7 @@ jobs:
           PY
           unset OPSLINX_ANDROID_SIGNING
           mkdir signed
-          apk=signed/g3-OpsLinX-Android-1.5.0-g3.62.20050-arm64.apk
+          apk=signed/g3-OpsLinX-Android-1.5.0-g3.62.20052-arm64.apk
           "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android \
             --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "$apk" "$src"
           "$sdk" verify --verbose --print-certs "$apk" | tee "$work/verification"
@@ -55,7 +80,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.0-g3.62.20050', 'version_code': 22050, 'file': apk.name,
+          item = {'version': '1.5.0-g3.62.20052', 'version_code': 22052, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
