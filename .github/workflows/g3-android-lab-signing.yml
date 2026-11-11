@@ -28,10 +28,12 @@ jobs:
           work=$(mktemp -d)
           trap 'rm -f "$work/key.p12" "$work/password"; rmdir "$work"' EXIT
           sdk=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
-          test -x "$sdk"
+          test -x "$sdk" || { echo 'Android APK signing tools are unavailable.'; exit 1; }
           src=unsigned/app-arm64-v8a-release.apk
           badging=$("${sdk%/*}/aapt" dump badging "$src")
-          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='20050' versionName='3.6.2'" <<< "$badging"
+          # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22050' versionName='3.6.2'" <<< "$badging" \
+            || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
           python - "$work" <<'PY'
           import base64, json, os, pathlib, sys
           directory = pathlib.Path(sys.argv[1])
@@ -51,7 +53,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.0-g3.62.20050', 'file': apk.name,
+          item = {'version': '1.5.0-g3.62.20050', 'version_code': 22050, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
