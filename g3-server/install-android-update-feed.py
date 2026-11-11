@@ -1,5 +1,6 @@
-"""Install the public Android version feed without publishing the APK."""
+"""Install the Android version feed and optionally activate a staged APK."""
 
+import hashlib
 import json
 import os
 import re
@@ -10,14 +11,24 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 
-FEED = Path('/opt/rustdesk-client/android-update.json')
+ROOT = Path('/opt/rustdesk-client')
+FEED = ROOT / 'android-update.json'
 SNIPPET = Path('/etc/nginx/snippets/opslinx-android-update.conf')
 ARTIFACTS_INCLUDE = 'include /etc/nginx/snippets/opslinx-immutable-artifacts.conf;'
-CONFIG = f'''location = /client/android/update.json {{
-    alias {FEED};
+FEED_LOCATION = '''location = /client/android/update.json {{
+    alias {feed};
     types {{}}
     default_type application/json;
     add_header Cache-Control "no-store" always;
+}}
+'''
+APK_LOCATION = '''location = /client/platform/android_arm64 {{
+    alias {apk};
+    types {{}}
+    default_type application/vnd.android.package-archive;
+    add_header Content-Disposition 'attachment; filename="{name}"';
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
 }}
 '''
 
@@ -35,8 +46,9 @@ def atomic_write(path, content, mode):
 
 
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in {'rustdesk', 'opslinx02', 'opslinx03'}:
-        raise SystemExit('Usage: install-android-update-feed.py SITE < release.json')
+    if (len(sys.argv) not in (2, 3) or sys.argv[1] not in {'rustdesk', 'opslinx02', 'opslinx03'}
+            or (len(sys.argv) == 3 and sys.argv[2] != '--activate-apk')):
+        raise SystemExit('Usage: install-android-update-feed.py SITE [--activate-apk] < release.json')
     site_name = sys.argv[1]
     site = Path('/etc/nginx/sites-enabled', site_name).resolve(strict=True)
     if site.parent != Path('/etc/nginx/sites-available'):
@@ -49,6 +61,27 @@ def main():
             or type(size) is not int or not 0 < size <= 150_000_000):
         raise SystemExit('Invalid Android release metadata')
     payload = (json.dumps(dict(version=version, sha256=digest, size=size)) + '\n').encode()
+    feed = FEED
+    if len(sys.argv) == 3:
+        name = f'g3-OpsLinX-Android-{version}-arm64.apk'
+        if metadata.get('file') != name:
+            raise SystemExit('Android release filename does not match the version')
+        apk = ROOT / name
+        if apk.is_symlink() or not apk.is_file() or apk.stat().st_size != size:
+            raise SystemExit('Staged Android APK missing or incomplete')
+        checksum = hashlib.sha256()
+        with apk.open('rb') as package:
+            for block in iter(lambda: package.read(1024 * 1024), b''):
+                checksum.update(block)
+        if checksum.hexdigest() != digest:
+            raise SystemExit('Staged Android APK failed its SHA-256 check')
+        feed = apk.with_suffix('.json')
+        config = (FEED_LOCATION.format(feed=feed) +
+                  APK_LOCATION.format(apk=apk, name=name))
+    else:
+        if SNIPPET.exists() and '/client/platform/android_arm64' in SNIPPET.read_text():
+            raise SystemExit('An APK is active. Supply its replacement with --activate-apk.')
+        config = FEED_LOCATION.format(feed=feed)
 
     existing_site = site.read_text()
     include = f'include {SNIPPET};'
@@ -61,7 +94,7 @@ def main():
     else:
         updated_site = existing_site
 
-    desired = {FEED: payload, SNIPPET: CONFIG.encode(), site: updated_site.encode()}
+    desired = {feed: payload, SNIPPET: config.encode(), site: updated_site.encode()}
     original = {path: (path.read_bytes(), path.stat().st_mode & 0o777)
                 for path in desired if path.exists()}
     changes = {path: value for path, value in desired.items()
