@@ -122,7 +122,7 @@ class HomePageState extends State<HomePage> {
           // backgroundColor: MyTheme.grayBg,
           appBar: AppBar(
             centerTitle: true,
-            title: appTitle(),
+            title: _g3AndroidClient ? const Text('g3 OpsLinX') : appTitle(),
             actions: [
               ..._pages.elementAt(_selectedIndex).appBarActions,
               if (_g3AndroidClient)
