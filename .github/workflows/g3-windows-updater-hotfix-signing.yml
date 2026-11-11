@@ -7,7 +7,7 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: b41a54f5ffe23a160695c2877ee91222fa49b499
+  SOURCE_COMMIT: 861d5e7b230492b92bf14be4356b141718acae28
   PACKAGE_SOURCE: d1efa49aea9f177110d139827a3c9b0bd73b79eb
   RELEASE_VERSION: 1.5.0-g3.62.20053
 jobs:
