@@ -15,6 +15,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.ClipboardManager
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
 import android.os.IBinder
@@ -31,6 +32,8 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.util.DisplayMetrics
 import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import com.hjq.permissions.XXPermissions
@@ -262,10 +265,43 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun installOpsLinxUpdate(result: MethodChannel.Result) {
+        thread {
+            try {
+                val update = File(cacheDir, "opslinx-updates/update.apk")
+                require(update.isFile && update.length() in 1L..150_000_000L)
+                val installed = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                val candidate = requireNotNull(packageManager.getPackageArchiveInfo(
+                    update.path, PackageManager.GET_SIGNATURES
+                ))
+                val installedSignatures = installed.signatures.orEmpty().toSet()
+                require(candidate.packageName == packageName &&
+                    PackageInfoCompat.getLongVersionCode(candidate) > PackageInfoCompat.getLongVersionCode(installed) &&
+                    installedSignatures.isNotEmpty() && candidate.signatures.orEmpty().toSet() == installedSignatures)
+                val uri = FileProvider.getUriForFile(this, "$packageName.opslinx-updates", update)
+                runOnUiThread {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        })
+                        result.success(null)
+                    } catch (_: Exception) {
+                        result.error("update_install", "Android installer could not be opened", null)
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread { result.error("update_invalid", "APK identity check failed", null) }
+            }
+        }
+    }
+
     private fun initFlutterChannel(flutterMethodChannel: MethodChannel) {
         flutterMethodChannel.setMethodCallHandler { call, result ->
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                "g3_install_android_update" -> installOpsLinxUpdate(result)
                 "init_service" -> {
                     Intent(activity, MainService::class.java).also {
                         bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)

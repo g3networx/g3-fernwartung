@@ -630,7 +630,9 @@ void showOptions(
       await toolbarViewStyle(context, id, gFFI);
   List<TRadioMenu<String>> imageQualityRadios =
       await toolbarImageQuality(context, id, gFFI);
-  List<TRadioMenu<String>> codecRadios = await toolbarCodec(context, id, gFFI);
+  final codecRadios = isAndroid && kG3AndroidClient
+      ? <TRadioMenu<String>>[]
+      : await toolbarCodec(context, id, gFFI);
   List<TToggleMenu> displayToggles =
       await toolbarDisplayToggle(context, id, gFFI);
 

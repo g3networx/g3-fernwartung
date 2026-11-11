@@ -5,7 +5,9 @@ import 'package:flutter_hbb/web/settings_page.dart';
 import 'package:get/get.dart';
 import '../../common.dart';
 import '../../common/widgets/chat_page.dart';
+import '../../consts.dart';
 import '../../g3_addressbook.dart';
+import '../../g3_android_settings.dart';
 import '../../g3_handoff_uri.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
@@ -62,8 +64,7 @@ class HomePageState extends State<HomePage> {
   var _selectedIndex = 0;
   int get selectedIndex => _selectedIndex;
   final List<PageShape> _pages = [];
-  bool get _g3AddressBookEnabled =>
-      isAndroid && const bool.fromEnvironment('G3_ANDROID_ADDRESS_BOOK');
+  bool get _g3AndroidClient => isAndroid && kG3AndroidClient;
   int _chatPageTabIndex = -1;
   bool get isChatPageCurrentTab => isAndroid
       ? _selectedIndex == _chatPageTabIndex
@@ -87,7 +88,7 @@ class HomePageState extends State<HomePage> {
       _pages.add(ConnectionPage(
         appBarActions: [],
       ));
-      if (_g3AddressBookEnabled) {
+      if (_g3AndroidClient) {
         _pages.add(const G3MobileAddressBookPage());
       }
     }
@@ -95,7 +96,7 @@ class HomePageState extends State<HomePage> {
       _chatPageTabIndex = _pages.length;
       _pages.addAll([ChatPage(type: ChatPageType.mobileMain), ServerPage()]);
     }
-    if (!_g3AddressBookEnabled || bind.isIncomingOnly()) {
+    if (!_g3AndroidClient || bind.isIncomingOnly()) {
       _pages.add(SettingsPage());
     }
   }
@@ -118,7 +119,15 @@ class HomePageState extends State<HomePage> {
           appBar: AppBar(
             centerTitle: true,
             title: appTitle(),
-            actions: _pages.elementAt(_selectedIndex).appBarActions,
+            actions: [
+              ..._pages.elementAt(_selectedIndex).appBarActions,
+              if (_g3AndroidClient)
+                IconButton(
+                  tooltip: 'Einstellungen',
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () => showG3AndroidSettings(context),
+                ),
+            ],
           ),
           bottomNavigationBar: BottomNavigationBar(
             key: navigationBarKey,
@@ -143,7 +152,7 @@ class HomePageState extends State<HomePage> {
               }
             }),
           ),
-          body: _g3AddressBookEnabled
+          body: _g3AndroidClient
               ? IndexedStack(index: _selectedIndex, children: _pages)
               : _pages.elementAt(_selectedIndex),
         ));

@@ -135,6 +135,7 @@ jobs:
 
       - name: Build rustdesk lib
         env:
+          G3_OPSLINX_ANDROID: '1'
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -155,7 +156,9 @@ jobs:
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=69 --dart-define=G3_ANDROID_ADDRESS_BOOK=true
+            --build-name=3.6.2 --build-number=20050 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.0-g3.62.20050 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 111126'
           python - <<'PY'
           from zipfile import ZipFile
 

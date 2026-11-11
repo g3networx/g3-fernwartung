@@ -5,6 +5,7 @@ import 'package:flutter_hbb/models/state_model.dart';
 import 'package:get/get.dart';
 
 const int kMaxVirtualDisplayCount = 4;
+const bool kG3AndroidClient = bool.fromEnvironment('G3_ANDROID_CLIENT');
 const int kAllVirtualDisplay = -1;
 
 const double kDesktopRemoteTabBarHeight = 28.0;

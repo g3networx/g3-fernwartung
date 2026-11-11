@@ -8,7 +8,7 @@ def install(app,m):
   try:data=json.loads((ROOT/'platforms.json').read_text(encoding='utf-8'))
   except (OSError,ValueError):return {}
   if not isinstance(data,dict):return {}
-  allowed={'macos_intel':'.dmg','macos_arm64':'.dmg','linux_x86_64':'.deb','linux_arm64':'.deb'}
+  allowed={'macos_intel':'.dmg','macos_arm64':'.dmg','linux_x86_64':'.deb','linux_arm64':'.deb','android_arm64':'.apk'}
   result={}
   for kind,suffix in allowed.items():
    item=data.get(kind)
@@ -29,6 +29,14 @@ def install(app,m):
   response=send_file(ROOT/item['file'],as_attachment=True,download_name=item['file'],conditional=True)
   response.headers['X-Content-Type-Options']='nosniff'
   return response
+ @app.get('/client/android/update.json')
+ def client_android_update():
+  item=platform_release().get('android_arm64')
+  if not item:abort(404)
+  version=item.get('version');size=item.get('size')
+  if not isinstance(version,str) or not re.fullmatch(r'\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?',version):abort(404)
+  if type(size) is not int or size<=0 or size>150000000 or (ROOT/item['file']).stat().st_size!=size:abort(404)
+  return {'version':version,'size':size,'sha256':item['sha256']},200,{'Cache-Control':'no-store'}
  def package_response(name,kind):
   response=send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
   if kind in ('windows','host','adhoc','windows_msi','host_msi'):

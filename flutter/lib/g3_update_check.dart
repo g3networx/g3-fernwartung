@@ -4,11 +4,12 @@ import 'package:http/http.dart' as http;
 const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.61.20049');
 const g3DisplayVersion = String.fromEnvironment('G3_CLIENT_DISPLAY_VERSION', defaultValue: 'g3.6.1 Build 111126');
 String g3VersionLabel(String version) {
-  final m = RegExp(r'^1\.5\.0-g3\.(60|61)\.(\d+)$').firstMatch(version);
+  final m = RegExp(r'^1\.5\.0-g3\.(60|61|62)\.(\d+)$').firstMatch(version);
   if (m == null) return version;
   final day = DateTime.utc(2020, 1, 1).add(Duration(days: int.parse(m[2]!) ~/ 8));
   String two(int value) => value.toString().padLeft(2, '0');
-  final release = m[1] == '61' ? 'g3.6.1' : 'g3.6';
+  const releases = {'60': 'g3.6', '61': 'g3.6.1', '62': 'g3.6.2'};
+  final release = releases[m[1]];
   return '$release Build ${two(day.day)}${two(day.month)}${two(day.year % 100)}';
 }
 bool g3VersionIsValid(String version) =>
