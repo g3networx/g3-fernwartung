@@ -151,13 +151,16 @@ jobs:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
           export PATH="$JAVA_HOME/bin:$PATH"
-          flutter build apk --debug --target-platform android-arm64
-          sha256sum build/app/outputs/flutter-apk/app-debug.apk
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
+          echo 'org.gradle.workers.max=2' >> android/gradle.properties
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
+          sha256sum build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
       - name: Upload test APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: opslinx-android-lab-arm64
-          path: flutter/build/app/outputs/flutter-apk/app-debug.apk
+          path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 7
