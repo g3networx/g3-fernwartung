@@ -68,6 +68,18 @@ void main() {
   });
 
   testWidgets('read-only public entry copies locally without server mutation or overwrite', (tester) async {
+    Future<void> waitForWidget(Finder finder) async {
+      final elapsed = Stopwatch()..start();
+      while (true) {
+        await tester.pumpAndSettle();
+        if (finder.evaluate().isNotEmpty) return;
+        if (elapsed.elapsed >= const Duration(seconds: 5)) break;
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+      expect(finder, findsOneWidget);
+    }
+
     final directory = (await tester.runAsync(() => Directory.systemTemp.createTemp('g3-copy-local-test-')))!;
     final local = G3LocalAddressBookStore(File('${directory.path}/book.json'));
     await tester.runAsync(() => local.addBook('Kunde/Buero'));
@@ -81,8 +93,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: G3AddressBook(
           api: api, credentials: FixtureCredentials(), localStore: local,
           onConnect: (_) async {}))));
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
-      await tester.pumpAndSettle();
+      await waitForWidget(find.byType(TextField));
       await tester.enterText(find.byType(TextField), '123456789');
       await tester.pumpAndSettle();
       await tester.tap(find.text('TEST-SERVER'));
@@ -91,22 +102,19 @@ void main() {
       expect(find.text('In lokales Adressbuch kopieren'), findsOneWidget,
           reason: tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).join(' | '));
       for (var attempt = 0; attempt < 2; attempt++) {
-        await tester.runAsync(() async {
-          await tester.tap(find.text('In lokales Adressbuch kopieren'));
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        });
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Oberste Ebene'));
+        await tester.runAsync(
+            () => tester.tap(find.text('In lokales Adressbuch kopieren')));
+        final destination = find.text('Oberste Ebene');
+        await waitForWidget(destination);
+        await tester.tap(destination);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Kunde/Buero').last);
         await tester.pumpAndSettle();
         if (attempt == 1) await tester.enterText(find.byType(TextFormField).first, 'Do not overwrite');
-        await tester.runAsync(() async {
-          await tester.tap(find.text('Kopieren'));
-          await tester.pump(const Duration(milliseconds: 350));
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        });
-        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('Kopieren')));
+        await waitForWidget(find.text(attempt == 0
+            ? 'Eintrag ins lokale Adressbuch kopiert.'
+            : 'Diese Geräte-ID ist bereits vorhanden.'));
       }
       final entry = (await tester.runAsync(() => local.read()))!.single;
       expect(entry.name, 'TEST-SERVER');
