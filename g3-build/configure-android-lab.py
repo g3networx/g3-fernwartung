@@ -27,11 +27,11 @@ app = tree.getroot().find('application')
 if app is None:
     raise RuntimeError('Android application manifest is missing')
 app.set(ns + 'label', 'g3 OpsLinX Lab')
-ET.SubElement(tree.getroot(), 'uses-permission', {
+tree.getroot().insert(list(tree.getroot()).index(app), ET.Element('uses-permission', {
     ns + 'name': 'android.permission.REQUEST_INSTALL_PACKAGES',
-})
+}))
 provider = ET.SubElement(app, 'provider', {
-    ns + 'name': 'androidx.core.content.FileProvider',
+    ns + 'name': '.OpsLinxUpdateProvider',
     ns + 'authorities': '${applicationId}.opslinx-updates',
     ns + 'exported': 'false',
     ns + 'grantUriPermissions': 'true',

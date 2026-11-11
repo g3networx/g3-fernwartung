@@ -2,7 +2,13 @@ name: OpsLinX Android lab APK
 on:
   push:
     branches: [g3-android-lab]
-    paths: [.github/workflows/g3-android-lab.yml, g3-build/configure-android-lab.py]
+    paths:
+      - .github/workflows/g3-android-lab.yml
+      - g3-build/configure-android-lab.py
+      - flutter/android/**
+      - flutter/lib/**
+      - libs/scrap/**
+      - src/**
 permissions:
   contents: read
 env:
