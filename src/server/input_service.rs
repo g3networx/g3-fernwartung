@@ -1269,7 +1269,7 @@ pub fn handle_mouse_(
         // (connection already in relative mode from prior events) and evt_type (current
         // event is relative) to guard against the first relative event before the flag is set.
         if _show_cursor && !is_relative_mouse_active(conn) && evt_type != MOUSE_TYPE_MOVE_RELATIVE {
-            handle_mouse_show_cursor_(evt, conn, _username, _argb);
+            handle_mouse_show_cursor_(evt, conn, _username, _argb, !simulate);
         }
     }
 }
@@ -1468,7 +1468,13 @@ pub fn handle_mouse_simulation_(evt: &MouseEvent, conn: i32) {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, argb: u32) {
+fn handle_mouse_show_cursor_(
+    evt: &MouseEvent,
+    conn: i32,
+    username: String,
+    argb: u32,
+    guiding: bool,
+) {
     let buttons = evt.mask >> 3;
     let evt_type = evt.mask & MOUSE_TYPE_MASK;
     match evt_type {
@@ -1503,7 +1509,11 @@ pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, 
                         x: x as _,
                         y: y as _,
                         argb,
-                        btns: buttons,
+                        btns: if guiding {
+                            whiteboard::GUIDE_CLICK
+                        } else {
+                            buttons
+                        },
                         text: username,
                     }),
                 );

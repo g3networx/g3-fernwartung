@@ -22,6 +22,8 @@ pub use linux::is_supported;
 pub use client::*;
 pub use server::*;
 
+pub(crate) const GUIDE_CLICK: i32 = 1 << 16;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", content = "c")]
 pub enum CustomEvent {

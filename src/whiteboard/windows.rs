@@ -135,13 +135,19 @@ pub(super) fn create_event_loop() -> ResultType<()> {
                     let mut ripple_pb = PathBuilder::new();
                     ripple_pb.push_circle(ripple.x, ripple.y, radius);
                     if let Some(path) = ripple_pb.finish() {
-                        pixmap.fill_path(
-                            &path,
-                            &ripple_paint,
-                            FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
+                        if ripple.inward {
+                            let stroke = Stroke {
+                                width: 3.0,
+                                ..Default::default()
+                            };
+                            pixmap.stroke_path(
+                                &path, &ripple_paint, &stroke, Transform::identity(), None,
+                            );
+                        } else {
+                            pixmap.fill_path(
+                                &path, &ripple_paint, FillRule::Winding, Transform::identity(), None,
+                            );
+                        }
                     }
                 }
 
@@ -215,6 +221,7 @@ pub(super) fn create_event_loop() -> ResultType<()> {
                             x: cursor.x,
                             y: cursor.y,
                             start_time: Instant::now(),
+                            inward: cursor.btns == super::GUIDE_CLICK,
                         });
                     }
                     last_cursors.insert(k, cursor);

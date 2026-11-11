@@ -764,38 +764,43 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   ];
 }
 
-Future<List<TToggleMenu>> toolbarCursor(
-    BuildContext context, String id, FFI ffi) async {
-  List<TToggleMenu> v = [];
+TToggleMenu? toolbarShowRemoteCursor(String id, FFI ffi) {
   final ffiModel = ffi.ffiModel;
   final pi = ffiModel.pi;
   final sessionId = ffi.sessionId;
-
-  // show remote cursor
-  if (pi.platform != kPeerPlatformAndroid &&
-      !ffi.canvasModel.cursorEmbedded &&
-      !pi.isWayland) {
-    final state = ShowRemoteCursorState.find(id);
-    final lockState = ShowRemoteCursorLockState.find(id);
-    final enabled = !ffiModel.viewOnly;
-    final option = 'show-remote-cursor';
-    if (pi.currentDisplay == kAllDisplayValue ||
-        bind.sessionIsMultiUiSession(sessionId: sessionId)) {
-      lockState.value = false;
-    }
-    v.add(TToggleMenu(
-        child: Text(translate('Show remote cursor')),
-        value: state.value,
-        onChanged: enabled && !lockState.value
-            ? (value) async {
-                if (value == null) return;
-                await bind.sessionToggleOption(
-                    sessionId: sessionId, value: option);
-                state.value = bind.sessionGetToggleOptionSync(
-                    sessionId: sessionId, arg: option);
-              }
-            : null));
+  if (pi.platform == kPeerPlatformAndroid ||
+      ffi.canvasModel.cursorEmbedded ||
+      pi.isWayland) {
+    return null;
   }
+  final state = ShowRemoteCursorState.find(id);
+  final lockState = ShowRemoteCursorLockState.find(id);
+  const option = 'show-remote-cursor';
+  if (pi.currentDisplay == kAllDisplayValue ||
+      bind.sessionIsMultiUiSession(sessionId: sessionId)) {
+    lockState.value = false;
+  }
+  return TToggleMenu(
+    child: Text(translate('Show remote cursor')),
+    value: state.value,
+    onChanged: !ffiModel.viewOnly && !lockState.value
+        ? (value) async {
+            if (value == null) return;
+            await bind.sessionToggleOption(sessionId: sessionId, value: option);
+            state.value = bind.sessionGetToggleOptionSync(
+                sessionId: sessionId, arg: option);
+          }
+        : null,
+  );
+}
+
+Future<List<TToggleMenu>> toolbarCursor(
+    BuildContext context, String id, FFI ffi) async {
+  List<TToggleMenu> v = [];
+  final pi = ffi.ffiModel.pi;
+  final sessionId = ffi.sessionId;
+  final showRemoteCursor = toolbarShowRemoteCursor(id, ffi);
+  if (showRemoteCursor != null) v.add(showRemoteCursor);
   // follow remote cursor
   if (pi.platform != kPeerPlatformAndroid &&
       !ffi.canvasModel.cursorEmbedded &&

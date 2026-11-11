@@ -24,6 +24,7 @@ import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
 import './popup_menu.dart';
 import './kb_layout_type_chooser.dart';
+import './g3_guide_tools.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 import 'package:flutter_hbb/common/widgets/custom_scale_base.dart';
 
@@ -685,6 +686,20 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   @override
   Widget build(BuildContext context) {
+    if (isWeb ||
+        widget.ffi.connType != ConnType.defaultConn ||
+        bind.mainGetAppNameSync() != 'g3Fernwartung') {
+      return _buildDockedToolbar(context, null);
+    }
+    return G3GuideTools(
+      key: ValueKey(widget.ffi.sessionId),
+      id: widget.id,
+      ffi: widget.ffi,
+      toolbar: (openGuide) => _buildDockedToolbar(context, openGuide),
+    );
+  }
+
+  Widget _buildDockedToolbar(BuildContext context, VoidCallback? openGuide) {
     return Obx(() {
       // Wait for initialization to complete to prevent flickering
       if (!widget.state.initialized.value ||
@@ -714,7 +729,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         child: KeyedSubtree(
           key: _toolbarKey,
           child: collapse.isFalse
-              ? _buildToolbar(context, edge, isHorizontal)
+              ? _buildToolbar(context, edge, isHorizontal, openGuide)
               : _buildDraggableCollapse(context, edge, isHorizontal),
         ),
       );
@@ -801,8 +816,8 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     });
   }
 
-  Widget _buildToolbar(
-      BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
+  Widget _buildToolbar(BuildContext context, _ToolbarEdge edge,
+      bool isHorizontal, VoidCallback? openGuide) {
     final List<Widget> toolbarItems = [];
     toolbarItems.add(IconButton(
         tooltip: 'Diesen Rechner aktualisieren',
@@ -853,6 +868,18 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     }
     if (!isWeb && widget.ffi.connType == ConnType.defaultConn &&
         bind.mainGetAppNameSync() == 'g3Fernwartung') {
+      if (openGuide != null &&
+          [kPeerPlatformWindows, kPeerPlatformMacOS, kPeerPlatformLinux]
+              .contains(pi.platform) &&
+          versionCmp(pi.version, '1.2.0') >= 0) {
+        toolbarItems.add(_IconMenuButton(
+          tooltip: 'Zeige-Modus',
+          icon: const Icon(Icons.gesture, color: Colors.white, size: 22),
+          color: _ToolbarTheme.blueColor,
+          hoverColor: _ToolbarTheme.hoverBlueColor,
+          onPressed: openGuide,
+        ));
+      }
       toolbarItems.add(_IconMenuButton(
         tooltip: 'Dateiexplorer', icon: const Icon(Icons.folder_open, color: Colors.white, size: 22),
         color: _ToolbarTheme.blueColor, hoverColor: _ToolbarTheme.hoverBlueColor,
@@ -2574,7 +2601,9 @@ class _KeyboardMenu extends StatelessWidget {
         ffi: ffi,
         color: _ToolbarTheme.blueColor,
         hoverColor: _ToolbarTheme.hoverBlueColor,
-        menuChildrenGetter: (_) => [
+        menuChildrenGetter: (_) {
+          final remoteCursor = toolbarShowRemoteCursor(id, ffi);
+          return [
               keyboardMode(),
               localKeyboardType(),
               inputSource(),
@@ -2583,11 +2612,19 @@ class _KeyboardMenu extends StatelessWidget {
               if ([kPeerPlatformWindows, kPeerPlatformMacOS, kPeerPlatformLinux]
                   .contains(pi.platform))
                 showMyCursor(),
+              if (remoteCursor != null)
+                CkbMenuButton(
+                  value: remoteCursor.value,
+                  onChanged: remoteCursor.onChanged,
+                  child: remoteCursor.child,
+                  ffi: ffi,
+                ),
               Divider(),
               ...toolbarToggles(),
               ...mouseSpeed(),
               ...mobileActions(),
-            ]);
+            ];
+        });
   }
 
   mouseSpeed() {

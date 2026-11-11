@@ -147,6 +147,7 @@ pub(super) struct Ripple {
     pub x: RippleFloat,
     pub y: RippleFloat,
     pub start_time: Instant,
+    pub inward: bool,
 }
 
 impl Ripple {
@@ -162,9 +163,10 @@ impl Ripple {
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         let progress = (elapsed.as_secs_f32() / RIPPLE_DURATION.as_secs_f32()).min(1.0);
         #[cfg(target_os = "macos")]
-        let radius = 25.0 * progress;
+        let max_radius = 25.0;
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        let radius = 45.0 * progress;
+        let max_radius = 45.0;
+        let radius = max_radius * if self.inward { 1.0 - progress } else { progress };
         let alpha = 1.0 - progress;
         (radius, alpha)
     }

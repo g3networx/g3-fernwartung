@@ -289,6 +289,7 @@ pub(super) fn create_event_loop() -> ResultType<()> {
                                 x: (cursor.x as f64 - window.display_origin.0),
                                 y: (cursor.y as f64 - window.display_origin.1),
                                 start_time: Instant::now(),
+                                inward: cursor.btns == super::GUIDE_CLICK,
                             };
                             if let Some(ripples) = window_ripples.get_mut(&window_id) {
                                 ripples.push(ripple);

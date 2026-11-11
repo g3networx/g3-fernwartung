@@ -484,6 +484,7 @@ class InputModel {
   String get peerVersion => parent.target?.ffiModel.pi.version ?? '';
   bool get isViewOnly => parent.target!.ffiModel.viewOnly;
   bool get showMyCursor => parent.target!.ffiModel.showMyCursor;
+  bool guideClickOnly = false;
   double get devicePixelRatio => parent.target!.canvasModel.devicePixelRatio;
   bool get isViewCamera => parent.target!.connType == ConnType.viewCamera;
   int get trackpadSpeed => _trackpadSpeed;
@@ -1895,6 +1896,21 @@ class InputModel {
     bool moveCanvas = true,
     bool edgeScroll = false,
   }) {
+    if (guideClickOnly && isViewOnly && showMyCursor) {
+      if (evt['type'] != _kMouseEventUp || evt['buttons'] != kPrimaryMouseButton) {
+        return null;
+      }
+      final movement = processEventToPeer(
+        {'type': _kMouseEventMove, 'buttons': 0},
+        offset,
+        moveCanvas: false,
+      );
+      final click = processEventToPeer(evt, offset, moveCanvas: false);
+      if (movement != null && click != null) {
+        unawaited(_sendGuideClick(movement, click));
+      }
+      return click;
+    }
     final evtToPeer = processEventToPeer(evt, offset,
         onExit: onExit, moveCanvas: moveCanvas, edgeScroll: edgeScroll);
     if (evtToPeer != null) {
@@ -1902,6 +1918,19 @@ class InputModel {
           sessionId: sessionId, msg: json.encode(modify(evtToPeer)));
     }
     return evtToPeer;
+  }
+
+  Future<void> _sendGuideClick(
+      Map<String, dynamic> movement, Map<String, dynamic> click) async {
+    final session = sessionId;
+    await bind.sessionSendMouse(
+        sessionId: session, msg: json.encode(modify(movement)));
+    final model = parent.target?.ffiModel;
+    if (!guideClickOnly || model == null || !model.viewOnly || !model.showMyCursor) {
+      return;
+    }
+    await bind.sessionSendMouse(
+        sessionId: session, msg: json.encode(modify(click)));
   }
 
   Point? handlePointerDevicePos(
