@@ -1,0 +1,79 @@
+name: OpsLinX Android frontend rebuild 111126.2
+on:
+  push:
+    branches: [g3-android-review]
+    paths: [.github/workflows/g3-android-frontend-rebuild.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          persist-credentials: false
+          ref: e10e7ef086a3849e0bc6229329569ba00fa34c0b
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 13861958389
+          run-id: 43035120054
+          github-token: ${{ github.token }}
+          path: accepted
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+      - name: Prepare reviewed Android runtime and resources
+        run: |
+          set -euo pipefail
+          git diff --exit-code 05d61c5 HEAD -- src libs Cargo.toml Cargo.lock g3-build/hbb-common.patch g3-build/configure-android-lab.py
+          git -C libs/hbb_common apply "$GITHUB_WORKSPACE/g3-build/hbb-common.patch"
+          python3 g3-build/configure-android-lab.py
+          git -C "$(dirname "$(dirname "$(command -v flutter)")")" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          apk = Path('accepted/g3-OpsLinX-Android-1.5.0-g3.62.20050-arm64.apk')
+          assert sha256(apk.read_bytes()).hexdigest() == 'b08fd04b9baf18c702700bf2c06691c724845ce9e9dc50e6c5b2ae799d53abdd'
+          target = Path('flutter/android/app/src/main/jniLibs/arm64-v8a')
+          target.mkdir(parents=True, exist_ok=True)
+          with ZipFile(apk) as package:
+              for name in ('librustdesk.so', 'libc++_shared.so'):
+                  data = package.read(f'lib/arm64-v8a/{name}')
+                  assert data.startswith(b'\x7fELF\x02\x01')
+                  (target / name).write_bytes(data)
+          PY
+      - name: Build Android 111126.2 with unchanged native library
+        working-directory: flutter
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
+          echo 'org.gradle.workers.max=2' >> android/gradle.properties
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+          flutter build apk --release --target-platform android-arm64 --split-per-abi \
+            --build-name=3.6.2 --build-number=20052 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.0-g3.62.20052 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 111126.2'
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          with ZipFile('build/app/outputs/flutter-apk/app-arm64-v8a-release.apk') as apk:
+              assert {'AndroidManifest.xml', 'classes.dex', 'lib/arm64-v8a/libapp.so'} <= set(apk.namelist())
+              for name in ('librustdesk.so', 'libc++_shared.so'):
+                  assert apk.read(f'lib/arm64-v8a/{name}') == Path(f'android/app/src/main/jniLibs/arm64-v8a/{name}').read_bytes()
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opslinx-android-lab-arm64
+          path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 14
