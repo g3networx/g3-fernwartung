@@ -88,11 +88,22 @@ jobs:
         shell: pwsh
         run: python g3-build/verify-local-addressbook-msi.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
         with:
           name: g361-release-${{ github.sha }}
           path: outputs/*
+          if-no-files-found: error
           retention-days: 30
+      - name: Preserve native build diagnostics if packaging fails
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: g361-diagnostics-${{ github.sha }}
+          path: |
+            outputs/upn-native-candidate.zip
+            outputs/windows-logon-tests.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
 
   signing:
