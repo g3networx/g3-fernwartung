@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'common.dart';
 import 'consts.dart';
+import 'g3_android_update_transport.dart';
 import 'g3_update_check.dart';
 import 'g3_update_metadata.dart';
 import 'models/platform_model.dart';
@@ -27,24 +27,11 @@ class _G3AndroidSettings extends StatefulWidget {
 
 class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
   static const _channel = MethodChannel('mChannel');
-  static const _server = 'linx.g3nx.net';
-  final _http = http.Client();
   var _theme = MyTheme.getThemeModePreference();
   var _record = mainGetLocalBoolOptionSync(kOptionAllowAutoRecordOutgoing);
   bool _checking = false;
   String? _status;
   ({String version, String digest, int size})? _update;
-
-  @override
-  void dispose() {
-    _http.close();
-    super.dispose();
-  }
-
-  Future<http.StreamedResponse> _request(String path) => _http
-      .send(http.Request('GET', Uri.https(_server, path))
-        ..followRedirects = false)
-      .timeout(const Duration(seconds: 15));
 
   Future<void> _check() async {
     setState(() {
@@ -53,32 +40,35 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       _status = 'Suche nach Updates …';
     });
     try {
-      final response = await _request('/client/android/update.json');
-      if (response.statusCode != 200) throw const FormatException();
-      final bytes = <int>[];
-      await for (final chunk
-          in response.stream.timeout(const Duration(seconds: 15))) {
-        if (bytes.length + chunk.length > 16384) throw const FormatException();
-        bytes.addAll(chunk);
-      }
-      final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-      final version = data['version'];
-      final digest = data['sha256'];
-      final size = data['size'];
-      if (version is! String ||
-          !g3VersionIsValid(version) ||
-          digest is! String ||
-          !RegExp(r'^[a-f0-9]{64}$').hasMatch(digest) ||
-          size is! int ||
-          size <= 0 ||
-          size > g3MaximumUpdateArtifactSize) {
-        throw const FormatException();
-      }
+      final update = await g3AndroidUpdateRequest('/client/android/update.json',
+          (response) async {
+        final bytes = <int>[];
+        await for (final chunk
+            in response.stream.timeout(const Duration(seconds: 8))) {
+          if (bytes.length + chunk.length > 16384) throw const FormatException();
+          bytes.addAll(chunk);
+        }
+        final data = jsonDecode(utf8.decode(bytes));
+        if (data is! Map<String, dynamic>) throw const FormatException();
+        final version = data['version'];
+        final digest = data['sha256'];
+        final size = data['size'];
+        if (version is! String ||
+            !g3VersionIsValid(version) ||
+            digest is! String ||
+            !RegExp(r'^[a-f0-9]{64}$').hasMatch(digest) ||
+            size is! int ||
+            size <= 0 ||
+            size > g3MaximumUpdateArtifactSize) {
+          throw const FormatException();
+        }
+        return (version: version, digest: digest, size: size);
+      });
       if (!mounted) return;
       setState(() {
-        if (g3VersionNewer(version, g3ClientVersion)) {
-          _update = (version: version, digest: digest, size: size);
-          _status = '${g3VersionLabel(version)} ist verfügbar.';
+        if (g3VersionNewer(update.version, g3ClientVersion)) {
+          _update = update;
+          _status = '${g3VersionLabel(update.version)} ist verfügbar.';
         } else {
           _status = 'Dieser Client ist aktuell.';
         }
@@ -103,31 +93,33 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
     try {
       final cache = await getTemporaryDirectory();
       final dir = await Directory('${cache.path}/opslinx-updates').create();
-      pending = File('${dir.path}/update.pending');
-      final response = await _request('/client/platform/android_arm64');
-      if (response.statusCode != 200 ||
-          (response.contentLength != null &&
-              response.contentLength != update.size)) {
-        throw const FormatException();
-      }
-      var received = 0;
-      final sink = pending.openWrite();
-      try {
-        await sink.addStream(
-            response.stream.timeout(const Duration(seconds: 30)).map((chunk) {
-          received += chunk.length;
-          if (received > update.size) throw const FormatException();
-          return chunk;
-        }));
-      } finally {
-        await sink.close();
-      }
-      if (received != update.size ||
-          (await sha256.bind(pending.openRead()).first).toString() !=
-              update.digest) {
-        throw const FormatException();
-      }
-      await pending.rename('${dir.path}/update.apk');
+      final download = File('${dir.path}/update.pending');
+      pending = download;
+      await g3AndroidUpdateRequest('/client/platform/android_arm64',
+          (response) async {
+        if (response.contentLength != null &&
+            response.contentLength != update.size) {
+          throw const FormatException();
+        }
+        var received = 0;
+        final sink = download.openWrite();
+        try {
+          await sink.addStream(
+              response.stream.timeout(const Duration(seconds: 30)).map((chunk) {
+            received += chunk.length;
+            if (received > update.size) throw const FormatException();
+            return chunk;
+          }));
+        } finally {
+          await sink.close();
+        }
+        if (received != update.size ||
+            (await sha256.bind(download.openRead()).first).toString() !=
+                update.digest) {
+          throw const FormatException();
+        }
+      });
+      await download.rename('${dir.path}/update.apk');
       if (!mounted) return;
       await _channel.invokeMethod<void>('g3_install_android_update');
       if (mounted) {
