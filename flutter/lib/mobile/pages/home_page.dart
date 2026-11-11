@@ -47,7 +47,7 @@ class G3MobileAddressBookPage extends StatelessWidget implements PageShape {
               !uri.hasQuery &&
               !uri.hasFragment &&
               RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.authority)) {
-            await connect(context, uri.authority, forceRelay: true);
+            await connect(context, uri.authority);
           } else {
             throw const FormatException('Ungültige Verbindungsfreigabe');
           }

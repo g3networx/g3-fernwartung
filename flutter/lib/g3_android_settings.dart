@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'common.dart';
+import 'common/widgets/g3_relay_setting.dart';
 import 'consts.dart';
 import 'g3_android_update_transport.dart';
 import 'g3_update_check.dart';
@@ -181,6 +182,7 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
                     },
             ),
             const Divider(),
+            const G3RelaySetting(),
             const Text(g3DisplayVersion),
             if (_status != null) Text(_status!),
             TextButton(
