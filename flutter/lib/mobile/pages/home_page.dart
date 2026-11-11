@@ -7,6 +7,7 @@ import '../../common.dart';
 import '../../common/widgets/chat_page.dart';
 import '../../consts.dart';
 import '../../g3_addressbook.dart';
+import '../../g3_addressbook_credentials.dart';
 import '../../g3_android_settings.dart';
 import '../../g3_handoff_uri.dart';
 import '../../models/platform_model.dart';
@@ -33,7 +34,10 @@ class G3MobileAddressBookPage extends StatelessWidget implements PageShape {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: G3AddressBook(onConnect: (value) async {
+        child: G3AddressBook(
+          mobile: true,
+          credentials: G3AndroidAddressBookCredentials(supported: androidVersion >= 23),
+          onConnect: (value) async {
           final uri = Uri.parse(value);
           final handoff = g3HandoffArguments(uri);
           if (handoff != null) {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 import 'package:win32/win32.dart';
 
 /// Windows stores only the revocable native session, in the current user's vault.
@@ -77,5 +78,29 @@ class G3AddressBookCredentials {
     } finally {
       calloc.free(name);
     }
+  }
+}
+
+class G3AndroidAddressBookCredentials extends G3AddressBookCredentials {
+  static const _channel = MethodChannel('mChannel');
+  @override
+  final bool supported;
+
+  G3AndroidAddressBookCredentials({required this.supported});
+
+  @override
+  Future<String?> read() async => supported
+      ? _channel.invokeMethod<String>('g3_addressbook_read')
+      : null;
+
+  @override
+  Future<void> write(String token) async {
+    if (!supported) throw UnsupportedError('Android Keystore unavailable');
+    await _channel.invokeMethod<void>('g3_addressbook_write', token);
+  }
+
+  @override
+  Future<void> delete() async {
+    if (supported) await _channel.invokeMethod<void>('g3_addressbook_delete');
   }
 }

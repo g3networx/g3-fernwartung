@@ -162,9 +162,9 @@ jobs:
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20051 --dart-define=G3_ANDROID_CLIENT=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.0-g3.62.20051 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 111126.1'
+            --build-name=3.6.2 --build-number=20052 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.0-g3.62.20052 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 111126.2'
           python - <<'PY'
           from zipfile import ZipFile
 

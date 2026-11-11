@@ -302,6 +302,28 @@ class MainActivity : FlutterActivity() {
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
                 "g3_install_android_update" -> installOpsLinxUpdate(result)
+                "g3_addressbook_read", "g3_addressbook_write", "g3_addressbook_delete" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                        result.error("addressbook_storage", "Android Keystore unavailable", null)
+                    } else {
+                        try {
+                            val credentials = OpsLinxAddressBookCredentials(this)
+                            when (call.method) {
+                                "g3_addressbook_read" -> result.success(credentials.read())
+                                "g3_addressbook_write" -> {
+                                    credentials.write(requireNotNull(call.arguments as? String))
+                                    result.success(null)
+                                }
+                                else -> {
+                                    credentials.delete()
+                                    result.success(null)
+                                }
+                            }
+                        } catch (_: Exception) {
+                            result.error("addressbook_storage", "Could not access the stored session", null)
+                        }
+                    }
+                }
                 "init_service" -> {
                     Intent(activity, MainService::class.java).also {
                         bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)
