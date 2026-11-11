@@ -36,6 +36,7 @@ jobs:
             }
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
             $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+            Write-Host 'Importing the signing certificate.'
             $null = Import-PfxCertificate -FilePath $pfx -Password $password -CertStoreLocation Cert:\CurrentUser\My
             $signer = Get-Item "Cert:\CurrentUser\My\$thumbprint"
             if (!$signer.HasPrivateKey) { throw 'OpsLinX private key is missing.' }
@@ -56,7 +57,9 @@ jobs:
               throw 'OpsLinX signing certificate does not chain to the configured root.'
             }
 
-            $null = Import-Certificate -FilePath 'g3-build/codesigning/g3-root-ca.cer' -CertStoreLocation Cert:\CurrentUser\Root
+            Write-Host 'Custom CA chain verified. Installing public CA certificates on the hosted test runner.'
+            & certutil.exe -f -addstore Root g3-build/codesigning/g3-root-ca.cer
+            if ($LASTEXITCODE -ne 0) { throw 'Test root import failed.' }
             $null = Import-Certificate -FilePath 'g3-build/codesigning/g3-device-ca.cer' -CertStoreLocation Cert:\CurrentUser\CA
             $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
             $source = Join-Path $env:RUNNER_TEMP 'opslinx-signing-test.cs'
