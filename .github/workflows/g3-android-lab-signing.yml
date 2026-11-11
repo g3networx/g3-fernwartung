@@ -39,7 +39,7 @@ jobs:
           directory = pathlib.Path(sys.argv[1])
           secret = json.loads(os.environ.pop('OPSLINX_ANDROID_SIGNING'))
           (directory / 'key.p12').write_bytes(base64.b64decode(secret['pkcs12'], validate=True))
-          (directory / 'password').write_text(secret['password'] + '\n')
+          (directory / 'password').write_text((secret['password'] + '\n') * 2)
           PY
           unset OPSLINX_ANDROID_SIGNING
           mkdir signed
