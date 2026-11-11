@@ -142,7 +142,7 @@ jobs:
           cargo install cargo-ndk --version ${{ env.CARGO_NDK_VERSION }} --locked
           ./flutter/ndk_arm64.sh
           mkdir -p flutter/android/app/src/main/jniLibs/arm64-v8a
-          cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/
+          cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
           cp "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" flutter/android/app/src/main/jniLibs/arm64-v8a/
 
       - name: Build test APK
@@ -155,6 +155,15 @@ jobs:
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter build apk --release --target-platform android-arm64 --split-per-abi
+          python - <<'PY'
+          from zipfile import ZipFile
+
+          with ZipFile('build/app/outputs/flutter-apk/app-arm64-v8a-release.apk') as apk:
+              required = {'AndroidManifest.xml', 'classes.dex', 'lib/arm64-v8a/librustdesk.so'}
+              missing = required.difference(apk.namelist())
+              if missing:
+                  raise SystemExit(f'Missing APK files: {sorted(missing)}')
+          PY
           sha256sum build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
       - name: Upload test APK
