@@ -59,9 +59,14 @@ for kind,app,title in [('windows','g3Fernwartung','g3 OpsLinX'),('host','g3Host'
         tag(feature,'ComponentRef',Id=cid)
     main=tag(install,'Component',Id='MainExe',Guid=guid(kind+'/main'),Win64='yes')
     mainfile=tag(main,'File',Id='MainExeFile',Source=str(exe),Name=app+'.exe',KeyPath='yes')
-    shortcut=tag(mainfile,'Shortcut',Id='StartMenuShortcut',Directory='ApplicationProgramsFolder',Name=title,Advertise='yes',WorkingDirectory='INSTALLDIR',Icon='G3AppIcon.exe',IconIndex='0')
+    # A taskbar pin can outlive this MSI product code. Use the installed EXE
+    # for both the launch target and the icon so the pin survives upgrades.
+    start_menu=tag(menu,'Component',Id='StartMenuEntry',Guid=guid(kind+'/start-menu'),Win64='yes')
+    shortcut=tag(start_menu,'Shortcut',Id='StartMenuShortcut',Name=title,Target='[INSTALLDIR]'+app+'.exe',WorkingDirectory='INSTALLDIR')
     tag(shortcut,'ShortcutProperty',Key='System.AppUserModel.ID',Value='g3NetworX.OpsLinX.'+app)
-    tag(main,'RemoveFolder',Id='MenuFolderRemove',Directory='ApplicationProgramsFolder',On='uninstall')
+    tag(start_menu,'RemoveFolder',Id='MenuFolderRemove',On='uninstall')
+    tag(start_menu,'RegistryValue',Root='HKCU',Key='Software\\g3NetworX\\'+app,Name='StartMenuEntry',Type='integer',Value=1,KeyPath='yes')
+    tag(feature,'ComponentRef',Id='StartMenuEntry')
     service=tag(main,'ServiceInstall',Id='HostService',Name=app,DisplayName=title,Description='Autorisierte Fernwartung und automatische Sitzungsprotokollierung.',Type='ownProcess',Start='auto',ErrorControl='normal',Account='LocalSystem',Arguments='--service')
     E.SubElement(service,'{'+UTIL+'}ServiceConfig',{'FirstFailureActionType':'restart','SecondFailureActionType':'restart','ThirdFailureActionType':'restart','RestartServiceDelayInSeconds':'60','ResetPeriodInDays':'1'})
     tag(main,'ServiceControl',Id='ServiceLifecycle',Name=app,Start='install',Stop='both',Remove='uninstall',Wait='yes')
