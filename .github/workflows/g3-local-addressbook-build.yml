@@ -208,3 +208,4 @@ jobs:
           & $verify $test.FullName 'wrong-package.exe' ($test.FullName + '.p7s')
           if (!$LASTEXITCODE) { throw 'Wrong package name accepted.' }
           Write-Host 'All five packages verified with the built-in CA. Changed bytes and wrong package name rejected.'
+          exit 0

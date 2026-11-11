@@ -1,0 +1,50 @@
+name: OpsLinX 111126 signed package verification
+on:
+  push:
+    branches: [g3-codesigning-setup]
+    paths: [.github/workflows/g3-111126-verify.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-signatures:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: opslinx-signed-windows-f372c5f8e15d9c9316a482d74548860e533768a0
+          run-id: 42988341971
+          github-token: ${{ github.token }}
+          path: signed
+      - name: Verify all five signed packages on Windows without the g3 CA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $caIds = @('4F7BCA98FEE3E8CC68B38E5A3DA35C5B81C63542','8F07DD7BC81F34B95D73BB0E06589CD6D4BA53DE')
+          if (Get-ChildItem Cert:\LocalMachine\Root,Cert:\CurrentUser\Root,Cert:\LocalMachine\CA,Cert:\CurrentUser\CA | Where-Object Thumbprint -in $caIds) {
+            throw 'The clean verification runner already trusts the g3 CA.'
+          }
+          $verify = Join-Path $env:RUNNER_TEMP 'verify-opslinx-package.exe'
+          & 'C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe' /nologo /target:exe /reference:System.Security.dll "/out:$verify" '/resource:g3-build\codesigning\g3-root-ca.cer,g3.signing.root' '/resource:g3-build\codesigning\g3-device-ca.cer,g3.signing.issuer' 'g3-build\codesigning\OpsLinXPackageSignature.cs' 'g3-build\codesigning\VerifyOpsLinXPackage.cs'
+          if ($LASTEXITCODE) { throw 'Verifier compilation failed.' }
+          $packages = Get-ChildItem signed -File | Where-Object Extension -in '.exe','.msi'
+          if ($packages.Count -ne 5) { throw 'Unexpected signed package count.' }
+          foreach ($file in $packages) {
+            & $verify $file.FullName $file.Name ($file.FullName + '.p7s')
+            if ($LASTEXITCODE) { throw "Built-in CA verification failed for $($file.Name)." }
+          }
+          $test = $packages[0]
+          $tampered = Join-Path $env:RUNNER_TEMP 'tampered-package.bin'
+          Copy-Item -LiteralPath $test.FullName -Destination $tampered
+          $stream = [IO.File]::OpenWrite($tampered)
+          try { $stream.WriteByte(0) } finally { $stream.Dispose() }
+          & $verify $tampered $test.Name ($test.FullName + '.p7s')
+          if (!$LASTEXITCODE) { throw 'Tampered package accepted.' }
+          & $verify $test.FullName 'wrong-package.exe' ($test.FullName + '.p7s')
+          if (!$LASTEXITCODE) { throw 'Wrong package name accepted.' }
+          Write-Host 'All five packages verified with the built-in CA. Changed bytes and wrong package name rejected.'
+          exit 0
