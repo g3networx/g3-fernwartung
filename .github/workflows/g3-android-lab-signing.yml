@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 100
     outputs:
       artifact: ${{ steps.apk.outputs.artifact }}
+      run: ${{ steps.apk.outputs.run }}
     steps:
       - name: Wait for the pinned Android build
         id: apk
@@ -18,18 +19,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run=43048650393
           while true; do
-            build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
-            jq -e '.head_sha == "e10e7ef086a3849e0bc6229329569ba00fa34c0b" and .head_branch == "g3-android-lab"' <<< "$build" >/dev/null
-            if [[ $(jq -r .status <<< "$build") == completed ]]; then
-              jq -e '.conclusion == "success"' <<< "$build" >/dev/null
-              break
-            fi
+            active=0
+            for candidate in \
+              43051699270:259dc25dc095490fb7343e1cdee9f0b2241ccb14:g3-android-review \
+              43048650393:e10e7ef086a3849e0bc6229329569ba00fa34c0b:g3-android-lab; do
+              IFS=: read -r run commit branch <<< "$candidate"
+              build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
+              jq -e --arg commit "$commit" --arg branch "$branch" '.head_sha == $commit and .head_branch == $branch' <<< "$build" >/dev/null
+              if [[ $(jq -r .status <<< "$build") != completed ]]; then
+                active=1
+                continue
+              fi
+              if [[ $(jq -r .conclusion <<< "$build") == success ]]; then
+                artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
+                printf 'run=%s\nartifact=%s\n' "$run" "$artifact" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
+            [[ $active == 1 ]] || { echo 'Both reviewed Android builds failed.'; exit 1; }
             sleep 30
           done
-          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
-          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
     needs: select-apk
@@ -40,7 +50,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           artifact-ids: ${{ needs.select-apk.outputs.artifact }}
-          run-id: 43048650393
+          run-id: ${{ needs.select-apk.outputs.run }}
           github-token: ${{ github.token }}
           path: unsigned
       - name: Check APK identity, sign and verify
