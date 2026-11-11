@@ -1,4 +1,4 @@
-name: Sign OpsLinX g3.6.2 Build 111126
+name: Sign OpsLinX Windows 1.62.20051
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -6,21 +6,48 @@ on:
 permissions:
   contents: read
   actions: read
+env:
+  SOURCE_COMMIT: 47e7e8a1a410f8434f6ccbcff7fbea7c1c88c614
+  BUILD_RUN: '43048595736'
 jobs:
+  select-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      artifact: ${{ steps.build.outputs.artifact }}
+    steps:
+      - name: Wait for the reviewed Windows build
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while true; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")
+            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-next-client-review"' <<< "$run" >/dev/null
+            if [[ $(jq -r '.status' <<< "$run") == completed ]]; then
+              jq -e '.conclusion == "success"' <<< "$run" >/dev/null
+              break
+            fi
+            sleep 30
+          done
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/artifacts" | jq -er --arg name "g361-release-$SOURCE_COMMIT" '[.artifacts[] | select(.name == $name and .expired == false)] | if length == 1 then .[0].id else error("Unexpected Windows build artifacts") end')
+          printf 'artifact=%s\n' "$artifact" >> "$GITHUB_OUTPUT"
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    needs: select-build
     runs-on: windows-2022
     timeout-minutes: 35
     environment: signing
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 7f413d0e6d60f0b00e605806402c23a4c7768b33
+          ref: ${{ env.SOURCE_COMMIT }}
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: 13862730127
-          run-id: 43026141188
+          artifact-ids: ${{ needs.select-build.outputs.artifact }}
+          run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
       - name: Prepare portable package tools
@@ -33,7 +60,7 @@ jobs:
           SIGNING_PFX_PASSWORD: ${{ secrets.OPSLINX_SIGNING_PFX_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $sourceCommit = '7f413d0e6d60f0b00e605806402c23a4c7768b33'
+          $sourceCommit = $env:SOURCE_COMMIT
           if ((git rev-parse HEAD) -ne $sourceCommit) { throw 'Signing source mismatch.' }
           $env:GITHUB_SHA = $sourceCommit
           $thumbprint = '2B29AA03DE164FFF1081D924A2BF4F73BBE63453'
@@ -93,7 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 7f413d0e6d60f0b00e605806402c23a4c7768b33
+          ref: ${{ env.SOURCE_COMMIT }}
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
