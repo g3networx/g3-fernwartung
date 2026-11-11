@@ -160,6 +160,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
                 connectionType.secure.value == ConnectionType.strSecure;
             bool direct =
                 connectionType.direct.value == ConnectionType.strDirect;
+            final relayNode = connectionType.relayNode.value;
             String msgConn = getConnectionText(
                 secure, direct, connectionType.stream_type.value);
             var msgFingerprint = '${translate('Fingerprint')}:\n';
@@ -188,6 +189,15 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
                   ).paddingOnly(right: 5),
                 ),
                 label,
+                if (bind.mainGetAppNameSync() == 'g3Fernwartung')
+                  FutureBuilder<int?>(
+                    future: relayNode,
+                    builder: (_, snapshot) {
+                      final node = snapshot.connectionState == ConnectionState.done
+                          ? snapshot.data : null;
+                      return Text(direct ? 'Direkt' : node == null ? 'via Relay' : 'via Relay $node');
+                    },
+                  ).paddingOnly(left: 5),
                 unreadMessageCountBuilder(UnreadChatCountState.find(key))
                     .marginOnly(left: 4),
               ],

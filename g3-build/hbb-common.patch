@@ -63,3 +63,43 @@ index 6fe1004..6f78e83 100644
 +pub fn g3_reset_key_pair_cache() {
 + *KEY_PAIR.lock().unwrap() = None;
 +}
+diff --git a/src/tcp.rs b/src/tcp.rs
+--- a/src/tcp.rs
++++ b/src/tcp.rs
+@@ -21,7 +21,9 @@
+ use tokio_socks::IntoTargetAddr;
+ use tokio_util::codec::Framed;
+
+-pub trait TcpStreamTrait: AsyncRead + AsyncWrite + Unpin {}
++pub trait TcpStreamTrait: AsyncRead + AsyncWrite + Unpin {
++    fn tcp_peer_addr(&self) -> Option<SocketAddr>;
++}
+ pub struct DynTcpStream(pub Box<dyn TcpStreamTrait + Send + Sync>);
+
+ /// The newest key exchange version this build speaks. Version 0 is the original scheme, and
+@@ -158,6 +160,10 @@
+         proxy.connect::<T>(target, local_addr).await
+     }
+
++    pub fn tcp_peer_addr(&self) -> Option<SocketAddr> {
++        self.0.get_ref().0.as_ref().tcp_peer_addr()
++    }
++
+     pub fn local_addr(&self) -> SocketAddr {
+         self.1
+     }
+@@ -336,7 +342,13 @@
+     }
+ }
+
+-impl<R: AsyncRead + AsyncWrite + Unpin> TcpStreamTrait for R {}
++impl<R: AsyncRead + AsyncWrite + Unpin + 'static> TcpStreamTrait for R {
++    fn tcp_peer_addr(&self) -> Option<SocketAddr> {
++        (self as &dyn std::any::Any)
++            .downcast_ref::<tokio::net::TcpStream>()
++            .and_then(|stream| stream.peer_addr().ok())
++    }
++}
+
+ impl Encrypt {
+     pub fn new(key: Key) -> Self {

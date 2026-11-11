@@ -719,13 +719,20 @@ impl InvokeUiSession for FlutterHandler {
         );
     }
 
-    fn set_connection_type(&self, is_secured: bool, direct: bool, stream_type: &str) {
+    fn set_connection_type(
+        &self,
+        is_secured: bool,
+        direct: bool,
+        stream_type: &str,
+        relay_ip: Option<std::net::IpAddr>,
+    ) {
         self.push_event(
             "connection_ready",
             &[
                 ("secure", &is_secured.to_string()),
                 ("direct", &direct.to_string()),
                 ("stream_type", &stream_type.to_string()),
+                ("relay_ip", &relay_ip.map(|ip| ip.to_string()).unwrap_or_default()),
             ],
             &[],
         );

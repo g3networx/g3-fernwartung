@@ -67,6 +67,7 @@ class CachedPeerData {
   bool secure = false;
   bool direct = false;
   String streamType = '';
+  String relayIp = '';
 
   CachedPeerData();
 
@@ -80,6 +81,7 @@ class CachedPeerData {
       'secure': secure,
       'direct': direct,
       'streamType': streamType,
+      'relayIp': relayIp,
     });
   }
 
@@ -96,6 +98,7 @@ class CachedPeerData {
       data.secure = map['secure'];
       data.direct = map['direct'];
       data.streamType = map['streamType'];
+      data.relayIp = map['relayIp'] as String? ?? '';
       return data;
     } catch (e) {
       debugPrint('Failed to parse CachedPeerData: $e');
@@ -265,10 +268,12 @@ class FfiModel with ChangeNotifier {
   }
 
   setConnectionType(
-      String peerId, bool secure, bool direct, String streamType) {
+      String peerId, bool secure, bool direct, String streamType,
+      [String relayIp = '']) {
     cachedPeerData.secure = secure;
     cachedPeerData.direct = direct;
     cachedPeerData.streamType = streamType;
+    cachedPeerData.relayIp = relayIp;
     _secure = secure;
     _direct = direct;
     try {
@@ -276,6 +281,9 @@ class FfiModel with ChangeNotifier {
       connectionType.setSecure(secure);
       connectionType.setDirect(direct);
       connectionType.setStreamType(streamType);
+      if (isDesktop && bind.mainGetAppNameSync() == 'g3Fernwartung') {
+        connectionType.setRelayIp(relayIp);
+      }
     } catch (e) {
       //
     }
@@ -319,7 +327,7 @@ class FfiModel with ChangeNotifier {
       'link': '',
     }, sessionId, peerId);
     updatePrivacyMode(data.updatePrivacyMode, sessionId, peerId);
-    setConnectionType(peerId, data.secure, data.direct, data.streamType);
+    setConnectionType(peerId, data.secure, data.direct, data.streamType, data.relayIp);
     await handlePeerInfo(data.peerInfo, peerId, true);
     if (data.lastCursorId.isNotEmpty) {
       updateLastCursorId(data.lastCursorId);
@@ -357,7 +365,7 @@ class FfiModel with ChangeNotifier {
         handlePlatformAdditions(evt, sessionId, peerId);
       } else if (name == 'connection_ready') {
         setConnectionType(peerId, evt['secure'] == 'true',
-            evt['direct'] == 'true', evt['stream_type'] ?? '');
+            evt['direct'] == 'true', evt['stream_type'] ?? '', evt['relay_ip'] ?? '');
         resetRestartReconnectState();
       } else if (name == 'switch_display') {
         // switch display is kept for backward compatibility

@@ -2,6 +2,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:get/get.dart';
 
 import '../consts.dart';
+import '../g3_relay_node.dart';
 
 // TODO: A lot of dup code.
 
@@ -78,6 +79,7 @@ class ConnectionType {
   final Rx<String> _secure = kInvalidValueStr.obs;
   final Rx<String> _direct = kInvalidValueStr.obs;
   final Rx<String> _stream_type = kInvalidValueStr.obs;
+  final relayNode = Rxn<Future<int?>>();
 
   Rx<String> get secure => _secure;
   Rx<String> get direct => _direct;
@@ -98,6 +100,10 @@ class ConnectionType {
 
   void setStreamType(String v) {
     _stream_type.value = v;
+  }
+
+  void setRelayIp(String ip) {
+    relayNode.value = ip.isEmpty ? null : g3RelayNodeFor(ip);
   }
 
   bool isValid() {

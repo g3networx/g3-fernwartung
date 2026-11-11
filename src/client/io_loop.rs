@@ -215,8 +215,12 @@ impl<T: InvokeUiSession> Remote<T> {
                 } else {
                     stream_type
                 };
+                let relay_ip = match (&peer, direct) {
+                    (Stream::Tcp(stream), false) => stream.tcp_peer_addr().map(|addr| addr.ip()),
+                    _ => None,
+                };
                 self.handler
-                    .set_connection_type(is_secured, direct, stream_type); // flutter -> connection_ready
+                    .set_connection_type(is_secured, direct, stream_type, relay_ip);
                 if !is_secured
                     && !crate::common::is_direct_ip_access(&self.handler.get_id())
                     && !client::confirm_insecure_connection(&self.handler, &mut self.receiver).await
