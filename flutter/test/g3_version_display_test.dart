@@ -1,10 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_hbb/g3_update_check.dart';
 void main() {
- test('sub-address book build advances the installed FullClient', () {
-  expect(g3ClientVersion, '1.5.0-g3.61.20049');
-  expect(g3DisplayVersion, 'g3.6.1 Build 111126');
+ test('g3.6.2 advances the installed FullClient', () {
+  expect(g3ClientVersion, '1.5.0-g3.62.20049');
+  expect(g3DisplayVersion, 'g3.6.2 Build 111126');
   expect(g3VersionLabel(g3ClientVersion), g3DisplayVersion);
+  expect(g3VersionNewer(g3ClientVersion, '1.5.0-g3.61.20049'), isTrue);
   expect(g3VersionNewer(g3ClientVersion, '1.5.0-g3.61.20008'), isTrue);
   expect(g3VersionNewer(g3ClientVersion, '1.5.0-g3.61.20024'), isTrue);
  });

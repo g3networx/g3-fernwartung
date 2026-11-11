@@ -1,6 +1,6 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3.6.1 Build 111126 release
+name: g3.6.2 Build 111126 release
 on:
   push:
     branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook]
@@ -65,10 +65,10 @@ jobs:
       - name: Compile HA native core and verify Windows account handling
         shell: pwsh
         run: ./g3-build/build-local-addressbook-core.ps1
-      - name: Build g3.6.1 Build 111126 Flutter frontend and run focused tests
+      - name: Build g3.6.2 Flutter frontend and run focused tests
         shell: pwsh
         run: ./g3-build/build-local-addressbook-ui.ps1
-      - name: Package g3.6.1 Build 111126 Host and FullClient and test installer regressions
+      - name: Package g3.6.2 Host and FullClient and test installer regressions
         shell: pwsh
         run: |
           python g3-build/package-version.py
