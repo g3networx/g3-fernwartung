@@ -3425,10 +3425,14 @@ impl LoginConfigHandler {
                 return None;
             }
         }
-        let q = self.image_quality.clone();
-        if let Some(q) = self.get_image_quality_enum(&q, ignore_default) {
+        let quality = if cfg!(target_os = "android") && option_env!("G3_OPSLINX_ANDROID").is_some() {
+            "balanced"
+        } else {
+            self.image_quality.as_str()
+        };
+        if let Some(q) = self.get_image_quality_enum(quality, ignore_default) {
             msg.image_quality = q.into();
-        } else if q == "custom" {
+        } else if quality == "custom" {
             let config = self.load_config();
             let allow_more = !crate::using_public_server() || self.direct == Some(true);
             let quality = if config.custom_image_quality.is_empty() {

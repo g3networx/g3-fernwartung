@@ -1270,9 +1270,11 @@ void showOptions(
 
   List<TRadioMenu<String>> viewStyleRadios =
       await toolbarViewStyle(context, id, gFFI);
-  List<TRadioMenu<String>> imageQualityRadios =
-      await toolbarImageQuality(context, id, gFFI);
-  final codecRadios = isAndroid && kG3AndroidClient
+  final automaticQuality = isAndroid && kG3AndroidClient;
+  final imageQualityRadios = automaticQuality
+      ? <TRadioMenu<String>>[]
+      : await toolbarImageQuality(context, id, gFFI);
+  final codecRadios = automaticQuality
       ? <TRadioMenu<String>>[]
       : await toolbarCodec(context, id, gFFI);
   List<TToggleMenu> cursorToggles = await toolbarCursor(context, id, gFFI);
@@ -1319,7 +1321,7 @@ void showOptions(
       Obx(() => viewStyle.value == kRemoteViewStyleCustom
           ? MobileCustomScaleControls(ffi: gFFI)
           : const SizedBox.shrink()),
-      const Divider(color: MyTheme.border),
+      if (!automaticQuality) const Divider(color: MyTheme.border),
       for (var e in imageQualityRadios)
         Obx(() => getRadio<String>(
             e.child,
@@ -1331,7 +1333,7 @@ void showOptions(
                     if (v != null) imageQuality.value = v;
                   }
                 : null)),
-      const Divider(color: MyTheme.border),
+      if (!automaticQuality) const Divider(color: MyTheme.border),
       for (var e in codecRadios)
         Obx(() => getRadio<String>(
             e.child,
