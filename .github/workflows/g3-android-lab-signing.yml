@@ -6,42 +6,39 @@ on:
 permissions:
   actions: read
 jobs:
-  select-apk:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 100
-    outputs:
-      artifact: ${{ steps.apk.outputs.artifact }}
-      run: ${{ steps.apk.outputs.run }}
+  stage-apk:
+    if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Draft releases are visible to principals with push access.
     steps:
-      - name: Wait for the pinned Android build
-        id: apk
+      - name: Retrieve the pinned Ubuntu APK from the private release draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run=43095615417
-          commit=ed7bc0129d9147dcae08b62f1fe74d76283e3c45
-          while true; do
-            build=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run")
-            jq -e --arg commit "$commit" '.head_sha == $commit and .head_branch == "g3-android-review"' <<< "$build" >/dev/null
-            [[ $(jq -r .status <<< "$build") == completed ]] && break
-            sleep 30
-          done
-          jq -e '.conclusion == "success"' <<< "$build" >/dev/null
-          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" | jq -er '[.artifacts[] | select(.name == "opslinx-android-lab-arm64" and .expired == false)] | if length == 1 then .[0].id else error("Unexpected APK artifacts") end')
-          printf 'run=%s\nartifact=%s\n' "$run" "$artifact" >> "$GITHUB_OUTPUT"
+          draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/442260442")
+          jq -e '.draft and .tag_name == "ci-android-signing-20054-ea999c2d" and any(.assets[]; .id == 737138960 and .name == "app-arm64-v8a-release.apk" and .state == "uploaded")' <<< "$draft" >/dev/null
+          gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/737138960" > app-arm64-v8a-release.apk
+          echo 'ea999c2d22cc4a6779a822421544d3bf8fa560dcbd1e3d5f9ea20824638f5590  app-arm64-v8a-release.apk' | sha256sum -c
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d0b2
+        with:
+          name: opslinx-android-20054-signing-input
+          path: app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 1
+
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
-    needs: select-apk
-    runs-on: ubuntu-22.04
+    needs: stage-apk
+    runs-on: ubuntu-24.04
     environment: signing
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: ${{ needs.select-apk.outputs.artifact }}
-          run-id: ${{ needs.select-apk.outputs.run }}
-          github-token: ${{ github.token }}
+          name: opslinx-android-20054-signing-input
           path: unsigned
       - name: Check APK identity, sign and verify
         shell: bash
@@ -55,6 +52,7 @@ jobs:
           sdk=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           test -x "$sdk" || { echo 'Android APK signing tools are unavailable.'; exit 1; }
           src=unsigned/app-arm64-v8a-release.apk
+          echo "ea999c2d22cc4a6779a822421544d3bf8fa560dcbd1e3d5f9ea20824638f5590  $src" | sha256sum -c
           badging=$("${sdk%/*}/aapt" dump badging "$src")
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
           grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22054' versionName='3.6.2'" <<< "$badging" \
