@@ -23,7 +23,8 @@ for kind,name in [('windows','g3-OpsLinX-'+version+'-install'),('host','g3-OpsLi
   entries.append(rel+'\t'+hashlib.sha256(file.read_bytes()).hexdigest())
  if kind=='host':entries.append('g3Host.exe\t'+hashlib.sha256(exe_source.read_bytes()).hexdigest())
  expected=root/'g3-build/msi'/kind/'expected-payload.tsv';expected.write_text('\n'.join(entries),encoding='utf-8')
- subprocess.run(['C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe','/nologo','/target:winexe','/platform:x64','/optimize+','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/resource:'+str(expected)+',g3.payload','/resource:'+str(root/'res/g3-brand-original.png')+',g3.brand','/win32icon:flutter/windows/runner/resources/app_icon.ico','/out:'+str(out/(name+'.exe')),str(code)],check=True)
+ signing=root/'g3-build/codesigning'
+ subprocess.run(['C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe','/nologo','/target:winexe','/platform:x64','/optimize+','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/reference:System.Security.dll','/resource:'+str(signing/'g3-root-ca.cer')+',g3.signing.root','/resource:'+str(signing/'g3-device-ca.cer')+',g3.signing.issuer','/resource:'+str(expected)+',g3.payload','/resource:'+str(root/'res/g3-brand-original.png')+',g3.brand','/win32icon:flutter/windows/runner/resources/app_icon.ico','/out:'+str(out/(name+'.exe')),str(code),str(signing/'OpsLinXPackageSignature.cs')],check=True)
 
 (out/'msi-items.json').write_text(json.dumps(items,indent=2),encoding='utf-8');print('Visible setup launchers compiled; MSI metadata saved.')
 

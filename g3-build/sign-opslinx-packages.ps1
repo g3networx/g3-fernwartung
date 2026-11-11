@@ -23,7 +23,7 @@ function Sign-File([string]$Path) {
 }
 
 $provenance = Get-Content (Join-Path $BuildOutput 'g361-release-provenance.json') -Raw | ConvertFrom-Json
-if ($provenance.version -ne $version -or $provenance.source_commit -ne 'd8d58b13ec5ddc8d751e5a9c8c4d711921c859cd') {
+if ($provenance.version -ne $version -or $provenance.source_commit -ne $env:GITHUB_SHA) {
     throw 'Unexpected build provenance.'
 }
 $runtime = 'flutter/build/windows/x64/runner/Release'
@@ -64,6 +64,20 @@ Sign-File $adhoc
 
 $packages = @($adhoc)
 foreach ($name in $names) { $packages += @("outputs/$name.msi", "outputs/$name.exe") }
+foreach ($path in $packages) {
+    $file = Get-Item -LiteralPath $path
+    $digest = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+    $identity = [Text.Encoding]::ASCII.GetBytes("opslinx-release-v1`n$($file.Name)`n$digest`n")
+    $content = [Security.Cryptography.Pkcs.ContentInfo]::new($identity)
+    $cms = [Security.Cryptography.Pkcs.SignedCms]::new($content, $true)
+    $packageSigner = [Security.Cryptography.Pkcs.CmsSigner]::new($signer)
+    $packageSigner.IncludeOption = 'EndCertOnly'
+    $packageSigner.DigestAlgorithm = [Security.Cryptography.Oid]::new('2.16.840.1.101.3.4.2.1')
+    $cms.ComputeSignature($packageSigner, $true)
+    $proof = $cms.Encode()
+    if ($proof.Length -gt 4096) { throw "OpsLinX signature is too large for $path" }
+    [IO.File]::WriteAllBytes($file.FullName + '.p7s', $proof)
+}
 $packages | ForEach-Object {
     $file = Get-Item -LiteralPath $_
     [ordered]@{

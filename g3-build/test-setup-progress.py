@@ -41,7 +41,7 @@ class ProgressAcceptance {
 }''',encoding='utf-8')
 (folder/'payload.tsv').write_text('',encoding='utf-8')
 exe=folder/'ProgressAcceptance.exe'
-subprocess.run([str(Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),'/nologo','/target:exe','/main:ProgressAcceptance','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/resource:'+str(folder/'payload.tsv')+',g3.payload','/out:'+str(exe),str(root/'g3-build/SetupBootstrap.cs'),str(folder/'Harness.cs')],check=True)
+subprocess.run([str(Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),'/nologo','/target:exe','/main:ProgressAcceptance','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/reference:System.Security.dll','/resource:'+str(folder/'payload.tsv')+',g3.payload','/out:'+str(exe),str(root/'g3-build/SetupBootstrap.cs'),str(root/'g3-build/codesigning/OpsLinXPackageSignature.cs'),str(folder/'Harness.cs')],check=True)
 result=subprocess.run([str(exe),str(folder)],check=True,capture_output=True,text=True)
 print(result.stdout)
 out=root/'outputs';out.mkdir(exist_ok=True)

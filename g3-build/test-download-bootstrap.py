@@ -1,7 +1,7 @@
 """Disposable runner only: exercise the production download/install form against a local package fixture.
 The fixture changes only the compiled download URL and entry point, never the shipped launcher.
 """
-import hashlib, http.server, json, os, pathlib, subprocess, threading
+import base64, hashlib, http.server, json, os, pathlib, subprocess, threading
 
 assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub runner required'
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -10,12 +10,14 @@ folder.mkdir(parents=True, exist_ok=True)
 version = os.environ.get('G3_BUILD_VERSION','1.5.0-g3.29')
 msi = root/'outputs'/f'g3-OpsLinX-{version}-install.msi'
 payload = msi.read_bytes()
+proof = pathlib.Path(str(msi) + '.p7s').read_bytes()
 class Handler(http.server.BaseHTTPRequestHandler):
     corrupt = False
     def do_GET(self):
         data = b'corrupt package fixture' if self.corrupt else payload
         self.send_response(200)
         self.send_header('Content-Length', str(len(data)))
+        self.send_header('X-OpsLinX-Signature', base64.b64encode(proof).decode('ascii'))
         self.end_headers()
         self.wfile.write(data)
     def log_message(self, *args): pass
@@ -45,8 +47,10 @@ class DownloadAcceptance {
 exe = folder/'DownloadAcceptance.exe'
 subprocess.run(['C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe', '/nologo', '/target:exe',
  '/main:DownloadAcceptance', '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
- '/reference:System.ServiceProcess.dll', '/resource:'+str(root/'g3-build/msi/windows/expected-payload.tsv')+',g3.payload',
- '/out:'+str(exe), str(folder/'SetupBootstrap.cs'), str(folder/'Harness.cs')], check=True)
+ '/reference:System.ServiceProcess.dll','/reference:System.Security.dll',
+ '/resource:'+str(root/'g3-build/codesigning/g3-root-ca.cer')+',g3.signing.root',
+ '/resource:'+str(root/'g3-build/codesigning/g3-device-ca.cer')+',g3.signing.issuer', '/resource:'+str(root/'g3-build/msi/windows/expected-payload.tsv')+',g3.payload',
+ '/out:'+str(exe), str(folder/'SetupBootstrap.cs'), str(root/'g3-build/codesigning/OpsLinXPackageSignature.cs'),str(folder/'Harness.cs')], check=True)
 cache = pathlib.Path(os.environ['LOCALAPPDATA'])/'g3NetworX/Fernwartung/Downloads'
 before = set(cache.glob('setup-*/*.msi'))
 try:

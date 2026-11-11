@@ -117,10 +117,14 @@ internal sealed class SetupForm:Form {
 
   ShowStep(1,"Installationspaket wird heruntergeladen …",true);ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
 
-  using(var c=new WebClient()){c.DownloadProgressChanged+=(s,e)=>ShowPercent(e.ProgressPercentage,"Download · "+(e.BytesReceived/1048576.0).ToString("0.0")+" / "+(e.TotalBytesToReceive/1048576.0).ToString("0.0")+" MB");await c.DownloadFileTaskAsync(new Uri("https://rust.g3nx.net/client/releases/"+Version+"/"+Kind),msi);}
+  string packageSignature;
+  using(var c=new WebClient()){c.DownloadProgressChanged+=(s,e)=>ShowPercent(e.ProgressPercentage,"Download · "+(e.BytesReceived/1048576.0).ToString("0.0")+" / "+(e.TotalBytesToReceive/1048576.0).ToString("0.0")+" MB");await c.DownloadFileTaskAsync(new Uri("https://rust.g3nx.net/client/releases/"+Version+"/"+Kind),msi);packageSignature=c.ResponseHeaders["X-OpsLinX-Signature"];}
 
   ShowStep(2,"Heruntergeladenes Paket wird auf Vollständigkeit und Unversehrtheit geprüft …",true);
   if(await Task.Run(()=>HashDownloadedPackage(msi))!=Hash)throw new InvalidDataException("Paketprüfung fehlgeschlagen.");
+  if(String.IsNullOrEmpty(packageSignature)||packageSignature.Length>5464)
+   throw new InvalidDataException("OpsLinX package signature missing or oversized.");
+  await Task.Run(()=>OpsLinXPackageSignature.Verify(msi,FileName,Convert.FromBase64String(packageSignature)));
 
   ShowStep(3,"Windows-Berechtigung bestätigen. Danach wird die Installation vorbereitet …",false);
 

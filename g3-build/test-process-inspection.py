@@ -51,6 +51,6 @@ class ProcessInspectionAcceptance {
 ''', encoding='utf-8')
 (folder/'payload.tsv').write_text('')
 exe=folder/'Acceptance.exe'
-subprocess.run([csc,'/nologo','/target:exe','/main:ProcessInspectionAcceptance','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/resource:'+str(folder/'payload.tsv')+',g3.payload','/out:'+str(exe),str(root/'g3-build/SetupBootstrap.cs'),str(folder/'Harness.cs')],check=True)
+subprocess.run([csc,'/nologo','/target:exe','/main:ProcessInspectionAcceptance','/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.ServiceProcess.dll','/reference:System.Security.dll','/resource:'+str(folder/'payload.tsv')+',g3.payload','/out:'+str(exe),str(root/'g3-build/SetupBootstrap.cs'),str(root/'g3-build/codesigning/OpsLinXPackageSignature.cs'),str(folder/'Harness.cs')],check=True)
 subprocess.run([str(exe),str(folder/'g3Fernwartung.exe')],check=True)
 (root/'outputs/process-inspection-acceptance.json').write_text(json.dumps({'protected_process_defers_without_access_denied':True,'running_process_not_ignored':True,'fixture_exits_voluntarily':True,'exited_process_no_longer_blocks':True,'installed_products_touched':False},indent=2))

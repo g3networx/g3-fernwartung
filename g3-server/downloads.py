@@ -1,5 +1,5 @@
 """Public, manifest-pinned client downloads."""
-import json,re
+import base64,json,re
 from pathlib import Path
 from flask import abort,render_template,send_file
 ROOT=Path('/opt/rustdesk-client')
@@ -29,6 +29,16 @@ def install(app,m):
   response=send_file(ROOT/item['file'],as_attachment=True,download_name=item['file'],conditional=True)
   response.headers['X-Content-Type-Options']='nosniff'
   return response
+ def package_response(name,kind):
+  response=send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
+  if kind in ('windows','host','adhoc','windows_msi','host_msi'):
+   try:
+    with (ROOT/(name+'.p7s')).open('rb') as sidecar: signature=sidecar.read(4097)
+   except FileNotFoundError: signature=b''
+   if 0<len(signature)<=4096:
+    response.headers['X-OpsLinX-Signature']=base64.b64encode(signature).decode('ascii')
+  response.headers['X-Content-Type-Options']='nosniff'
+  return response
  def release():
   try:return json.loads((ROOT/'current.json').read_text(encoding='utf-8'))
   except (OSError,ValueError):return None
@@ -55,7 +65,7 @@ def install(app,m):
   except (OSError,ValueError,KeyError):abort(404)
   name=item['file']
   if Path(name).name!=name or not (ROOT/name).is_file():abort(404)
-  return send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
+  return package_response(name,kind)
  def update_metadata(data):
   result={k:data[k] for k in ('version','windows','adhoc','host') if k in data}
   # Pre-g3.40 clients accept only integer g3 release identifiers.
@@ -85,7 +95,5 @@ def install(app,m):
   if not data or kind not in ('windows','source','license','dependencies','adhoc','host','certificate','windows_msi','host_msi') or kind not in data:abort(404)
   item=data[kind];name=item['file']
   if Path(name).name!=name or not (ROOT/name).is_file():abort(404)
-  response=send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
-  response.headers['X-Content-Type-Options']='nosniff'
-  return response
+  return package_response(name,kind)
 

@@ -17,7 +17,7 @@ internal static class G3ProcessExitRegressionTests {
 $file=Join-Path $out 'ProcessExitTests.cs';[IO.File]::WriteAllText($file,$test,[Text.UTF8Encoding]::new($false))
 $compiler=Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $exe=Join-Path $out 'ProcessExitTests.exe'
-& $compiler /nologo /target:exe /main:G3ProcessExitRegressionTests (('/out:')+$exe) /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.ServiceProcess.dll (Join-Path $PSScriptRoot 'SetupBootstrap.cs') $file
+& $compiler /nologo /target:exe /main:G3ProcessExitRegressionTests (('/out:')+$exe) /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.ServiceProcess.dll /r:System.Security.dll (Join-Path $PSScriptRoot 'codesigning/OpsLinXPackageSignature.cs') (Join-Path $PSScriptRoot 'SetupBootstrap.cs') $file
 if($LASTEXITCODE -ne 0){throw 'Bootstrap process-state regression compilation failed'}
 & $exe|Tee-Object (Join-Path $out 'result.txt')
 if($LASTEXITCODE -ne 0){throw 'Bootstrap process-state regression failed'}

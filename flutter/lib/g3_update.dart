@@ -88,6 +88,18 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
       final file = File('${folder.path}${Platform.pathSeparator}$name');
       await file.writeAsBytes(r.bodyBytes, flush: true);
       if (!name.endsWith('.exe')) throw Exception();
+      final signature = r.headers['x-opslinx-signature'];
+      if (signature == null || signature.length > 5464) {
+        throw const FormatException('Missing or oversized OpsLinX package signature.');
+      }
+      final proof = File('${file.path}.p7s');
+      await proof.writeAsBytes(base64Decode(signature), flush: true);
+      final executableDir = File(Platform.resolvedExecutable).parent.path;
+      final verifier = '$executableDir${Platform.pathSeparator}verify-opslinx-package.exe';
+      final verification = await Process.run(verifier, [file.path, name, proof.path]);
+      if (verification.exitCode != 0) {
+        throw const FormatException('Invalid OpsLinX package signature.');
+      }
       await Process.start(file.path, ['--g3-wait-pid', pid.toString()],
           mode: ProcessStartMode.detached);
       if (mounted) setState(() {
