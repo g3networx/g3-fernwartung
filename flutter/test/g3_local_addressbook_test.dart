@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_hbb/g3_local_addressbook.dart';
@@ -193,15 +195,24 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Steinmeier');
     await tester.pumpAndSettle();
     expect(find.text('Labor'), findsNothing);
-    await tester.tap(find.byTooltip('Desktop verbinden'));
+    await tester.tap(find.text('Büro'));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Büro'));
     await tester.pumpAndSettle();
     expect(connected, ['123456789:false']);
-    await tester.tap(find.byTooltip('Weitere Aktionen'));
+    final menu = await tester.startGesture(
+      tester.getCenter(find.text('Büro')),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await menu.up();
     await tester.pumpAndSettle();
+    expect(find.text('Desktop verbinden'), findsOneWidget);
     await tester.tap(find.text('Dateiexplorer'));
     await tester.pumpAndSettle();
     expect(connected.last, '123456789:true');
     await tester.tap(find.byTooltip('Weitere Aktionen'));
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bearbeiten'));
     await tester.pumpAndSettle();
