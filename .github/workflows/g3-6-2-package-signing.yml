@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 1.62.20051
+name: Sign OpsLinX Windows 1.62.20053
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: 47e7e8a1a410f8434f6ccbcff7fbea7c1c88c614
-  BUILD_RUN: '43048595736'
+  SOURCE_COMMIT: d1efa49aea9f177110d139827a3c9b0bd73b79eb
+  BUILD_RUN: '43108539236'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
