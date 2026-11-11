@@ -2419,21 +2419,21 @@ Future<void> redeemG3Session(String token, {bool isTerminal = false, bool isFile
       redeemed = true;
       if (isDesktop) {
         if (isFileTransfer) {
-          await rustDeskWinManager.newFileTransfer(id, password: password, forceRelay: true);
+          await rustDeskWinManager.newFileTransfer(id, password: password);
           return;
         }
         if (isTerminal) {
-          await rustDeskWinManager.newTerminal(id, password: password, forceRelay: true, terminalUsername: terminalUsername, terminalPassword: terminalPassword, terminalSaveCredentials: terminalSaveCredentials);
+          await rustDeskWinManager.newTerminal(id, password: password, terminalUsername: terminalUsername, terminalPassword: terminalPassword, terminalSaveCredentials: terminalSaveCredentials);
           return;
         }
-        await rustDeskWinManager.newRemoteDesktop(id, password: password, forceRelay: true);
+        await rustDeskWinManager.newRemoteDesktop(id, password: password);
       } else {
         for (var attempt = 0; attempt < 50 && Get.context == null; attempt++) {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         }
         final context = Get.context;
         if (context == null) throw Exception('Window not ready');
-        await connect(context, id, password: password, forceRelay: true, isTerminal: isTerminal, isFileTransfer: isFileTransfer);
+        await connect(context, id, password: password, isTerminal: isTerminal, isFileTransfer: isFileTransfer);
       }
     } finally {
       client.close();

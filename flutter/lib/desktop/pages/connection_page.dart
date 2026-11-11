@@ -326,15 +326,15 @@ class _ConnectionPageState extends State<ConnectionPage>
             Expanded(child: bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()
                 ? G3AddressBooks(onLocalShell: (id, password) async {
                     await connect(context, id, password: password.isEmpty ? null : password,
-                        isTerminal: true, forceRelay: true);
+                        isTerminal: true);
                   }, onLocalConnect: (id, files, password) async {
-                    await connect(context, id, password: password.isEmpty ? null : password, isFileTransfer: files, forceRelay: true);
+                    await connect(context, id, password: password.isEmpty ? null : password, isFileTransfer: files);
                   }, remote: G3AddressBook(onConnect: (value) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
                       await redeemG3Session(uri.path.substring(1));
                     } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
-                      await connect(context, uri.host, forceRelay: true);
+                      await connect(context, uri.host);
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
@@ -343,7 +343,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
                       await redeemG3Session(uri.path.substring(1), isFileTransfer: true);
                     } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
-                      await rustDeskWinManager.newFileTransfer(uri.host, forceRelay: true);
+                      await rustDeskWinManager.newFileTransfer(uri.host);
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
@@ -352,7 +352,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
                       await redeemG3Session(uri.path.substring(1), isTerminal: true, terminalUsername: login.username, terminalPassword: login.password, terminalSaveCredentials: login.remember);
                     } else if (uri.path.isEmpty && RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.host)) {
-                      await rustDeskWinManager.newTerminal(uri.host, forceRelay: true, terminalUsername: login.username, terminalPassword: login.password, terminalSaveCredentials: login.remember);
+                      await rustDeskWinManager.newTerminal(uri.host, terminalUsername: login.username, terminalPassword: login.password, terminalSaveCredentials: login.remember);
                     } else {
                       throw Exception('Ungültige Verbindungsfreigabe');
                     }
