@@ -6,10 +6,14 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
 
-typedef _JoinNative = Uint32 Function(
-    Pointer<Utf16>, Pointer<Pointer<Utf16>>, Pointer<Uint32>);
-typedef _JoinDart = int Function(
-    Pointer<Utf16>, Pointer<Pointer<Utf16>>, Pointer<Uint32>);
+final class _PrimaryDomainInfo extends Struct {
+  @Uint32()
+  external int machineRole;
+  @Uint32()
+  external int flags;
+  external Pointer<Utf16> netbiosName;
+  external Pointer<Utf16> dnsName;
+}
 
 final class _SockaddrIn6 extends Struct {
   @Uint16()
@@ -84,25 +88,30 @@ String? _internetIpv6() {
 }
 
 String? _computerDomain() {
-  final name = calloc<Pointer<Utf16>>();
-  final status = calloc<Uint32>();
+  final info = calloc<Pointer<_PrimaryDomainInfo>>();
   try {
     final library = DynamicLibrary.open('netapi32.dll');
-    final join =
-        library.lookupFunction<_JoinNative, _JoinDart>('NetGetJoinInformation');
-    final free = library.lookupFunction<Uint32 Function(Pointer<Void>),
-        int Function(Pointer<Void>)>('NetApiBufferFree');
+    final read = library.lookupFunction<
+            Uint32 Function(
+                Pointer<Utf16>, Uint32, Pointer<Pointer<_PrimaryDomainInfo>>),
+            int Function(
+                Pointer<Utf16>, int, Pointer<Pointer<_PrimaryDomainInfo>>)>(
+        'DsRoleGetPrimaryDomainInformation');
+    final free = library.lookupFunction<Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)>('DsRoleFreeMemory');
     try {
-      if (join(nullptr, name, status) != 0 ||
-          status.value != 3 ||
-          name.value == nullptr) return null;
-      return name.value.toDartString();
+      const primaryDomainInfoBasic = 1;
+      if (read(nullptr, primaryDomainInfoBasic, info) != 0 ||
+          info.value == nullptr) return null;
+      final name = info.value.ref.dnsName;
+      if (name == nullptr) return null;
+      final domain = name.toDartString();
+      return domain.isEmpty ? null : domain;
     } finally {
-      if (name.value != nullptr) free(name.value.cast());
+      if (info.value != nullptr) free(info.value.cast());
     }
   } finally {
-    calloc.free(name);
-    calloc.free(status);
+    calloc.free(info);
   }
 }
 

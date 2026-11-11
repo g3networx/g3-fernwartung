@@ -120,6 +120,7 @@ winapi = { version = "0.3", features = [
     "memoryapi",
     "shellapi",
     "devguid",
+    "dsrole",
     "setupapi",
     "cguid",
     "cfgmgr32",
