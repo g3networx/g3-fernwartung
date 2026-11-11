@@ -33,7 +33,7 @@ final class _SockaddrIn6Pair extends Struct {
   external Pointer<_SockaddrIn6> destination;
 }
 
-String? _internetIpv6() {
+Uint8List? _sourceAddress(String destinationAddress) {
   final destination = calloc<_SockaddrIn6>();
   final pairs = calloc<Pointer<_SockaddrIn6Pair>>();
   final count = calloc<Uint32>();
@@ -59,7 +59,7 @@ String? _internetIpv6() {
     final free = library.lookupFunction<Void Function(Pointer<Void>),
         void Function(Pointer<Void>)>('FreeMibTable');
     // Windows selects a source for a public IPv6 destination without contacting it.
-    final target = InternetAddress('2606:4700:4700::1111').rawAddress;
+    final target = InternetAddress(destinationAddress).rawAddress;
     destination.ref.family = 23; // AF_INET6 on Windows.
     for (var index = 0; index < target.length; index++) {
       destination.ref.address[index] = target[index];
@@ -69,14 +69,12 @@ String? _internetIpv6() {
           count.value == 0 ||
           pairs.value == nullptr) return null;
       final source = pairs.value.ref.source;
-      if (source == nullptr || (source.ref.address[0] & 0xe0) != 0x20) {
-        return null;
-      }
+      if (source == nullptr) return null;
       final address = Uint8List(16);
       for (var index = 0; index < address.length; index++) {
         address[index] = source.ref.address[index];
       }
-      return InternetAddress.fromRawAddress(address).address;
+      return address;
     } finally {
       if (pairs.value != nullptr) free(pairs.value.cast());
     }
@@ -85,6 +83,32 @@ String? _internetIpv6() {
     calloc.free(pairs);
     calloc.free(count);
   }
+}
+
+String? _internetIpv6() {
+  final address = _sourceAddress('2606:4700:4700::1111');
+  if (address == null || (address[0] & 0xe0) != 0x20) return null;
+  return InternetAddress.fromRawAddress(address).address;
+}
+
+String? _primaryIpv4() {
+  final address = _sourceAddress('::ffff:1.1.1.1');
+  if (address == null ||
+      address.take(10).any((byte) => byte != 0) ||
+      address[10] != 0xff ||
+      address[11] != 0xff) {
+    return null;
+  }
+  final ipv4 = InternetAddress.fromRawAddress(address.sublist(12));
+  return ipv4.isLoopback || ipv4.address == '0.0.0.0' ? null : ipv4.address;
+}
+
+String g3RemoteIpv4(Map<dynamic, dynamic> info) {
+  final value = info.containsKey('ipv4') ? info['ipv4'] : info['local_ip'];
+  final address = value is String ? InternetAddress.tryParse(value) : null;
+  return address != null && address.type == InternetAddressType.IPv4
+      ? address.address
+      : '–';
 }
 
 String? _computerDomain() {
@@ -123,21 +147,23 @@ class G3LocalSystemInfo extends StatefulWidget {
 }
 
 class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
-  late final Future<List<String>> _ipv4 = _readIpv4();
+  late final Future<String?> _ipv4 = _readIpv4();
   late final String? _ipv6 = _internetIpv6();
   late final String? _domain = _computerDomain();
 
-  Future<List<String>> _readIpv4() async {
+  Future<String?> _readIpv4() async {
+    final primary = _primaryIpv4();
+    if (primary != null) return primary;
     try {
       final interfaces =
           await NetworkInterface.list(type: InternetAddressType.IPv4);
-      return interfaces
+      final addresses = interfaces
           .expand((i) => i.addresses)
           .map((address) => address.address)
-          .toSet()
-          .toList();
+          .toSet();
+      return addresses.length == 1 ? addresses.single : null;
     } on SocketException {
-      return [];
+      return null;
     }
   }
 
@@ -145,7 +171,7 @@ class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
   Widget build(BuildContext context) {
     final user = Platform.environment['USERNAME'];
     final accountDomain = Platform.environment['USERDOMAIN'];
-    return FutureBuilder<List<String>>(
+    return FutureBuilder<String?>(
       future: _ipv4,
       builder: (context, snapshot) => _SystemInfoCard(
         title: 'Lokales System',
@@ -157,7 +183,9 @@ class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
               : accountDomain == null
                   ? user
                   : '$accountDomain\\$user',
-          'IPv4': snapshot.hasData ? snapshot.data!.join(', ') : '…',
+          'IPv4': snapshot.connectionState == ConnectionState.done
+              ? snapshot.data ?? '–'
+              : '…',
           'IPv6': _ipv6 ?? '–',
         },
       ),

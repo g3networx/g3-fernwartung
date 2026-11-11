@@ -2002,6 +2002,7 @@ impl Connection {
                     "g3_system_info".into(),
                     json!({
                         "domain": crate::platform::g3_system_info::computer_domain(),
+                        "ipv4": crate::platform::g3_system_info::primary_ipv4().map(|address| address.to_string()),
                         "local_ip": ip.map(|address| address.to_string()),
                     }),
                 );

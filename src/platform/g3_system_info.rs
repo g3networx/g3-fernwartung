@@ -1,8 +1,23 @@
+use std::net::{Ipv4Addr, UdpSocket};
 use std::ptr;
 use winapi::um::dsrole::{
     DsRoleFreeMemory, DsRoleGetPrimaryDomainInformation, DsRolePrimaryDomainInfoBasic,
     DSROLE_PRIMARY_DOMAIN_INFO_BASIC,
 };
+
+pub(crate) fn primary_ipv4() -> Option<Ipv4Addr> {
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    // Select the local address for the default IPv4 route without sending a packet.
+    socket.connect((Ipv4Addr::new(1, 1, 1, 1), 9)).ok()?;
+    match socket.local_addr().ok()? {
+        std::net::SocketAddr::V4(address)
+            if !address.ip().is_unspecified() && !address.ip().is_loopback() =>
+        {
+            Some(*address.ip())
+        }
+        _ => None,
+    }
+}
 
 pub(crate) fn computer_domain() -> Option<String> {
     let mut buffer = ptr::null_mut();

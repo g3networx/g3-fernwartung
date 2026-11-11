@@ -796,7 +796,7 @@ class _RemotePageState extends State<RemotePage>
                       'Benutzer': peer.username.isEmpty ? '–' : peer.username,
                       if (info is Map) ...{
                         'Domäne': info['domain']?.toString() ?? '–',
-                        'IP (Verbindungstest)': info['local_ip']?.toString() ?? '–',
+                        'IPv4': g3RemoteIpv4(info),
                       },
                     }),
                   ),
