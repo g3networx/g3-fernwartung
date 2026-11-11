@@ -63,13 +63,13 @@ internal sealed class SetupForm:Form {
 
  static string InstalledExe {get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),AppName,AppName+".exe");}}
 
- readonly Label status=new Label(); readonly Button start=new Button(); readonly ProgressBar progress=new ProgressBar();readonly int previous;bool working;
+ readonly Label status=new Label(); readonly Button start=new Button(); readonly ProgressBar progress=new ProgressBar();bool working;
  readonly Label detail=new Label(),stepLabel=new Label();readonly Timer progressTimer=new Timer();readonly Stopwatch elapsed=new Stopwatch();
  int step;DateTime workerStarted;string workerLog;static Action<int> verifiedFileProgress;
 
  public SetupForm(int pid) {
 
-  previous=pid;Text=ProductTitle+" – "+(pid>0?"aktualisieren":"Installation");Width=760;Height=350;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
+  Text=ProductTitle+" – "+(pid>0?"aktualisieren":"Installation");Width=760;Height=350;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
 
   BackColor=Color.FromArgb(4,25,37);ForeColor=Color.White;Font=new Font("Segoe UI",11);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
@@ -118,11 +118,9 @@ internal sealed class SetupForm:Form {
  }catch{return false;}}
  static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
 
- async Task Install(){if(working)return;working=true;start.Enabled=false;start.Text="Installation läuft …";workerLog=null;elapsed.Restart();progressTimer.Start();string previousHash=null;try {
+ async Task Install(){if(working)return;working=true;start.Enabled=false;start.Text="Installation läuft …";workerLog=null;elapsed.Restart();progressTimer.Start();try {
 
   RequireCompanionProtocol();
-
-  if(File.Exists(InstalledExe))previousHash=Digest(InstalledExe);
 
   var dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"g3NetworX","Fernwartung","Downloads","setup-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(dir);var msi=Path.Combine(dir,PackageName(Application.ExecutablePath));
 
@@ -160,9 +158,7 @@ internal sealed class SetupForm:Form {
   if(!verified)throw new InvalidDataException("Installierte Programmdatei stimmt nicht mit dem geprüften Paket überein.");
   ShowStep(5,"Installation abgeschlossen. Der Client wird geöffnet …",true);ShowPercent(100,"Abgeschlossen");OpenClient();working=false;progressTimer.Stop();Close();
 
- }catch(Exception ex){working=false;progressTimer.Stop();workerLog=null;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;detail.Text="Laufzeit: "+elapsed.Elapsed.ToString(@"mm\:ss");start.Enabled=true;start.Text="Erneut versuchen";if(previous>0&&previousHash!=null)try{if(File.Exists(InstalledExe)&&Digest(InstalledExe)==previousHash&&!PreviousRunning())OpenClient();}catch{}}}
-
- bool PreviousRunning(){try{using(var p=Process.GetProcessById(previous))return !p.HasExited;}catch(ArgumentException){return false;}}
+ }catch(Exception ex){working=false;progressTimer.Stop();workerLog=null;progress.Style=ProgressBarStyle.Blocks;status.Text="Update nicht abgeschlossen. "+ex.Message;detail.Text="Laufzeit: "+elapsed.Elapsed.ToString(@"mm\:ss");start.Enabled=true;start.Text="Erneut versuchen";}}
  string ReadBusyReason(){try{
   var path=Path.Combine(Path.GetDirectoryName(workerLog),"result.txt");
   const string prefix="deferred_update: ";
@@ -196,8 +192,7 @@ internal sealed class SetupForm:Form {
     if(key==null||!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(exe),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("FullClient-Dienstpfad stimmt nicht mit der geprüften Installation überein.");
    }
    using(var service=new ServiceController("g3Fernwartung")){if(service.Status!=ServiceControllerStatus.Stopped){service.Stop();stopped=true;service.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}
-   var deadline=DateTime.UtcNow.AddSeconds(40);while(Remains()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
-   if(Remains())throw new UpdateBusyException(UpdateBusyException.Shutdown);
+   ReleaseInstalledProcesses(gate, new[]{exe}, true);
   }
   static void PlainDirectory(string path){for(var dir=new DirectoryInfo(path);dir!=null;dir=dir.Parent)if(dir.Exists&&(dir.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Konfigurationspfad darf keine Umleitung enthalten.");}
   public void InitializeNewHostProfile(){
@@ -218,13 +213,15 @@ internal sealed class SetupForm:Form {
     File.Copy(input,output,false);File.SetAttributes(output,FileAttributes.Normal);
    }
   }
-  bool Remains(){foreach(var process in Process.GetProcessesByName("g3Fernwartung"))using(process){if(!process.HasExited&&String.Equals(process.MainModule.FileName,exe,StringComparison.OrdinalIgnoreCase))return true;}return false;}
   public void Restore(){if(!stopped)return;using(var service=new ServiceController("g3Fernwartung")){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
  }
  [DllImport("kernel32.dll",SetLastError=true)]static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
  [DllImport("kernel32.dll",SetLastError=true)]static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
  [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
+ [DllImport("kernel32.dll",SetLastError=true,CharSet=CharSet.Unicode)]
+ static extern bool QueryFullProcessImageName(IntPtr handle,uint flags,System.Text.StringBuilder path,ref int length);
+ [DllImport("kernel32.dll",SetLastError=true)]static extern bool TerminateProcess(IntPtr handle,uint exitCode);
  internal static bool ProcessCouldBeActive(int pid){
   // Windows can enumerate a terminated process while another handle retains it.
   // Wait for the process signal, which is independent of the exit code.
@@ -233,6 +230,52 @@ internal sealed class SetupForm:Form {
   finally{CloseHandle(handle);}
  }
  static bool OwnProcessesRemain(){foreach(string name in Kind=="host_msi"?new[]{AppName,"g3Host-ui"}:new[]{AppName}){var processes=Process.GetProcessesByName(name);try{foreach(var p in processes)if(ProcessCouldBeActive(p.Id))return true;}finally{foreach(var p in processes)p.Dispose();}}return false;}
+
+ // Inspect and, if necessary, stop the exact executable using the same process
+ // handle. The exclusive lease must cover both shutdown and MSI installation.
+ internal static bool InstalledProcessRemains(int pid, string expectedPath, bool stop) {
+  const uint synchronize = 0x00100000, query = 0x1000, terminate = 1;
+  IntPtr handle = OpenProcess(synchronize | query | (stop ? terminate : 0), false, pid);
+  if (handle == IntPtr.Zero)
+   return Marshal.GetLastWin32Error() != 87; // ERROR_INVALID_PARAMETER: PID no longer exists.
+  try {
+   if (WaitForSingleObject(handle, 0) == 0) return false;
+   var path = new System.Text.StringBuilder(32768);
+   int length = path.Capacity;
+   if (!QueryFullProcessImageName(handle, 0, path, ref length))
+    return WaitForSingleObject(handle, 0) != 0;
+   if (!String.Equals(path.ToString(), expectedPath, StringComparison.OrdinalIgnoreCase))
+    return false;
+   if (stop && TerminateProcess(handle, 0)) return WaitForSingleObject(handle, 1000) != 0;
+   return WaitForSingleObject(handle, 0) != 0;
+  } finally { CloseHandle(handle); }
+ }
+
+ static bool InstalledProcessesRemain(string[] paths, bool stop) {
+  bool remaining = false;
+  foreach (string path in paths) {
+   var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path));
+   try {
+    foreach (var process in processes)
+     remaining |= InstalledProcessRemains(process.Id, path, stop);
+   } finally { foreach (var process in processes) process.Dispose(); }
+  }
+  return remaining;
+ }
+
+ static void ReleaseInstalledProcesses(UpdateSessionGate gate, string[] paths, bool compatible) {
+  if (gate == null) throw new InvalidOperationException("Sitzungssperre fehlt.");
+  var grace = Stopwatch.StartNew();
+  while (InstalledProcessesRemain(paths, false) && grace.Elapsed < TimeSpan.FromSeconds(5))
+   System.Threading.Thread.Sleep(250);
+  if (compatible) InstalledProcessesRemain(paths, true);
+  var deadline = Stopwatch.StartNew();
+  while (InstalledProcessesRemain(paths, false)) {
+   if (deadline.Elapsed >= TimeSpan.FromSeconds(10))
+    throw new UpdateBusyException(UpdateBusyException.Shutdown);
+   System.Threading.Thread.Sleep(250);
+  }
+ }
  static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
   if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
@@ -248,8 +291,9 @@ internal sealed class SetupForm:Form {
   string gatePath=Path.Combine(Path.GetDirectoryName(InstalledExe),"g3-update-session.lock");
   string native=Path.Combine(Path.GetDirectoryName(InstalledExe),"librustdesk.dll");
   bool compatible=File.Exists(native)&&Array.IndexOf(GateDllHashes.Split(';'),Digest(native))>=0;
-  if((!File.Exists(gatePath)||!compatible)&&OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Unrecognized);
-  if(!File.Exists(gatePath)){
+  bool hasGate=File.Exists(gatePath);
+  if((!hasGate||!compatible)&&OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Unrecognized);
+  if(!hasGate){
    // Legacy clients cannot prove absence of sessions. Never shut them down.
    if(OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Unrecognized);
    Directory.CreateDirectory(Path.GetDirectoryName(gatePath));
@@ -260,8 +304,10 @@ internal sealed class SetupForm:Form {
   // Native GUI/tray processes exit voluntarily only while this exclusive
   // lease is held. Incoming/outgoing session acquisition is now blocked.
   using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();stoppedByUs=true;svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
-  var deadline=DateTime.UtcNow.AddSeconds(40);while(OwnProcessesRemain()&&DateTime.UtcNow<deadline)System.Threading.Thread.Sleep(250);
-  if(OwnProcessesRemain())throw new UpdateBusyException(UpdateBusyException.Shutdown);
+  var installedPaths = Kind=="host_msi"
+   ? new[]{InstalledExe, Path.Combine(Path.GetDirectoryName(InstalledExe), "g3Host-ui.exe")}
+   : new[]{InstalledExe};
+  ReleaseInstalledProcesses(gate, installedPaths, hasGate && compatible);
 
   bool repair=String.Equals(Convert.ToString(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\"+AppName+@"\InstallState\"+AppName,"MsiProductCode",null)),ProductCode,StringComparison.OrdinalIgnoreCase);
   var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn "+(repair?"REINSTALL=ALL REINSTALLMODE=vamus ":"")+"REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;if(code==1618)throw new UpdateBusyException(UpdateBusyException.Installer);bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}companion.Restore();File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}

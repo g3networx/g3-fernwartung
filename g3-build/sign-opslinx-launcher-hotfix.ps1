@@ -1,11 +1,13 @@
 param(
     [Parameter(Mandatory)][string]$BuildOutput,
-    [Parameter(Mandatory)][string]$SignedOutput
+    [Parameter(Mandatory)][string]$SignedOutput,
+    [string]$ReleaseVersion = '1.5.0-g3.62.20051',
+    [string]$PackageSource = '47e7e8a1a410f8434f6ccbcff7fbea7c1c88c614'
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '1.5.0-g3.62.20051'
-$source = '47e7e8a1a410f8434f6ccbcff7fbea7c1c88c614'
+$version = $ReleaseVersion
+$source = $PackageSource
 $thumbprint = '2B29AA03DE164FFF1081D924A2BF4F73BBE63453'
 $runtime = 'flutter/build/windows/x64/runner/Release'
 $provenance = Get-Content (Join-Path $BuildOutput 'g361-release-provenance.json') -Raw | ConvertFrom-Json
