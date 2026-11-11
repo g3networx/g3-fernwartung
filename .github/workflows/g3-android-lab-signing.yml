@@ -22,7 +22,7 @@ jobs:
           jq -e '.draft and .tag_name == "ci-android-signing-20054-ea999c2d" and any(.assets[]; .id == 737138960 and .name == "app-arm64-v8a-release.apk" and .state == "uploaded")' <<< "$draft" >/dev/null
           gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/737138960" > app-arm64-v8a-release.apk
           echo 'ea999c2d22cc4a6779a822421544d3bf8fa560dcbd1e3d5f9ea20824638f5590  app-arm64-v8a-release.apk' | sha256sum -c
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d0b2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: opslinx-android-20054-signing-input
           path: app-arm64-v8a-release.apk
