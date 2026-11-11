@@ -3,7 +3,7 @@
 name: g3.6.2 Build 111126 release
 on:
   push:
-    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook]
+    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review]
     paths: [.github/workflows/g3-local-addressbook-build.yml]
   workflow_dispatch:
 permissions:
