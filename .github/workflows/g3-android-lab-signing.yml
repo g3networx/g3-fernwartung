@@ -1,0 +1,64 @@
+name: Sign OpsLinX Android Lab g3.6.2
+on:
+  push:
+    branches: [g3-codesigning-setup]
+    paths: [.github/workflows/g3-android-lab-signing.yml]
+permissions:
+  actions: read
+jobs:
+  signing:
+    if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    runs-on: ubuntu-22.04
+    environment: signing
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 13861881406
+          run-id: 43029376133
+          github-token: ${{ github.token }}
+          path: unsigned
+      - name: Check APK identity, sign and verify
+        shell: bash
+        env:
+          OPSLINX_ANDROID_SIGNING: ${{ secrets.OPSLINX_ANDROID_SIGNING }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -f "$work/key.p12" "$work/password"; rmdir "$work"' EXIT
+          sdk=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$sdk"
+          src=unsigned/app-arm64-v8a-release.apk
+          badging=$("${sdk%/*}/aapt" dump badging "$src")
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='20050' versionName='3.6.2'" <<< "$badging"
+          python - "$work" <<'PY'
+          import base64, json, os, pathlib, sys
+          directory = pathlib.Path(sys.argv[1])
+          secret = json.loads(os.environ.pop('OPSLINX_ANDROID_SIGNING'))
+          (directory / 'key.p12').write_bytes(base64.b64decode(secret['pkcs12'], validate=True))
+          (directory / 'password').write_text(secret['password'] + '\n')
+          PY
+          unset OPSLINX_ANDROID_SIGNING
+          mkdir signed
+          apk=signed/g3-OpsLinX-Android-1.5.0-g3.62.20050-arm64.apk
+          "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android \
+            --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "$apk" "$src"
+          certs=$("$sdk" verify --print-certs "$apk")
+          expected=3c69fa623753dc13a8ab41bf0cdbe56f018eea2d8f0a961cb8667e91b8fcc6ee
+          test "$(grep -Fc 'certificate SHA-256 digest:' <<< "$certs")" = 1
+          grep -Fxq "Signer #1 certificate SHA-256 digest: $expected" <<< "$certs"
+          python - "$apk" "$expected" <<'PY'
+          import hashlib, json, pathlib, sys
+          apk = pathlib.Path(sys.argv[1])
+          item = {'version': '1.5.0-g3.62.20050', 'file': apk.name,
+                  'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+                  'signer_sha256': sys.argv[2]}
+          (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opslinx-android-lab-arm64-signed
+          path: signed/*
+          if-no-files-found: error
+          retention-days: 14
