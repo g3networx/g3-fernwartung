@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_hbb/models/peer_model.dart';
 import '../../common.dart';
 import '../../g3_addressbook.dart';
 import '../../g3_local_addressbook.dart';
+import '../../g3_system_info.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
@@ -315,12 +317,17 @@ class _ConnectionPageState extends State<ConnectionPage>
             Row(
               children: [
                 Flexible(child: _buildRemoteIDTextField(context)),
+                if (Platform.isWindows && bind.mainGetAppNameSync() == 'g3Fernwartung')
+                  const Flexible(child: G3LocalSystemInfo()),
               ],
             ).marginOnly(top: 22),
             SizedBox(height: 12),
             Divider().paddingOnly(right: 12),
             Expanded(child: bind.mainGetAppNameSync() == 'g3Fernwartung' && !bind.isIncomingOnly()
-                ? G3AddressBooks(onLocalConnect: (id, files, password) async {
+                ? G3AddressBooks(onLocalShell: (id, password) async {
+                    await connect(context, id, password: password.isEmpty ? null : password,
+                        isTerminal: true, forceRelay: true);
+                  }, onLocalConnect: (id, files, password) async {
                     await connect(context, id, password: password.isEmpty ? null : password, isFileTransfer: files, forceRelay: true);
                   }, remote: G3AddressBook(onConnect: (value) async {
                     final uri = Uri.parse(value);

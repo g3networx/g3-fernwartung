@@ -20,6 +20,7 @@ import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
+import '../../g3_system_info.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
 import 'macos_full_screen_focus_recovery.dart';
@@ -776,6 +777,25 @@ class _RemotePageState extends State<RemotePage>
                           OverlayEntry(builder: remoteToolbar)
                         ])
                       : remoteToolbar(context)),
+              Obx(() {
+                final peer = _ffi.ffiModel.pi;
+                if (!peer.isSet.value) return const SizedBox.shrink();
+                final info = peer.platformAdditions['g3_system_info'];
+                if (info is! Map) return const SizedBox.shrink();
+                return Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 300),
+                    child: G3RemoteSystemInfo(values: {
+                      'Hostname': peer.hostname,
+                      'Benutzer': peer.username.isEmpty ? '–' : peer.username,
+                      'Domäne': info['domain']?.toString() ?? '–',
+                      'IP (Verbindungstest)': info['local_ip']?.toString() ?? '–',
+                    }),
+                  ),
+                );
+              }),
               _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
             ],
           ),

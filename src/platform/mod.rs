@@ -1,3 +1,6 @@
+#[cfg(target_os = "windows")]
+pub(crate) mod g3_system_info;
+
 #[cfg(target_os = "linux")]
 pub use linux::*;
 #[cfg(target_os = "macos")]

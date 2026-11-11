@@ -424,6 +424,10 @@ class _G3AddressBookState extends State<G3AddressBook> {
                 EdgeInsets.only(left: 14 + (depth.clamp(0, 8) * 14).toDouble()),
             child: InkWell(
               onDoubleTap: busy ? null : () => open(d),
+              onSecondaryTapUp: busy
+                  ? null
+                  : (details) => showDeviceMenu(
+                      d, book['can_edit'] == true, details.globalPosition),
               child: ListTile(
                 dense: true,
                 selected: selected?['id'] == d['id'],
@@ -440,6 +444,46 @@ class _G3AddressBookState extends State<G3AddressBook> {
       }
     }
     return rows;
+  }
+
+  Future<void> showDeviceMenu(
+      Map<String, dynamic> device, bool canEdit, Offset globalPosition) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = overlay.globalToLocal(globalPosition);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(position & Size.zero, overlay.size),
+      items: [
+        const PopupMenuItem(value: 'desktop', child: Text('Desktop verbinden')),
+        if (widget.onPowerShell != null)
+          const PopupMenuItem(value: 'shell', child: Text('PowerShell')),
+        if (widget.onFileExplorer != null)
+          const PopupMenuItem(value: 'files', child: Text('Dateiexplorer')),
+        if (canEdit)
+          const PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+        if (Platform.isWindows || widget.localStore != null)
+          const PopupMenuItem(
+              value: 'copy', child: Text('In lokales Adressbuch kopieren')),
+      ],
+    );
+    if (!mounted || busy) return;
+    switch (action) {
+      case 'desktop':
+        await open(device);
+        break;
+      case 'shell':
+        await open(device, powerShell: true);
+        break;
+      case 'files':
+        await open(device, fileExplorer: true);
+        break;
+      case 'edit':
+        await editDevice(device: device);
+        break;
+      case 'copy':
+        await copyToLocal(device);
+        break;
+    }
   }
 
   String status(Map<String, dynamic> d) =>

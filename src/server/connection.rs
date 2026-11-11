@@ -1996,6 +1996,16 @@ impl Connection {
                 "is_installed".into(),
                 json!(crate::platform::is_installed()),
             );
+            if conn_type == 0 && matches!(crate::get_app_name().as_str(), "g3Host" | "g3Fernwartung") {
+                let ip = Config::get_option("local-ip-addr").parse::<std::net::IpAddr>().ok();
+                platform_additions.insert(
+                    "g3_system_info".into(),
+                    json!({
+                        "domain": crate::platform::g3_system_info::computer_domain(),
+                        "local_ip": ip.map(|address| address.to_string()),
+                    }),
+                );
+            }
             if crate::platform::is_installed() {
                 platform_additions.extend(virtual_display_manager::get_platform_additions());
             }

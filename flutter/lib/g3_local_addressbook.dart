@@ -8,10 +8,14 @@ import 'g3_local_addressbook_password_dialog.dart';
 
 class G3AddressBooks extends StatefulWidget {
   final Widget remote;
+  final Future<void> Function(String id, String password)? onLocalShell;
   final Future<void> Function(String id, bool files, String password)
       onLocalConnect;
   const G3AddressBooks(
-      {super.key, required this.remote, required this.onLocalConnect});
+      {super.key,
+      required this.remote,
+      required this.onLocalConnect,
+      this.onLocalShell});
 
   @override
   State<G3AddressBooks> createState() => _G3AddressBooksState();
@@ -24,30 +28,35 @@ class _G3AddressBooksState extends State<G3AddressBooks> {
   Widget build(BuildContext context) => !Platform.isWindows
       ? widget.remote
       : DefaultTabController(
-        length: 2,
-        child: Column(children: [
-          TabBar(
-              onTap: (index) {
-                setState(() => selected = index);
-                if (index == 1) localKey.currentState?.load();
-              },
-              tabs: const [
-                Tab(text: 'g3-Adressbuch'),
-                Tab(text: 'Lokales Adressbuch')
-              ]),
-          Expanded(
-              child: IndexedStack(index: selected, children: [
-            widget.remote,
-            G3LocalAddressBook(key: localKey, onConnect: widget.onLocalConnect)
-          ])),
-        ]),
-      );
+          length: 2,
+          child: Column(children: [
+            TabBar(
+                onTap: (index) {
+                  setState(() => selected = index);
+                  if (index == 1) localKey.currentState?.load();
+                },
+                tabs: const [
+                  Tab(text: 'g3-Adressbuch'),
+                  Tab(text: 'Lokales Adressbuch')
+                ]),
+            Expanded(
+                child: IndexedStack(index: selected, children: [
+              widget.remote,
+              G3LocalAddressBook(
+                  key: localKey,
+                  onConnect: widget.onLocalConnect,
+                  onShell: widget.onLocalShell)
+            ])),
+          ]),
+        );
 }
 
 class G3LocalAddressBook extends StatefulWidget {
   final Future<void> Function(String id, bool files, String password) onConnect;
+  final Future<void> Function(String id, String password)? onShell;
   final G3LocalAddressBookStore? store;
-  const G3LocalAddressBook({super.key, required this.onConnect, this.store});
+  const G3LocalAddressBook(
+      {super.key, required this.onConnect, this.onShell, this.store});
   @override
   State<G3LocalAddressBook> createState() => _G3LocalAddressBookState();
 }
@@ -462,6 +471,50 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
         await widget.onConnect(entry.id, files, password);
       });
 
+  List<PopupMenuEntry<String>> entryActions() => [
+        const PopupMenuItem(value: 'desktop', child: Text('Desktop verbinden')),
+        if (widget.onShell != null)
+          const PopupMenuItem(value: 'shell', child: Text('PowerShell')),
+        const PopupMenuItem(value: 'files', child: Text('Dateiexplorer')),
+        const PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+        const PopupMenuItem(value: 'delete', child: Text('Löschen')),
+      ];
+
+  void runEntryAction(G3LocalEntry entry, String? action) {
+    if (!mounted || busy) return;
+    switch (action) {
+      case 'desktop':
+        connectEntry(entry, false);
+        break;
+      case 'shell':
+        run(() async {
+          final password = await store!.passwordFor(entry);
+          await widget.onShell!(entry.id, password);
+        });
+        break;
+      case 'files':
+        connectEntry(entry, true);
+        break;
+      case 'edit':
+        edit(entry);
+        break;
+      case 'delete':
+        remove(entry);
+        break;
+    }
+  }
+
+  Future<void> showEntryMenu(G3LocalEntry entry, Offset globalPosition) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = overlay.globalToLocal(globalPosition);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(position & Size.zero, overlay.size),
+      items: entryActions(),
+    );
+    runEntryAction(entry, action);
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = entries
@@ -547,47 +600,42 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                       itemCount: filtered.length,
                       itemBuilder: (context, index) {
                         final entry = filtered[index];
-                        return ListTile(
-                            title: Text(entry.name),
-                            subtitle: Text(
-                                [
-                                  entry.id,
-                                  if (entry.book.isNotEmpty) entry.book,
-                                  if (entry.group.isNotEmpty) entry.group,
-                                  if (entry.notes.isNotEmpty) entry.notes
-                                ].join(' · '),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                            trailing:
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                              IconButton(
-                                  tooltip: 'Desktop verbinden',
-                                  onPressed: busy
-                                      ? null
-                                      : () => connectEntry(entry, false),
-                                  icon: const Icon(Icons.desktop_windows)),
-                              PopupMenuButton<String>(
-                                  enabled: !busy,
-                                  tooltip: 'Weitere Aktionen',
-                                  onSelected: (action) {
-                                    if (action == 'edit') edit(entry);
-                                    if (action == 'delete') remove(entry);
-                                    if (action == 'files') {
-                                      connectEntry(entry, true);
-                                    }
-                                  },
-                                  itemBuilder: (_) => const [
-                                        PopupMenuItem(
-                                            value: 'files',
-                                            child: Text('Dateiexplorer')),
-                                        PopupMenuItem(
-                                            value: 'edit',
-                                            child: Text('Bearbeiten')),
-                                        PopupMenuItem(
-                                            value: 'delete',
-                                            child: Text('Löschen'))
-                                      ]),
-                            ]));
+                        return InkWell(
+                          onDoubleTap:
+                              busy ? null : () => connectEntry(entry, false),
+                          onSecondaryTapUp: busy
+                              ? null
+                              : (details) =>
+                                  showEntryMenu(entry, details.globalPosition),
+                          child: ListTile(
+                              title: Text(entry.name),
+                              subtitle: Text(
+                                  [
+                                    entry.id,
+                                    if (entry.book.isNotEmpty) entry.book,
+                                    if (entry.group.isNotEmpty) entry.group,
+                                    if (entry.notes.isNotEmpty) entry.notes
+                                  ].join(' · '),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                              trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                        tooltip: 'Desktop verbinden',
+                                        onPressed: busy
+                                            ? null
+                                            : () => connectEntry(entry, false),
+                                        icon:
+                                            const Icon(Icons.desktop_windows)),
+                                    PopupMenuButton<String>(
+                                        enabled: !busy,
+                                        tooltip: 'Weitere Aktionen',
+                                        onSelected: (action) =>
+                                            runEntryAction(entry, action),
+                                        itemBuilder: (_) => entryActions()),
+                                  ])),
+                        );
                       },
                     )),
         ]));
