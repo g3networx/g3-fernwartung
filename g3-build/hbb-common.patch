@@ -45,14 +45,20 @@ index 6fe1004..6f78e83 100644
              keys::OPTION_SCROLL_STYLE => {
                  self.get_string(key, "scrollauto", vec!["scrolledge", "scrollbar"])
              }
-@@ -3678,3 +3682,17 @@ mod tests {
+@@ -3678,3 +3682,23 @@ mod tests {
          assert_ne!(non_service_root, non_service_user);
      }
  }
 +
 +// A separate namespace prevents portable support from reusing an installed client.
 +pub fn is_g3_adhoc() -> bool {
-+ std::env::var("RUSTDESK_APPNAME").unwrap_or_default().to_lowercase().starts_with("g3-soforthilfe-")
++    std::env::var("RUSTDESK_APPNAME")
++        .map_or(false, |name| name.to_ascii_lowercase().starts_with("g3-soforthilfe-"))
++        || std::env::current_exe().ok()
++            .and_then(|path| path.file_name().map(|name| {
++                name.to_string_lossy().eq_ignore_ascii_case("g3soforthilfe.exe")
++            }))
++            .unwrap_or(false)
 +}
 +
 +pub fn is_g3_host() -> bool {

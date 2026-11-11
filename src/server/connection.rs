@@ -5720,30 +5720,24 @@ impl Connection {
                 msg.set_misc(misc);
                 self.inner.send(msg.into());
             }
-            let uac = crate::video_service::IS_UAC_RUNNING.lock().unwrap().clone();
+            let uac = !running && *crate::video_service::IS_UAC_RUNNING.lock().unwrap();
             if p.last_uac != uac {
                 p.last_uac = uac;
-                if !uac || !running {
-                    let mut misc = Misc::new();
-                    misc.set_uac(uac);
-                    let mut msg = Message::new();
-                    msg.set_misc(misc);
-                    self.inner.send(msg.into());
-                }
+                let mut misc = Misc::new();
+                misc.set_uac(uac);
+                let mut msg = Message::new();
+                msg.set_misc(misc);
+                self.inner.send(msg.into());
             }
-            let foreground_window_elevated = crate::video_service::IS_FOREGROUND_WINDOW_ELEVATED
-                .lock()
-                .unwrap()
-                .clone();
+            let foreground_window_elevated = !running
+                && *crate::video_service::IS_FOREGROUND_WINDOW_ELEVATED.lock().unwrap();
             if p.last_foreground_window_elevated != foreground_window_elevated {
                 p.last_foreground_window_elevated = foreground_window_elevated;
-                if !foreground_window_elevated || !running {
-                    let mut misc = Misc::new();
-                    misc.set_foreground_window_elevated(foreground_window_elevated);
-                    let mut msg = Message::new();
-                    msg.set_misc(misc);
-                    self.inner.send(msg.into());
-                }
+                let mut misc = Misc::new();
+                misc.set_foreground_window_elevated(foreground_window_elevated);
+                let mut msg = Message::new();
+                msg.set_misc(misc);
+                self.inner.send(msg.into());
             }
         }
     }

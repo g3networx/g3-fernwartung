@@ -2212,8 +2212,11 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::ElevationResponse(err)) => {
                         if err.is_empty() {
-                            self.handler.msgbox("wait-uac", "", "", "");
+                            if self.elevation_requested {
+                                self.handler.msgbox("wait-uac", "", "", "");
+                            }
                         } else {
+                            self.elevation_requested = false;
                             self.handler.cancel_msgbox("wait-uac");
                             self.handler
                                 .msgbox("elevation-error", "Elevation Error", &err, "");
@@ -2221,7 +2224,13 @@ impl<T: InvokeUiSession> Remote<T> {
                     }
                     Some(misc::Union::PortableServiceRunning(b)) => {
                         self.handler.portable_service_running(b);
-                        if self.elevation_requested && b {
+                        if b {
+                            #[cfg(feature = "flutter")]
+                            for tag in ["on-uac", "on-foreground-elevated", "wait-uac", "elevation-error"] {
+                                self.handler.cancel_msgbox(tag);
+                            }
+                        }
+                        if b && std::mem::take(&mut self.elevation_requested) {
                             self.handler.msgbox(
                                 "custom-nocancel-success",
                                 "Successful",
