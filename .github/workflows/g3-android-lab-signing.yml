@@ -59,7 +59,8 @@ jobs:
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
           grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22054' versionName='3.6.2'" <<< "$badging" \
             || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
-          grep -Fxq "application-label:'g3 OpsLinX'" <<< "$badging" || { echo 'Unexpected APK display name.'; exit 1; }
+          grep -Eq "^application(-label:|: label=)'g3 OpsLinX'( |$)" <<< "$badging" \
+            || { echo 'Unexpected APK display name.'; exit 1; }
           python - "$work" <<'PY'
           import base64, json, os, pathlib, sys
           directory = pathlib.Path(sys.argv[1])
