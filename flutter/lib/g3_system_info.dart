@@ -41,15 +41,14 @@ class G3LocalSystemInfo extends StatefulWidget {
 }
 
 class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
-  late final Future<List<String>> _addresses = _readAddresses();
+  late final Future<List<InternetAddress>> _addresses = _readAddresses();
   late final String? _domain = _computerDomain();
 
-  Future<List<String>> _readAddresses() async {
+  Future<List<InternetAddress>> _readAddresses() async {
     try {
       final interfaces = await NetworkInterface.list();
       return interfaces
           .expand((i) => i.addresses)
-          .map((a) => a.address)
           .toSet()
           .toList();
     } on SocketException {
@@ -61,7 +60,7 @@ class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
   Widget build(BuildContext context) {
     final user = Platform.environment['USERNAME'];
     final accountDomain = Platform.environment['USERDOMAIN'];
-    return FutureBuilder<List<String>>(
+    return FutureBuilder<List<InternetAddress>>(
       future: _addresses,
       builder: (context, snapshot) => _SystemInfoCard(
         title: 'Lokales System',
@@ -73,9 +72,16 @@ class _G3LocalSystemInfoState extends State<G3LocalSystemInfo> {
               : accountDomain == null
                   ? user
                   : '$accountDomain\\$user',
-          'IP-Adresse': snapshot.hasData
-              ? (snapshot.data!.isEmpty ? '–' : snapshot.data!.join(', '))
-              : '…',
+          for (final (label, type) in [
+            ('IPv4', InternetAddressType.IPv4),
+            ('IPv6', InternetAddressType.IPv6),
+          ])
+            label: snapshot.hasData
+                ? snapshot.data!
+                    .where((address) => address.type == type)
+                    .map((address) => address.address)
+                    .join(', ')
+                : '…',
         },
       ),
     );
@@ -131,9 +137,13 @@ class _SystemInfoCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: Theme.of(context).textTheme.titleSmall),
-              for (final row in values.entries)
-                Text('${row.key}: ${row.value}',
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
+              ...values.entries.map((row) {
+                final line = '${row.key}: ${row.value.isEmpty ? '–' : row.value}';
+                return Tooltip(
+                  message: line,
+                  child: Text(line, maxLines: 2, overflow: TextOverflow.ellipsis),
+                );
+              }),
             ],
           ),
         ),

@@ -781,17 +781,23 @@ class _RemotePageState extends State<RemotePage>
                 final peer = _ffi.ffiModel.pi;
                 if (!peer.isSet.value) return const SizedBox.shrink();
                 final info = peer.platformAdditions['g3_system_info'];
-                if (info is! Map) return const SizedBox.shrink();
+                if (info is! Map &&
+                    peer.hostname.isEmpty &&
+                    peer.username.isEmpty) {
+                  return const SizedBox.shrink();
+                }
                 return Positioned(
                   right: 12,
                   bottom: 12,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 300),
                     child: G3RemoteSystemInfo(values: {
-                      'Hostname': peer.hostname,
+                      'Hostname': peer.hostname.isEmpty ? '–' : peer.hostname,
                       'Benutzer': peer.username.isEmpty ? '–' : peer.username,
-                      'Domäne': info['domain']?.toString() ?? '–',
-                      'IP (Verbindungstest)': info['local_ip']?.toString() ?? '–',
+                      if (info is Map) ...{
+                        'Domäne': info['domain']?.toString() ?? '–',
+                        'IP (Verbindungstest)': info['local_ip']?.toString() ?? '–',
+                      },
                     }),
                   ),
                 );
