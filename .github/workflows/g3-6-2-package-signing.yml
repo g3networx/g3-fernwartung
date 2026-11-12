@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 1.62.20053
+name: Sign OpsLinX Windows 1.62.20056
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: d1efa49aea9f177110d139827a3c9b0bd73b79eb
-  BUILD_RUN: '43108539236'
+  SOURCE_COMMIT: 40f0fe32b80d41c8cf0090db81f4c183166cc4af
+  BUILD_RUN: '43208131166'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
@@ -50,6 +50,21 @@ jobs:
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
+      - name: Check the Whiteboard title in the Windows runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $payload = Join-Path $env:RUNNER_TEMP 'opslinx-build/g361-runtime-payload.zip'
+          $runtime = [IO.Compression.ZipFile]::OpenRead($payload)
+          try {
+            $native = $runtime.GetEntry('librustdesk.dll')
+            if (!$native) { throw 'Windows runtime DLL missing.' }
+            $reader = [IO.StreamReader]::new($native.Open(), [Text.Encoding]::Latin1, $false)
+            try { $binary = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if (!$binary.Contains('g3 OpsLinX Whiteboard') -or $binary.Contains('RustDesk whiteboard')) {
+              throw 'Unexpected Whiteboard title in the Windows runtime.'
+            }
+          } finally { $runtime.Dispose() }
       - name: Prepare portable package tools
         shell: pwsh
         run: python -m pip install brotli==1.1.0
