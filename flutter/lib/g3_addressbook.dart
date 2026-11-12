@@ -18,6 +18,7 @@ class G3AddressBook extends StatefulWidget {
   final G3AddressBookCredentials? credentials;
   final G3PowerShellCredentials? powerShellCredentials;
   final G3LocalAddressBookStore? localStore;
+  final bool mobile;
   const G3AddressBook(
       {super.key,
       required this.onConnect,
@@ -26,12 +27,14 @@ class G3AddressBook extends StatefulWidget {
       this.api,
       this.credentials,
       this.powerShellCredentials,
-      this.localStore});
+      this.localStore,
+      this.mobile = false});
   @override
   State<G3AddressBook> createState() => _G3AddressBookState();
 }
 
-class _G3AddressBookState extends State<G3AddressBook> {
+class _G3AddressBookState extends State<G3AddressBook>
+    with WidgetsBindingObserver {
   late final api = widget.api ?? G3AddressBookApi();
   late final credentials = widget.credentials ?? G3AddressBookCredentials();
   final search = TextEditingController();
@@ -43,13 +46,49 @@ class _G3AddressBookState extends State<G3AddressBook> {
   bool busy = false, remember = true, loading = false;
   int generation = 0;
   Timer? refresh;
+  bool foreground = true;
+  int refreshFailures = 0;
 
   @override
   void initState() {
     super.initState();
     restore();
-    refresh = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (api.token != null && !busy) load();
+    if (widget.mobile) {
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
+      WidgetsBinding.instance.addObserver(this);
+    } else {
+      refresh = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (api.token != null && !busy) load();
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    foreground = state == AppLifecycleState.resumed;
+    refresh?.cancel();
+    refresh = null;
+    if (foreground) {
+      refreshFailures = 0;
+      refreshIfReady();
+    }
+  }
+
+  void refreshIfReady() {
+    if (api.token == null) return;
+    if (loading || busy) {
+      scheduleRefresh(const Duration(seconds: 2));
+    } else {
+      unawaited(load());
+    }
+  }
+
+  void scheduleRefresh(Duration delay) {
+    if (!mounted || !foreground || api.token == null) return;
+    refresh = Timer(delay, () {
+      refresh = null;
+      refreshIfReady();
     });
   }
 
@@ -68,6 +107,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
   @override
   void dispose() {
     generation++;
+    if (widget.mobile) WidgetsBinding.instance.removeObserver(this);
     refresh?.cancel();
     api.close();
     search.dispose();
@@ -76,11 +116,16 @@ class _G3AddressBookState extends State<G3AddressBook> {
 
   Future<void> load() async {
     if (loading) return;
+    if (widget.mobile) {
+      refresh?.cancel();
+      refresh = null;
+    }
     loading = true;
     final current = generation;
     try {
       final data = await api.request('tree');
       if (!mounted || current != generation) return;
+      refreshFailures = 0;
       setState(() {
         username = data['username'] as String;
         capabilities = (data['capabilities'] as Map<String, dynamic>?) ?? {};
@@ -108,21 +153,31 @@ class _G3AddressBookState extends State<G3AddressBook> {
         } catch (_) {
           if (mounted) {
             setState(() => error =
-                'Die g3-Anmeldung ist ungültig. Der Windows-Anmeldespeicher konnte nicht geleert werden. Bitte erneut anmelden.');
+                'Die g3-Anmeldung ist ungültig. Der Anmeldespeicher konnte nicht geleert werden. Bitte erneut anmelden.');
           }
         }
       }
     } catch (_) {
       if (mounted && current == generation) {
         setState(() {
-          books = [];
-          devices = [];
-          selected = null;
-          error = 'Adressbuch nicht erreichbar. Bitte erneut laden.';
+          if (widget.mobile) {
+            refreshFailures++;
+            error = 'Adressbuch vorübergehend nicht erreichbar. '
+                'Die App versucht es automatisch erneut.';
+          } else {
+            books = [];
+            devices = [];
+            selected = null;
+            error = 'Adressbuch nicht erreichbar. Bitte erneut laden.';
+          }
         });
       }
     } finally {
       loading = false;
+      if (widget.mobile && refresh == null) {
+        scheduleRefresh(Duration(
+            seconds: refreshFailures > 0 && refreshFailures <= 2 ? 3 : 30));
+      }
     }
   }
 
@@ -141,7 +196,16 @@ class _G3AddressBookState extends State<G3AddressBook> {
           uri.path != '/client-addressbook/authorize') throw Exception();
       if (!mounted || current != generation) return;
       setState(() => displayCode = start['display_code'] as String);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      final requestId = uri.queryParameters['request'];
+      if (widget.mobile &&
+          (requestId == null || !RegExp(r'^[A-Za-z0-9_-]{32}$').hasMatch(requestId))) {
+        throw const FormatException('Ungültige Adressbuchfreigabe');
+      }
+      final approval = widget.mobile
+          ? Uri.https('linx.g3nx.net', '/client-addressbook/authorize',
+              {'request': requestId!})
+          : uri;
+      if (!await launchUrl(approval, mode: LaunchMode.externalApplication)) {
         throw Exception();
       }
       final deadline = DateTime.now().add(const Duration(minutes: 10));
@@ -150,9 +214,8 @@ class _G3AddressBookState extends State<G3AddressBook> {
           DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(seconds: 4));
         if (!mounted || current != generation) return;
-        final result = await api.request('login/poll',
-            body: {'device_code': start['device_code'], 'verifier': verifier});
-        if (result['pending'] == true) continue;
+        final result = await api.poll(start['device_code'] as String, verifier);
+        if (result == null || result['pending'] == true) continue;
         final token = result['token'];
         if (token is! String ||
             !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(token)) {
@@ -160,16 +223,24 @@ class _G3AddressBookState extends State<G3AddressBook> {
         }
         if (!mounted || current != generation) return;
         api.token = token;
+        var storageFailed = false;
         if (remember && credentials.supported) {
           try {
             await credentials.write(token);
           } catch (_) {
-            await api.request('logout', body: {});
-            api.token = null;
-            throw Exception();
+            if (!widget.mobile) {
+              await api.request('logout', body: {});
+              api.token = null;
+              throw Exception();
+            }
+            storageFailed = true;
           }
         }
         await load();
+        if (storageFailed && mounted && current == generation && error == null) {
+          setState(() => error =
+              'Angemeldet. Die Anmeldung konnte auf diesem Gerät nicht gespeichert werden.');
+        }
         return;
       }
       throw Exception();
@@ -227,7 +298,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
         setState(() {
           busy = false;
           error =
-              'Anmeldung serverseitig beendet. Windows-Anmeldespeicher konnte nicht geleert werden.';
+            'Anmeldung serverseitig beendet. Der Anmeldespeicher konnte nicht geleert werden.';
         });
       }
     }
@@ -571,6 +642,66 @@ class _G3AddressBookState extends State<G3AddressBook> {
         ]));
   }
 
+  Widget mobileDetails() {
+    final device = selected;
+    if (device == null) return const SizedBox.shrink();
+    final book = books.firstWhere((item) => item['id'] == device['customer_id']);
+    final path = book['path'] as String;
+    final name = device['name'] as String;
+    final canEdit = book['can_edit'] == true;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                statusIcon(device),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall),
+                ),
+              ]),
+              Text('${device['rustdesk_id']} · ${status(device)}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              Tooltip(
+                message: path,
+                child: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: busy ? null : () => open(device),
+          child: const Text('Verbinden'),
+        ),
+        if (canEdit)
+          PopupMenuButton<String>(
+            tooltip: 'Weitere Aktionen',
+            enabled: !busy,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+              if (capabilities['can_delete_devices'] == true)
+                const PopupMenuItem(value: 'delete', child: Text('Löschen')),
+            ],
+            onSelected: (action) {
+              if (action == 'edit') {
+                editDevice(device: device);
+              } else {
+                deleteEntry('devices', device);
+              }
+            },
+          ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Card(
         clipBehavior: Clip.antiAlias,
@@ -662,6 +793,15 @@ class _G3AddressBookState extends State<G3AddressBook> {
                       ? const Center(
                           child: Text('Keine freigegebenen Geräte gefunden.'))
                       : ListView(children: rows);
+                  if (widget.mobile) {
+                    return Column(children: [
+                      Expanded(child: list),
+                      if (selected != null) ...[
+                        const Divider(height: 1),
+                        mobileDetails(),
+                      ],
+                    ]);
+                  }
                   if (constraints.maxWidth < 650) {
                     return Column(children: [
                       Expanded(child: list),

@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 export 'common/widgets/keyboard_shortcuts/shortcut_constants.dart';
 
 const int kMaxVirtualDisplayCount = 4;
+const bool kG3AndroidClient = bool.fromEnvironment('G3_ANDROID_CLIENT');
 const int kAllVirtualDisplay = -1;
 
 const double kDesktopRemoteTabBarHeight = 28.0;

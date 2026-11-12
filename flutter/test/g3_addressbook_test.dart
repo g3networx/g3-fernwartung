@@ -29,6 +29,24 @@ class FixtureCredentials extends G3AddressBookCredentials {
   }
 }
 
+class StandbyAddressBookApi extends G3AddressBookApi {
+  final Map<String, dynamic> tree;
+  int requests = 0;
+  final tokens = <String?>[];
+  StandbyAddressBookApi(this.tree)
+      : super(client: MockClient((_) async => http.Response('', 500)));
+
+  @override
+  Future<Map<String, dynamic>> request(String path,
+      {Map<String, dynamic>? body}) async {
+    tokens.add(token);
+    requests++;
+    if (requests == 2) throw G3AddressBookRequestError(503);
+    if (requests == 4) throw G3AddressBookExpired();
+    return tree;
+  }
+}
+
 void main() {
   test('Windows remembers a revocable token across store instances', () async {
     final target =
@@ -65,6 +83,64 @@ void main() {
             headers: {'content-type': 'application/json; charset=utf-8'})));
     expect((await api.request('tree'))['username'], 'fixture@g3.test');
     api.close();
+  });
+
+  test('login poll survives a temporary portal error', () async {
+    var attempts = 0;
+    final api = G3AddressBookApi(client: MockClient((_) async {
+      attempts++;
+      if (attempts == 1) return http.Response('', 503);
+      return http.Response('{"token":"fixture"}', 200);
+    }));
+    expect(await api.poll('device', 'verifier'), isNull);
+    expect((await api.poll('device', 'verifier'))?['token'], 'fixture');
+    api.close();
+  });
+
+  testWidgets('resumes after standby and retries without clearing the tree',
+      (tester) async {
+    final credentials = FixtureCredentials();
+    final api = StandbyAddressBookApi(tree);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: G3AddressBook(
+                api: api,
+                credentials: credentials,
+                mobile: true,
+                onConnect: (_) async {}))));
+    await tester.pumpAndSettle();
+    expect(find.text('fixture@g3.test'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '123456789');
+    await tester.pumpAndSettle();
+    expect(find.text('TEST-SERVER'), findsOneWidget);
+    await tester.tap(find.text('TEST-SERVER'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, 'Verbinden').hitTestable(), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(minutes: 1));
+    expect(api.requests, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(api.requests, 2);
+    expect(find.text('TEST-SERVER'), findsWidgets);
+    expect(find.textContaining('automatisch erneut'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(api.requests, 3);
+    expect(find.text('TEST-SERVER'), findsWidgets);
+    expect(find.textContaining('automatisch erneut'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pumpAndSettle();
+    expect(api.requests, 4);
+    expect(api.tokens, List.filled(4, 'a' * 43));
+    expect(find.text('TEST-SERVER'), findsNothing);
+    expect(find.text('Mit g3 anmelden'), findsOneWidget);
+    expect(credentials.deleted, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('read-only public entry copies locally without server mutation or overwrite', (tester) async {

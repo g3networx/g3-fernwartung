@@ -5,6 +5,11 @@ import 'package:flutter_hbb/web/settings_page.dart';
 import 'package:get/get.dart';
 import '../../common.dart';
 import '../../common/widgets/chat_page.dart';
+import '../../consts.dart';
+import '../../g3_addressbook.dart';
+import '../../g3_addressbook_credentials.dart';
+import '../../g3_android_settings.dart';
+import '../../g3_handoff_uri.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
 import 'connection_page.dart';
@@ -13,6 +18,41 @@ abstract class PageShape extends Widget {
   final String title = "";
   final Widget icon = Icon(null);
   final List<Widget> appBarActions = [];
+}
+
+class G3MobileAddressBookPage extends StatelessWidget implements PageShape {
+  const G3MobileAddressBookPage({super.key});
+
+  @override
+  String get title => 'Adressbuch';
+
+  @override
+  Widget get icon => const Icon(Icons.contact_page_outlined);
+
+  @override
+  List<Widget> get appBarActions => const [];
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: G3AddressBook(
+          mobile: true,
+          credentials: G3AndroidAddressBookCredentials(supported: androidVersion >= 23),
+          onConnect: (value) async {
+          final uri = Uri.parse(value);
+          final handoff = g3HandoffArguments(uri);
+          if (handoff != null) {
+            await redeemG3Session(handoff.last);
+          } else if (uri.scheme == 'g3fernwartung' &&
+              uri.path.isEmpty &&
+              !uri.hasQuery &&
+              !uri.hasFragment &&
+              RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.authority)) {
+            await connect(context, uri.authority);
+          } else {
+            throw const FormatException('Ungültige Verbindungsfreigabe');
+          }
+        }),
+      );
 }
 
 class HomePage extends StatefulWidget {
@@ -28,6 +68,7 @@ class HomePageState extends State<HomePage> {
   var _selectedIndex = 0;
   int get selectedIndex => _selectedIndex;
   final List<PageShape> _pages = [];
+  bool get _g3AndroidClient => isAndroid && kG3AndroidClient;
   int _chatPageTabIndex = -1;
   bool get isChatPageCurrentTab => isAndroid
       ? _selectedIndex == _chatPageTabIndex
@@ -51,12 +92,17 @@ class HomePageState extends State<HomePage> {
       _pages.add(ConnectionPage(
         appBarActions: [],
       ));
+      if (_g3AndroidClient) {
+        _pages.add(const G3MobileAddressBookPage());
+      }
     }
     if (isAndroid && !bind.isOutgoingOnly()) {
       _chatPageTabIndex = _pages.length;
       _pages.addAll([ChatPage(type: ChatPageType.mobileMain), ServerPage()]);
     }
-    _pages.add(SettingsPage());
+    if (!_g3AndroidClient || bind.isIncomingOnly()) {
+      _pages.add(SettingsPage());
+    }
   }
 
   @override
@@ -76,8 +122,16 @@ class HomePageState extends State<HomePage> {
           // backgroundColor: MyTheme.grayBg,
           appBar: AppBar(
             centerTitle: true,
-            title: appTitle(),
-            actions: _pages.elementAt(_selectedIndex).appBarActions,
+            title: _g3AndroidClient ? const Text('g3 OpsLinX') : appTitle(),
+            actions: [
+              ..._pages.elementAt(_selectedIndex).appBarActions,
+              if (_g3AndroidClient)
+                IconButton(
+                  tooltip: 'Einstellungen',
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () => showG3AndroidSettings(context),
+                ),
+            ],
           ),
           bottomNavigationBar: BottomNavigationBar(
             key: navigationBarKey,
@@ -102,7 +156,9 @@ class HomePageState extends State<HomePage> {
               }
             }),
           ),
-          body: _pages.elementAt(_selectedIndex),
+          body: _g3AndroidClient
+              ? IndexedStack(index: _selectedIndex, children: _pages)
+              : _pages.elementAt(_selectedIndex),
         ));
   }
 

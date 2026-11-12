@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
@@ -64,5 +66,21 @@ class G3AddressBookApi {
             .encode(sha256.convert(utf8.encode(verifier)).bytes)
             .replaceAll('=', '')
       });
+
+  Future<Map<String, dynamic>?> poll(String deviceCode, String verifier) async {
+    try {
+      return await request('login/poll',
+          body: {'device_code': deviceCode, 'verifier': verifier});
+    } on G3AddressBookRequestError catch (error) {
+      if (error.status != 429 && error.status < 500) rethrow;
+    } on TimeoutException {
+      return null;
+    } on SocketException {
+      return null;
+    } on http.ClientException {
+      return null;
+    }
+    return null;
+  }
   void close() => client.close();
 }
