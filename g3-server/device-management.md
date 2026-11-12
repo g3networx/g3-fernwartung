@@ -21,4 +21,6 @@ Der installierte Windows-Dienst speichert die Sperrvorgabe im maschinenweiten Re
 
 Die Oberfläche erfasst und protokolliert Update- und Deinstallationsaufträge. Der Windows-Installer enthält einen Deinstallations-Worker für das eigene registrierte MSI. Er verlangt SYSTEM-Rechte und dieselbe exklusive Sitzungssperre wie ein Update. Er gibt bei belegter Sperre oder unbekanntem installiertem Build Code 1618 zurück.
 
+Der Update-Button im Vollclient und die manuelle Installation über den signierten Installer bleiben auch bei aktiver Sperre für ausgehende Fernsteuerung verfügbar. Lokale und zentrale Aufträge verwenden dieselbe Installations- und Sitzungssperre.
+
 Für die nächste Laborstufe fehlen die Zustellung der Aufträge an den Windows-Dienst und seine Rückmeldung an das Portal. Die Zustellung muss die verifizierte Installation erneut prüfen. Der Laborversuch soll zuerst während einer laufenden Sitzung eine Zurückstellung nachweisen und anschließend den Abschluss des Auftrags prüfen.
