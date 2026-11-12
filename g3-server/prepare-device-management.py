@@ -44,11 +44,20 @@ def patch_bootstrap(source):
         "   management=app.config.get('DEVICE_MANAGEMENT_BOOTSTRAP_RESPONSE')\n"
         "   return management(data,d['id'],rid,pk,result) if management else result\n"
     )
-    if replacement in source:
+    if replacement not in source:
+        if source.count(original) != 1:
+            raise ValueError("Expected one authenticated credential-policy response")
+        source = source.replace(original, replacement)
+
+    # An installed device polls every 30 seconds. Budget for 200 devices
+    # sharing an address in the portal's 15-minute rate-limit window.
+    old_limit = "m.limited('bootstrap:'+str(request.remote_addr),300);"
+    new_limit = "m.limited('bootstrap:'+str(request.remote_addr),6000);"
+    if source.count(new_limit) == 1 and old_limit not in source:
         return source
-    if source.count(original) != 1:
-        raise ValueError("Expected one authenticated credential-policy response")
-    return source.replace(original, replacement)
+    if source.count(old_limit) != 1 or new_limit in source:
+        raise ValueError("Expected one bootstrap rate limit")
+    return source.replace(old_limit, new_limit, 1)
 
 
 def patch_device_list(source):
