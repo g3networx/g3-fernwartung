@@ -23,4 +23,6 @@ Die Oberfläche erfasst und protokolliert Update- und Deinstallationsaufträge. 
 
 Der Update-Button im Vollclient und die manuelle Installation über den signierten Installer bleiben auch bei aktiver Sperre für ausgehende Fernsteuerung verfügbar. Lokale und zentrale Aufträge verwenden dieselbe Installations- und Sitzungssperre.
 
-Für die nächste Laborstufe fehlen die Zustellung der Aufträge an den Windows-Dienst und seine Rückmeldung an das Portal. Die Zustellung muss die verifizierte Installation erneut prüfen. Der Laborversuch soll zuerst während einer laufenden Sitzung eine Zurückstellung nachweisen und anschließend den Abschluss des Auftrags prüfen.
+Das Portal stellt einen Auftrag nur der verifizierten Installation zu, wenn deren Client Bereitschaft meldet und keine aktuelle Sitzung erfasst ist. Die Antwort enthält eine auf diesen Auftrag beschränkte Quittung für die Rückmeldung. Meldet der lokale Installer Code 1618, wird der Auftrag erneut vorgemerkt. Bei fehlender Rückmeldung bleibt der Zustand sichtbar und es erfolgt keine automatische Wiederholung.
+
+Der Windows-Dienst übernimmt bislang die Sperrvorgabe. Die Ausführung und Quittierung der Update- und Deinstallationsaufträge müssen noch angebunden werden. Der Laborversuch soll zuerst während einer laufenden Sitzung die Zurückstellung und anschließend den Abschluss des Auftrags prüfen.

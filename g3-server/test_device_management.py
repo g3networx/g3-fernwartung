@@ -1,4 +1,5 @@
 import sqlite3
+import time
 import unittest
 from functools import wraps
 from hashlib import sha256
@@ -23,6 +24,7 @@ class DeviceManagementTest(unittest.TestCase):
         self.db.executescript("""
             CREATE TABLE devices(id INTEGER PRIMARY KEY, customer_id INTEGER, rustdesk_id TEXT, name TEXT);
             CREATE TABLE audit(ts INTEGER, actor TEXT, event TEXT, target TEXT, ip TEXT);
+            CREATE TABLE activity_sessions(device_id INTEGER, closed INTEGER, last_seen INTEGER);
             INSERT INTO devices VALUES (1, 10, '111111', 'Laborhost'), (2, 20, '222222', 'Anderer Host');
         """)
         self.role = "admin"
@@ -71,11 +73,11 @@ class DeviceManagementTest(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def heartbeat(self, *, key_digest=None):
+    def heartbeat(self, *, key_digest=None, ready=False):
         with self.app.test_request_context():
             g.verified_device_id = 1
             return self.app.config["DEVICE_MANAGEMENT_HEARTBEAT"](
-                1, "111111", self.installation_id, "host", key_digest or self.key_digest,
+                1, "111111", self.installation_id, "host", key_digest or self.key_digest, ready,
             )
 
     def post(self, action, **fields):
@@ -132,6 +134,34 @@ class DeviceManagementTest(unittest.TestCase):
             g.verified_device_id = 1
             response = bootstrap(registration, 1, "111111", self.public_key, {"registered": True})
             self.assertEqual(response["management"], {"outbound_blocked": False, "policy_revision": 0})
+
+    def test_claim_waits_for_session_and_busy_installer_can_retry(self):
+        self.app.config["DEVICE_MANAGEMENT_ENABLED"] = True
+        self.heartbeat()
+        self.post("uninstall", installation_id=self.installation_id)
+        self.db.execute("INSERT INTO activity_sessions VALUES (1, 0, ?)", (int(time.time()),))
+        self.db.commit()
+        self.assertNotIn("job", self.heartbeat(ready=True))
+        self.db.execute("UPDATE activity_sessions SET closed = 1")
+        self.db.commit()
+        job = self.heartbeat(ready=True)["job"]
+        self.assertEqual(job["operation"], "uninstall")
+        self.assertNotIn("job", self.heartbeat(ready=True))
+        self.assertEqual(self.post("cancel", operation_id=job["id"]).status_code, 404)
+        route = "/client-management/operations/{}/result".format(job["id"])
+        busy = {"result": "busy", "exit_code": 1618}
+        self.assertEqual(self.client.post(route, json=busy, headers={"Authorization": "Bearer " + "x" * 43}).status_code, 404)
+        headers = {"Authorization": "Bearer " + job["receipt"]}
+        self.assertEqual(self.client.post(route, json=busy, headers=headers).status_code, 200)
+        self.assertEqual(self.client.post(route, json=busy, headers=headers).status_code, 200)
+        retry = self.heartbeat(ready=True)["job"]
+        self.assertEqual(retry["id"], job["id"])
+        self.assertNotEqual(retry["receipt"], job["receipt"])
+        complete = {"result": "complete", "exit_code": 0}
+        self.assertEqual(self.client.post(route, json=complete, headers=headers).status_code, 404)
+        headers = {"Authorization": "Bearer " + retry["receipt"]}
+        self.assertEqual(self.client.post(route, json=complete, headers=headers).status_code, 200)
+        self.assertNotIn("job", self.heartbeat(ready=True))
 
 
 if __name__ == "__main__":

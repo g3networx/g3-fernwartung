@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from hashlib import sha256
 from hmac import compare_digest
 import re
+import secrets
 import time
 
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
@@ -13,6 +14,7 @@ INSTALLATION_ID = re.compile(r"[0-9a-f]{32}")
 NATIVE_ID = re.compile(r"[A-Za-z0-9_-]{6,40}")
 KEY_DIGEST = re.compile(r"[0-9a-f]{64}")
 OPERATIONS = frozenset({"update", "uninstall"})
+RESULTS = {"complete": "succeeded", "busy": "queued", "failed": "failed"}
 
 
 @contextmanager
@@ -51,15 +53,17 @@ def install(app, portal):
                     device_id INTEGER NOT NULL,
                     installation_id TEXT NOT NULL,
                     operation TEXT NOT NULL CHECK (operation IN ('update', 'uninstall')),
-                    state TEXT NOT NULL CHECK (state IN ('queued', 'cancelled')),
+                    state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
                     created INTEGER NOT NULL,
-                    created_by INTEGER NOT NULL
+                    created_by INTEGER NOT NULL,
+                    receipt_digest TEXT,
+                    last_exit_code INTEGER
                 )
             """)
             portal.run("""
                 CREATE UNIQUE INDEX IF NOT EXISTS managed_device_one_queued_operation
                 ON managed_device_operations (device_id, installation_id)
-                WHERE state = 'queued'
+                WHERE state IN ('queued', 'running')
             """)
             portal.run("""
                 CREATE TABLE IF NOT EXISTS managed_outbound_policy (
@@ -77,7 +81,7 @@ def install(app, portal):
     def enabled():
         return app.config.get("DEVICE_MANAGEMENT_ENABLED") is True
 
-    def authenticated_installation(device_id, native_id, installation_id, variant, key_digest):
+    def authenticated_installation(device_id, native_id, installation_id, variant, key_digest, ready=False):
         """Call after the installed client proves its device key in client-bootstrap."""
         if not enabled() or g.get("verified_device_id") != device_id:
             return {}
@@ -103,7 +107,12 @@ def install(app, portal):
             if not registered.rowcount:
                 abort(409)
             policy = outbound_policy(db, device)
-        return {"outbound_blocked": bool(policy["blocked"]), "policy_revision": policy["revision"]}
+            result = {"outbound_blocked": bool(policy["blocked"]), "policy_revision": policy["revision"]}
+            if ready:
+                job = claim(db, device_id, installation_id)
+                if job:
+                    result["job"] = job
+        return result
 
     app.config["DEVICE_MANAGEMENT_HEARTBEAT"] = authenticated_installation
 
@@ -113,6 +122,7 @@ def install(app, portal):
             status = authenticated_installation(
                 device_id, native_id, registration.get("installation_id"),
                 registration.get("variant"), sha256(verified_public_key).hexdigest(),
+                ready=registration.get("ready") is True,
             )
             if status:
                 response["management"] = status
@@ -134,6 +144,58 @@ def install(app, portal):
             WHERE device_id = ? AND customer_id = ? AND native_id = ?
             ORDER BY variant, last_seen DESC
         """, (device["id"], device["customer_id"], device["rustdesk_id"])).fetchall()
+
+    def claim(db, device_id, installation_id):
+        if db.execute("""
+            SELECT 1 FROM activity_sessions
+            WHERE device_id = ? AND closed = 0 AND last_seen >= ?
+        """, (device_id, int(time.time()) - 120)).fetchone():
+            return None
+        receipt = secrets.token_urlsafe(32)
+        row = db.execute("""
+            UPDATE managed_device_operations SET state = 'running', receipt_digest = ?
+            WHERE device_id = ? AND installation_id = ? AND state = 'queued'
+            RETURNING id, operation
+        """, (sha256(receipt.encode()).hexdigest(), device_id, installation_id)).fetchone()
+        return {"id": row["id"], "operation": row["operation"], "receipt": receipt} if row else None
+
+    @blueprint.post("/client-management/operations/<int:operation_id>/result")
+    def operation_result(operation_id):
+        authorization = request.headers.get("Authorization", "")
+        if not enabled() or not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+            abort(404)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("result"), str):
+            abort(400)
+        state = RESULTS.get(data["result"])
+        exit_code = data.get("exit_code")
+        if (state is None or type(exit_code) is not int or not 0 <= exit_code <= 65535
+                or (state == "queued") != (exit_code == 1618)
+                or (state == "succeeded") != (exit_code in (0, 3010))):
+            abort(400)
+        receipt_digest = sha256(authorization[7:].encode()).hexdigest()
+        db = portal.db()
+        with write_transaction(db):
+            row = db.execute("""
+                SELECT o.state, o.last_exit_code FROM managed_device_operations o
+                JOIN managed_installations i USING (device_id, installation_id)
+                JOIN devices d ON d.id = i.device_id AND d.customer_id = i.customer_id AND d.rustdesk_id = i.native_id
+                WHERE o.id = ? AND o.receipt_digest = ?
+            """, (operation_id, receipt_digest)).fetchone()
+            if not row:
+                abort(404)
+            if row["state"] != "running":
+                if row["state"] == state and row["last_exit_code"] == exit_code:
+                    return {"recorded": True}
+                abort(409)
+            db.execute("""
+                UPDATE managed_device_operations SET state = ?, last_exit_code = ?
+                WHERE id = ?
+            """, (state, exit_code, operation_id))
+            db.execute("INSERT INTO audit(ts,actor,event,target,ip) VALUES (?,?,?,?,?)",
+                       (int(time.time()), "OpsLinX-Client", "device_operation_" + state,
+                        str(operation_id), request.remote_addr))
+        return {"recorded": True}
 
     @blueprint.route("/devices/<int:did>/management", methods=["GET", "POST"])
     @portal.auth
