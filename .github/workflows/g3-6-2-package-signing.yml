@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 1.62.20057
+name: Sign OpsLinX Windows 1.62.20059
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: b2dc090a6c072cfda71a70ca92f72a0e8ed46da3
-  BUILD_RUN: '43226233683'
+  SOURCE_COMMIT: b441a7bd0e3c5d868edf7e294cc322e3a5f3440f
+  BUILD_RUN: '43254395153'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           while true; do
             run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")
-            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-next-client-review"' <<< "$run" >/dev/null
+            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-rustdesk-1.5.3-lab"' <<< "$run" >/dev/null
             if [[ $(jq -r '.status' <<< "$run") == completed ]]; then
               jq -e '.conclusion == "success"' <<< "$run" >/dev/null
               break
