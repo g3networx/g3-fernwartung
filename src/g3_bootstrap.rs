@@ -66,9 +66,20 @@ fn refresh()->Result<(),()> {
     let nonce=challenge["challenge"].as_str().ok_or(())?;
     let signature=crate::ipc::g3_bootstrap_signature(&format!("g3-bootstrap-v1:{}:{}",id,nonce));
     if signature.is_empty(){return Err(())}
-    let data:Value=client.post(url).json(&serde_json::json!({"id":id,"challenge":nonce,"signature":signature,"credential_policy":2}))
+    let mut request = serde_json::json!({"id":id,"challenge":nonce,"signature":signature,"credential_policy":2});
+    #[cfg(windows)]
+    if let Ok(Some(registration)) = crate::g3_device_management::registration() {
+        request["management"] = registration;
+    }
+    let data:Value=client.post(url).json(&request)
         .send().map_err(|_|())?.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
     if data["registered"]!=true{return Err(())}
+    #[cfg(windows)]
+    if let Some(policy) = data.get("management") {
+        if let Err(error) = crate::g3_device_management::store_policy(&id, policy) {
+            hbb_common::log::warn!("Could not save the device management policy: {error}");
+        }
+    }
     let activity=data["activity_token"].as_str().ok_or(())?;
     if activity.len()!=43{return Err(())}
     Config::set_option("g3-activity-token".to_owned(),activity.to_owned());

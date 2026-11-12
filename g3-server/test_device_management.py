@@ -1,6 +1,7 @@
 import sqlite3
 import unittest
 from functools import wraps
+from hashlib import sha256
 
 from flask import Flask, abort, g
 from werkzeug.exceptions import Conflict
@@ -10,7 +11,8 @@ import device_management
 
 class DeviceManagementTest(unittest.TestCase):
     installation_id = "a" * 32
-    key_digest = "1" * 64
+    public_key = bytes(range(32))
+    key_digest = sha256(public_key).hexdigest()
     route = "/devices/1/management"
 
     def setUp(self):
@@ -119,6 +121,17 @@ class DeviceManagementTest(unittest.TestCase):
         self.db.execute("UPDATE devices SET customer_id = 20 WHERE id = 1")
         self.db.commit()
         self.assertEqual(self.post("uninstall", installation_id=self.installation_id).status_code, 409)
+
+    def test_bootstrap_policy_requires_a_proven_native_id(self):
+        self.app.config["DEVICE_MANAGEMENT_ENABLED"] = True
+        bootstrap = self.app.config["DEVICE_MANAGEMENT_BOOTSTRAP_RESPONSE"]
+        registration = {"management": {"installation_id": self.installation_id, "variant": "host"}}
+        with self.app.test_request_context():
+            response = bootstrap(registration, 1, "111111", self.public_key, {"registered": True})
+            self.assertNotIn("management", response)
+            g.verified_device_id = 1
+            response = bootstrap(registration, 1, "111111", self.public_key, {"registered": True})
+            self.assertEqual(response["management"], {"outbound_blocked": False, "policy_revision": 0})
 
 
 if __name__ == "__main__":

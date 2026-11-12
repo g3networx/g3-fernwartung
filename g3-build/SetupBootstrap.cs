@@ -318,8 +318,11 @@ internal sealed class SetupForm:Form {
   var gatePath = Path.Combine(installDirectory, "g3-update-session.lock");
   var statePath = @"HKEY_LOCAL_MACHINE\SOFTWARE\" + AppName + @"\InstallState\" + AppName;
   var registeredCode = Registry.GetValue(statePath, "MsiProductCode", null) as string;
+  var registeredDirectory = Registry.GetValue(statePath, "InstallLocation", "") as string;
   Guid product;
   if (!Guid.TryParseExact(registeredCode, "B", out product)
+      || product == Guid.Empty || String.IsNullOrEmpty(registeredDirectory)
+      || !String.Equals(registeredDirectory.TrimEnd(Path.DirectorySeparatorChar), installDirectory, StringComparison.OrdinalIgnoreCase)
       || !File.Exists(InstalledExe) || !File.Exists(native) || !File.Exists(gatePath)
       || Array.IndexOf(GateDllHashes.Split(';'), Digest(native)) < 0)
    return 1618;
@@ -337,8 +340,8 @@ internal sealed class SetupForm:Form {
    try {
     using (var service = new ServiceController(AppName)) {
      if (service.Status == ServiceControllerStatus.Running) {
-      service.Stop();
       restore = true;
+      service.Stop();
       service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(40));
      } else if (service.Status != ServiceControllerStatus.Stopped) {
       return 1618;

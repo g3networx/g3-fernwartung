@@ -1,6 +1,7 @@
 """Portal-side management for explicitly enrolled OpsLinX installations."""
 
 from contextlib import contextmanager
+from hashlib import sha256
 from hmac import compare_digest
 import re
 import time
@@ -105,6 +106,19 @@ def install(app, portal):
         return {"outbound_blocked": bool(policy["blocked"]), "policy_revision": policy["revision"]}
 
     app.config["DEVICE_MANAGEMENT_HEARTBEAT"] = authenticated_installation
+
+    def bootstrap_response(request_data, device_id, native_id, verified_public_key, response):
+        registration = request_data.get("management")
+        if enabled() and isinstance(registration, dict):
+            status = authenticated_installation(
+                device_id, native_id, registration.get("installation_id"),
+                registration.get("variant"), sha256(verified_public_key).hexdigest(),
+            )
+            if status:
+                response["management"] = status
+        return response
+
+    app.config["DEVICE_MANAGEMENT_BOOTSTRAP_RESPONSE"] = bootstrap_response
 
     def outbound_policy(db, device):
         return db.execute("""
