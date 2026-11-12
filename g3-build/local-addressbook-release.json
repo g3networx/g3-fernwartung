@@ -1,8 +1,8 @@
 {
-  "version": "1.5.0-g3.62.20053",
-  "displayVersion": "g3.6.2 Build 111126",
-  "buildDate": "2026-11-11",
-  "windowsVersion": "1.62.20053",
-  "dailyInternalSequence": 5,
+  "version": "1.5.0-g3.62.20056",
+  "displayVersion": "g3.6.2 Build 121126",
+  "buildDate": "2026-11-12",
+  "windowsVersion": "1.62.20056",
+  "dailyInternalSequence": 0,
   "feature": "system-info-addressbook-lab"
 }
