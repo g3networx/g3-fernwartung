@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows update launchers 1.62.20053
+name: Sign OpsLinX Windows update launchers 1.62.20056
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,9 +7,9 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: 861d5e7b230492b92bf14be4356b141718acae28
-  PACKAGE_SOURCE: d1efa49aea9f177110d139827a3c9b0bd73b79eb
-  RELEASE_VERSION: 1.5.0-g3.62.20053
+  SOURCE_COMMIT: 11b5a2b93193c69b93d9aa84d6c2186922c9383a
+  PACKAGE_SOURCE: 40f0fe32b80d41c8cf0090db81f4c183166cc4af
+  RELEASE_VERSION: 1.5.0-g3.62.20056
 jobs:
   signing:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
@@ -23,14 +23,14 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: 13898024239
-          run-id: 43108539236
+          artifact-ids: 13944181925
+          run-id: 43208131166
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: 13899047692
-          run-id: 43116929807
+          artifact-ids: 13944087572
+          run-id: 43211083808
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-signed
       - name: Test running and exited process detection
