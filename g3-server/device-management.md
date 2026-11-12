@@ -4,9 +4,9 @@ Der Portalcode verwendet die vorhandene Anmeldung, die Gerätezuordnung und den 
 
 ## Portal-Anbindung
 
-`python prepare-device-management.py /pfad/zur/portal-kopie` bindet das Modul in einer Staging-Kopie ein. Die Freigabe erfolgt über `DEVICE_MANAGEMENT_ENABLED` in der Flask-Konfiguration. Die HA-Knoten verwenden denselben bestehenden Flask-Sitzungsschlüssel, damit ein erneut abgefragter Auftrag dieselbe Quittung erhält.
+`python prepare-device-management.py /pfad/zur/portal-kopie` bindet das Modul in einer Staging-Kopie ein. `OPSLINX_DEVICE_MANAGEMENT=1` aktiviert die Geräteverwaltung beim Start des Portals. Die HA-Knoten verwenden denselben bestehenden Flask-Sitzungsschlüssel, damit ein erneut abgefragter Auftrag dieselbe Quittung erhält.
 
-Das Hauptmodul unter `/opt/rustdesk-addressbook` registriert `device_management.install(app, portal)` vor dem Aufruf von `portal.init()`. Das Modul legt seine Tabellen über dieselbe Initialisierung an wie die übrigen Portal-Erweiterungen. Die Geräteansicht kann zur Route `/devices/<did>/management` verlinken. Die Route überprüft die Admin-Rolle und prüft die Formularanfragen per CSRF-Token.
+Das Hauptmodul unter `/opt/rustdesk-addressbook` registriert `device_management.install(app, portal)` vor dem Aufruf von `portal.init()`. Das Modul legt seine Tabellen über dieselbe Initialisierung an wie die übrigen Portal-Erweiterungen. Admins öffnen die Geräteverwaltung über „Weitere Optionen“ am Gerät. Die Route überprüft die Admin-Rolle und prüft die Formularanfragen per CSRF-Token.
 
 Nach erfolgreicher Ed25519-Prüfung setzt `client-bootstrap` weiterhin `g.verified_device_id`. Im Zweig für `credential_policy == 2` ergänzt der Handler seine bisherige Antwort vor dem Senden:
 

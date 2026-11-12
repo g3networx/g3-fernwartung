@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from base64 import urlsafe_b64encode
 from hashlib import sha256
 from hmac import compare_digest, digest
+import os
 import re
 import secrets
 import time
@@ -30,6 +31,7 @@ def write_transaction(db):
 
 
 def install(app, portal):
+    app.config.setdefault("DEVICE_MANAGEMENT_ENABLED", os.getenv("OPSLINX_DEVICE_MANAGEMENT") == "1")
     blueprint = Blueprint("device_management", __name__, template_folder="templates")
     initialize = portal.init
 

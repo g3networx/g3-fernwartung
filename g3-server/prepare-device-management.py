@@ -8,11 +8,14 @@ import shutil
 
 def patch_application(source):
     module = ast.parse(source)
+    installers = {"bootstrap_client.install"}
+    for statement in module.body:
+        if isinstance(statement, ast.ImportFrom) and statement.module == "bootstrap_client":
+            installers.update(name.asname or name.name for name in statement.names if name.name == "install")
     candidates = [
         statement for statement in module.body
         if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
-        and isinstance(statement.value.func, ast.Attribute)
-        and ast.unparse(statement.value.func) == "bootstrap_client.install"
+        and ast.unparse(statement.value.func) in installers
         and len(statement.value.args) == 2 and not statement.value.keywords
     ]
     if len(candidates) != 1:
@@ -43,6 +46,20 @@ def patch_bootstrap(source):
     return source.replace(original, replacement)
 
 
+def patch_device_list(source):
+    anchor = '<a href="/devices/{{ d.id }}/edit">Gerät bearbeiten</a>'
+    link = (
+        "{% if config.get('DEVICE_MANAGEMENT_ENABLED') and g.user and g.user.role == 'admin' %}"
+        '<a href="{{ url_for(\'device_management.manage\', did=d.id) }}">Geräteverwaltung</a>'
+        "{% endif %}"
+    )
+    if link in source:
+        return source
+    if source.count(anchor) != 1:
+        raise ValueError("Expected one device edit link in templates/index.html")
+    return source.replace(anchor, anchor + link)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("staged_portal", type=Path)
@@ -65,6 +82,10 @@ def main():
     templates = target / "templates"
     if templates.is_symlink() or not templates.is_dir():
         parser.error("Expected a regular templates directory in the staging copy")
+    index = templates / "index.html"
+    if index.is_symlink():
+        parser.error("Staging template must be a regular file: index.html")
+    updates[index] = patch_device_list(index.read_text(encoding="utf-8"))
     for path, updated in updates.items():
         path.write_text(updated, encoding="utf-8")
     source = Path(__file__).resolve().parent
