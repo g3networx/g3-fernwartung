@@ -128,6 +128,7 @@ fn wire_session_add_sync_impl(
     password: impl Wire2Api<String> + UnwindSafe,
     is_shared_password: impl Wire2Api<bool> + UnwindSafe,
     conn_token: impl Wire2Api<Option<String>> + UnwindSafe,
+    login_method: impl Wire2Api<String> + UnwindSafe,
 ) -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -148,6 +149,7 @@ fn wire_session_add_sync_impl(
             let api_password = password.wire2api();
             let api_is_shared_password = is_shared_password.wire2api();
             let api_conn_token = conn_token.wire2api();
+            let api_login_method = login_method.wire2api();
             Ok(session_add_sync(
                 api_session_id,
                 api_id,
@@ -161,6 +163,7 @@ fn wire_session_add_sync_impl(
                 api_password,
                 api_is_shared_password,
                 api_conn_token,
+                api_login_method,
             ))
         },
     )
@@ -2133,7 +2136,7 @@ fn wire_main_set_option_impl(
         move || {
             let api_key = key.wire2api();
             let api_value = value.wire2api();
-            move |task_callback| Ok(main_set_option(api_key, api_value))
+            move |task_callback| main_set_option(api_key, api_value)
         },
     )
 }
@@ -2166,7 +2169,7 @@ fn wire_main_set_options_impl(port_: MessagePort, json: impl Wire2Api<String> + 
         },
         move || {
             let api_json = json.wire2api();
-            move |task_callback| Ok(main_set_options(api_json))
+            move |task_callback| main_set_options(api_json)
         },
     )
 }
@@ -4170,6 +4173,26 @@ fn wire_main_init_input_source_impl() -> support::WireSyncReturn {
         move || Ok(main_init_input_source()),
     )
 }
+fn wire_main_reload_keyboard_shortcuts_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "main_reload_keyboard_shortcuts",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Ok(main_reload_keyboard_shortcuts()),
+    )
+}
+fn wire_main_get_default_keyboard_shortcuts_impl() -> support::WireSyncReturn {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+        WrapInfo {
+            debug_name: "main_get_default_keyboard_shortcuts",
+            port: None,
+            mode: FfiCallMode::Sync,
+        },
+        move || Ok(main_get_default_keyboard_shortcuts()),
+    )
+}
 fn wire_main_is_installed_lower_version_impl() -> support::WireSyncReturn {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
@@ -4779,7 +4802,7 @@ fn wire_main_get_trusted_devices_impl(port_: MessagePort) {
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
-        move || move |task_callback| Ok(main_get_trusted_devices()),
+        move || move |task_callback| main_get_trusted_devices(),
     )
 }
 fn wire_main_remove_trusted_devices_impl(
@@ -4794,7 +4817,23 @@ fn wire_main_remove_trusted_devices_impl(
         },
         move || {
             let api_json = json.wire2api();
-            move |task_callback| Ok(main_remove_trusted_devices(api_json))
+            move |task_callback| main_remove_trusted_devices(api_json)
+        },
+    )
+}
+fn wire_main_renew_trusted_devices_impl(
+    port_: MessagePort,
+    json: impl Wire2Api<String> + UnwindSafe,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap::<_, _, _, ()>(
+        WrapInfo {
+            debug_name: "main_renew_trusted_devices",
+            port: Some(port_),
+            mode: FfiCallMode::Normal,
+        },
+        move || {
+            let api_json = json.wire2api();
+            move |task_callback| main_renew_trusted_devices(api_json)
         },
     )
 }
@@ -4805,7 +4844,7 @@ fn wire_main_clear_trusted_devices_impl(port_: MessagePort) {
             port: Some(port_),
             mode: FfiCallMode::Normal,
         },
-        move || move |task_callback| Ok(main_clear_trusted_devices()),
+        move || move |task_callback| main_clear_trusted_devices(),
     )
 }
 fn wire_main_max_encrypt_len_impl() -> support::WireSyncReturn {

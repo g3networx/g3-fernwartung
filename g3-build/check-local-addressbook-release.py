@@ -7,7 +7,7 @@ d=datetime.date.fromisoformat(m['buildDate'])
 assert 0<=m['dailyInternalSequence']<8
 counter=(d-datetime.date(2020,1,1)).days*8+m['dailyInternalSequence']
 assert m['displayVersion']=='g3.6.2 Build '+d.strftime('%d%m%y')
-assert m['version']==f'1.5.0-g3.62.{counter}'
+assert m['version']==f'1.5.3-g3.62.{counter}'
 assert m['windowsVersion']==f'1.62.{counter}'
 assert runpy.run_path(str(root/'g3-build/package-version.py'))['windows_version'](m['version'])==m['windowsVersion']
 for name in ['g3_local_addressbook.dart','g3_local_addressbook_store.dart','g3_local_addressbook_crypto.dart','g3_local_addressbook_password_dialog.dart']:

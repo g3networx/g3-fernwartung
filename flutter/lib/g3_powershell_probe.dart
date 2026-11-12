@@ -124,7 +124,7 @@ Future<void> runG3PowerShellProbe() async {
     final error = bind.sessionAddSync(sessionId: session, id: id,
         isFileTransfer: false, isViewCamera: false, isPortForward: false,
         isRdp: false, isTerminal: true, switchUuid: '', forceRelay: true,
-        password: credential['password'], isSharedPassword: false);
+        password: credential['password'], isSharedPassword: false, loginMethod: '');
     credential.clear();
     if (error.isNotEmpty) throw StateError('session-refused');
     added = true;

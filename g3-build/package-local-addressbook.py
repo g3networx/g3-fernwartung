@@ -9,7 +9,7 @@ date = datetime.date.fromisoformat(release['buildDate'])
 assert release['displayVersion'] == 'g3.6.2 Build ' + date.strftime('%d%m%y')
 assert 0 <= release['dailyInternalSequence'] < 8
 counter = (date - datetime.date(2020, 1, 1)).days * 8 + release['dailyInternalSequence']
-assert release['version'] == f'1.5.0-g3.62.{counter}'
+assert release['version'] == f'1.5.3-g3.62.{counter}'
 assert release['windowsVersion'] == f'1.62.{counter}'
 original = folder / 'package-password-reliability.py'
 source = original.read_text()

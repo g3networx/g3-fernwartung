@@ -8,6 +8,20 @@ pub fn same_machine(local: &[u8], remote: &[u8]) -> bool {
         && local.iter().zip(remote).fold(0u8, |diff, (a,b)| diff | (a ^ b)) == 0
 }
 
+pub fn login_machine_marker(login: &mut base::message_proto::LoginRequest) -> hbb_common::bytes::Bytes {
+    if login.g3_machine.is_empty() {
+        if !login.trusted_device_v2_supported {
+            return std::mem::take(&mut login.trusted_device_v2_token);
+        }
+        return login.g3_machine.clone();
+    }
+    if login.g3_machine == login.trusted_device_v2_token {
+        // The compatibility copy in field 18 must never enter device authentication.
+        login.trusted_device_v2_token.clear();
+    }
+    login.g3_machine.clone()
+}
+
 fn bare_target(target: &str) -> &str {
     let target = target.trim();
     let target = target.strip_prefix("g3fernwartung://")
@@ -48,6 +62,31 @@ mod tests {
   assert!(!same_machine(&[17;32], &[18;32]));
   assert!(!same_machine(&[], &[]));
   assert!(!same_machine(&[17;31], &[17;31]));
+ }
+ #[test] fn login_marker_keeps_legacy_peers_and_trusted_tokens_separate() {
+  use base::message_proto::LoginRequest;
+  let marker = hbb_common::bytes::Bytes::from_static(&[17; 32]);
+  let token = hbb_common::bytes::Bytes::from_static(&[18; 32]);
+  let mut legacy = LoginRequest {
+   trusted_device_v2_token: marker.clone(),
+   ..Default::default()
+  };
+  assert_eq!(login_machine_marker(&mut legacy), marker);
+  assert!(legacy.trusted_device_v2_token.is_empty());
+  let mut compatibility = LoginRequest {
+   g3_machine: marker.clone(),
+   trusted_device_v2_token: marker.clone(),
+   trusted_device_v2_supported: true,
+   ..Default::default()
+  };
+  assert_eq!(login_machine_marker(&mut compatibility), marker);
+  assert!(compatibility.trusted_device_v2_token.is_empty());
+  compatibility.trusted_device_v2_token = token.clone();
+  assert_eq!(login_machine_marker(&mut compatibility), marker);
+  assert_eq!(compatibility.trusted_device_v2_token, token);
+  compatibility.g3_machine.clear();
+  assert!(login_machine_marker(&mut compatibility).is_empty());
+  assert_eq!(compatibility.trusted_device_v2_token, token);
  }
  #[test] fn own_id_and_launch_routes() {
   let ids=vec!["100001".into(),"100002".into()];

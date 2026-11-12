@@ -76,7 +76,7 @@ Future<void> runG3PasswordProbe() async {
     if(sealedOtp && elapsed.elapsed>=const Duration(seconds:80)) throw StateError('otp-handoff-unavailable');
     final error=bind.sessionAddSync(sessionId:session,id:id,isFileTransfer:true,
       isViewCamera:false,isPortForward:false,isRdp:false,isTerminal:false,
-      switchUuid:'',forceRelay:true,password:password,isSharedPassword:false);
+      switchUuid:'',forceRelay:true,password:password,isSharedPassword:false,loginMethod:'');
     password='';
     if(error.isNotEmpty) throw StateError('session-refused');
     added=true;

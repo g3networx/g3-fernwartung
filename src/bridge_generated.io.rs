@@ -48,6 +48,7 @@ pub extern "C" fn wire_session_add_sync(
     password: *mut wire_uint_8_list,
     is_shared_password: bool,
     conn_token: *mut wire_uint_8_list,
+    login_method: *mut wire_uint_8_list,
 ) -> support::WireSyncReturn {
     wire_session_add_sync_impl(
         session_id,
@@ -62,6 +63,7 @@ pub extern "C" fn wire_session_add_sync(
         password,
         is_shared_password,
         conn_token,
+        login_method,
     )
 }
 
@@ -1843,6 +1845,16 @@ pub extern "C" fn wire_main_init_input_source() -> support::WireSyncReturn {
 }
 
 #[no_mangle]
+pub extern "C" fn wire_main_reload_keyboard_shortcuts() -> support::WireSyncReturn {
+    wire_main_reload_keyboard_shortcuts_impl()
+}
+
+#[no_mangle]
+pub extern "C" fn wire_main_get_default_keyboard_shortcuts() -> support::WireSyncReturn {
+    wire_main_get_default_keyboard_shortcuts_impl()
+}
+
+#[no_mangle]
 pub extern "C" fn wire_main_is_installed_lower_version() -> support::WireSyncReturn {
     wire_main_is_installed_lower_version_impl()
 }
@@ -2123,6 +2135,11 @@ pub extern "C" fn wire_main_get_trusted_devices(port_: i64) {
 #[no_mangle]
 pub extern "C" fn wire_main_remove_trusted_devices(port_: i64, json: *mut wire_uint_8_list) {
     wire_main_remove_trusted_devices_impl(port_, json)
+}
+
+#[no_mangle]
+pub extern "C" fn wire_main_renew_trusted_devices(port_: i64, json: *mut wire_uint_8_list) {
+    wire_main_renew_trusted_devices_impl(port_, json)
 }
 
 #[no_mangle]

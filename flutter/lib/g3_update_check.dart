@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 const g3ClientVersion = String.fromEnvironment('G3_CLIENT_VERSION', defaultValue: '1.5.0-g3.62.20050');
 const g3DisplayVersion = String.fromEnvironment('G3_CLIENT_DISPLAY_VERSION', defaultValue: 'g3.6.2 Build 111126');
 String g3VersionLabel(String version) {
-  final m = RegExp(r'^1\.5\.0-g3\.(60|61|62)\.(\d+)$').firstMatch(version);
+  final m = RegExp(r'^1\.5\.(?:0|3)-g3\.(60|61|62)\.(\d+)$').firstMatch(version);
   if (m == null) return version;
   final day = DateTime.utc(2020, 1, 1).add(Duration(days: int.parse(m[2]!) ~/ 8));
   String two(int value) => value.toString().padLeft(2, '0');
