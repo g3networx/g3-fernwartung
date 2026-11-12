@@ -1,30 +1,32 @@
-<!doctype html>
-<html lang="de">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Geräteverwaltung</title>
-<main>
-  <a href="/">Adressbuch</a>
-  <h1>{{ device.name }}</h1>
-  <p>Geräte-ID {{ device.rustdesk_id }}</p>
+{% extends 'base.html' %}
+{% block title %}Geräteverwaltung · g3 OpsLinX{% endblock %}
+{% block content %}
+  <div class="heading workspace-heading">
+    <div>
+      <p class="eyebrow">Geräteverwaltung</p>
+      <h1>{{ device.name }}</h1>
+      <p class="muted">Geräte-ID {{ device.rustdesk_id }}</p>
+    </div>
+    <a class="quiet button" href="/">Zum Adressbuch</a>
+  </div>
   {% if installations %}
   {% if config.get('DEVICE_MANAGEMENT_POLICY_ENABLED') %}
-  <section>
+  <section class="card">
     <h2>Fernsteuerung</h2>
     <p>Vorgabe für ausgehende Verbindungen: {{ 'gesperrt' if policy.blocked else 'erlaubt' }}</p>
     <form method="post">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="csrf" value="{{ management_csrf }}">
       <button name="action" value="{{ 'allow-outbound' if policy.blocked else 'block-outbound' }}">
         {{ 'Aktive Fernsteuerung erlauben' if policy.blocked else 'Aktive Fernsteuerung sperren' }}
       </button>
     </form>
   </section>
   {% endif %}
-  <section>
+  <section class="card">
     <h2>Installationen</h2>
     {% for installation in installations %}
     <form method="post">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="csrf" value="{{ management_csrf }}">
       <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
       <strong>{{ 'Host' if installation.variant == 'host' else 'Vollclient' }}</strong>
       <button name="action" value="update">Update vormerken</button>
@@ -35,10 +37,14 @@
     {% endfor %}
   </section>
   {% else %}
-    <p>Für dieses Gerät ist noch keine verwaltete Installation angemeldet.</p>
+  <section class="card">
+    <h2>Portal-Updates</h2>
+    <p>Der Windows-Dienst hat sich noch nicht für Portal-Updates registriert.</p>
+    <p class="muted">Portal-Updates setzen Build 20060 oder neuer voraus. Ältere Installationen lassen sich direkt im Client aktualisieren.</p>
+  </section>
   {% endif %}
   {% if operations %}
-  <section>
+  <section class="card">
     <h2>Aufträge</h2>
     <ul>
     {% for operation in operations %}
@@ -55,7 +61,7 @@
         {% endif %}
         {% if operation.state == 'queued' %}
         <form method="post">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="csrf" value="{{ management_csrf }}">
           <input type="hidden" name="operation_id" value="{{ operation.id }}">
           <button name="action" value="cancel">Auftrag zurückziehen</button>
         </form>
@@ -65,5 +71,4 @@
     </ul>
   </section>
   {% endif %}
-</main>
-</html>
+{% endblock %}

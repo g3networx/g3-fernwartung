@@ -5,6 +5,7 @@ from functools import wraps
 from hashlib import sha256
 
 from flask import Flask, abort, g
+from jinja2 import DictLoader
 from werkzeug.exceptions import Conflict
 
 import device_management
@@ -18,6 +19,10 @@ class DeviceManagementTest(unittest.TestCase):
 
     def setUp(self):
         self.app = Flask(__name__)
+        self.app.jinja_loader = DictLoader({
+            "base.html": "<main>{{ csrf() }}{% block content %}{% endblock %}</main>",
+        })
+        self.app.jinja_env.globals["csrf"] = lambda: "layout-csrf"
         self.app.config["TESTING"] = True
         self.app.config.update(DEVICE_MANAGEMENT_UNINSTALL_ENABLED=True, DEVICE_MANAGEMENT_POLICY_ENABLED=True)
         self.app.secret_key = "device-management-test-key"

@@ -299,7 +299,7 @@ def install(app, portal):
         """, (int(time.time()) - 120, did, device["customer_id"], device["rustdesk_id"])).fetchall()
         return render_template(
             "device_management.html", device=device, installations=installations, operations=operations,
-            policy=outbound_policy(db, device), csrf=portal.csrf(),
+            policy=outbound_policy(db, device), management_csrf=portal.csrf(),
         )
 
     def audit(db, event, target):
