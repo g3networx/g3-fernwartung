@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 1.62.20059
+name: Sign OpsLinX Windows 1.62.20060
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,9 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: b441a7bd0e3c5d868edf7e294cc322e3a5f3440f
-  PORTABLE_SOURCE_COMMIT: fb2f977db21b2fbae508988444fdbad9eaee5243
-  BUILD_RUN: '43254395153'
+  SOURCE_COMMIT: 2733be051465c8da0636146bcf27cb21dfefbef6
+  BUILD_RUN: '43285449530'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
@@ -25,7 +24,7 @@ jobs:
           set -euo pipefail
           while true; do
             run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")
-            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-rustdesk-1.5.3-lab"' <<< "$run" >/dev/null
+            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-webgui-update-153"' <<< "$run" >/dev/null
             if [[ $(jq -r '.status' <<< "$run") == completed ]]; then
               jq -e '.conclusion == "success"' <<< "$run" >/dev/null
               break
@@ -45,20 +44,6 @@ jobs:
         with:
           ref: ${{ env.SOURCE_COMMIT }}
           persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: ${{ env.PORTABLE_SOURCE_COMMIT }}
-          path: portable-source
-          persist-credentials: false
-      - name: Apply the reviewed portable lockfile correction
-        shell: pwsh
-        run: |
-          $lock = 'libs/portable/Cargo.lock'
-          $before = Get-Content $lock -Raw
-          $after = Get-Content "portable-source/$lock" -Raw
-          $expected = $before -replace '(?m)(name = "rustdesk-portable-packer"\r?\nversion = ")1\.5\.0"', '${1}1.5.3"'
-          if ($before -ceq $after -or $expected -cne $after) { throw 'Unexpected portable lockfile change.' }
-          Copy-Item -LiteralPath "portable-source/$lock" -Destination $lock -Force
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           artifact-ids: ${{ needs.select-build.outputs.artifact }}
