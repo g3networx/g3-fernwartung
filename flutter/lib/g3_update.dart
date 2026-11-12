@@ -11,9 +11,17 @@ import 'g3_update_metadata.dart';
 import 'g3_update_check.dart';
 export 'g3_update_check.dart';
 
+bool _updateDialogOpen = false;
+
 Future<void> showG3Update(BuildContext context) async {
-  await showDialog<void>(
-      context: context, builder: (_) => const _G3UpdateDialog());
+  if (_updateDialogOpen) return;
+  _updateDialogOpen = true;
+  try {
+    await showDialog<void>(
+        context: context, builder: (_) => const _G3UpdateDialog());
+  } finally {
+    _updateDialogOpen = false;
+  }
 }
 
 class _G3UpdateDialog extends StatefulWidget {
@@ -61,6 +69,7 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
   }
 
   Future<void> update() async {
+    if (busy || release == null) return;
     if (g3IsAdhoc()) {
       setState(() => message = 'Bitte die neue Soforthilfe separat herunterladen und erst nach Ende aller Fernwartungen öffnen. Dieser Client bleibt aktiv.');
       return;
@@ -100,12 +109,21 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
       if (verification.exitCode != 0) {
         throw const FormatException('Invalid OpsLinX package signature.');
       }
-      await Process.start(file.path, ['--g3-wait-pid', pid.toString()],
-          mode: ProcessStartMode.detached);
-      if (mounted) setState(() {
-        busy = false;
-        message = 'Das Installationsprogramm prüft laufende Sitzungen. Bei einer laufenden Fernwartung bleibt dieser Client unverändert aktiv.';
-      });
+      if (mounted) {
+        setState(() {
+          message = 'Das Installationsprogramm prüft laufende Sitzungen. Bei einer laufenden Fernwartung bleibt dieser Client unverändert aktiv.';
+        });
+      }
+      final installer = await Process.run(
+          file.path, ['--g3-wait-pid', pid.toString()]);
+      if (mounted) {
+        setState(() {
+          busy = false;
+          message = installer.exitCode == 1618
+              ? 'Ein OpsLinX-Installationsprogramm läuft bereits.'
+              : 'Das Installationsprogramm wurde geschlossen. Prüfen Sie den Versionsstand vor einem erneuten Start.';
+        });
+      }
     } catch (_) {
       if (mounted)
         setState(() {
@@ -117,7 +135,9 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => PopScope(
+        canPop: !busy,
+        child: AlertDialog(
           title: const Text('g3 Client aktualisieren'),
           content: SizedBox(width: 440, child: Text(message)),
           actions: [
@@ -128,5 +148,6 @@ class _G3UpdateState extends State<_G3UpdateDialog> {
               FilledButton(
                   onPressed: busy ? null : update,
                   child: const Text('Update herunterladen und starten'))
-          ]);
+          ]),
+      );
 }

@@ -6,7 +6,23 @@ using System;using System.Diagnostics;using System.IO;
 internal static class G3ProcessExitRegressionTests {
  static void Require(bool okay,string name){if(!okay)throw new Exception(name);Console.WriteLine("PASS "+name);}
  static Process Start(string command){return Process.Start(new ProcessStartInfo(Environment.GetEnvironmentVariable("SystemRoot")+@"\System32\cmd.exe","/c "+command){UseShellExecute=false,CreateNoWindow=true});}
- public static int Main(){
+ static int ProbeSetupInstance(string mutexName){
+  using(var child=Process.Start(new ProcessStartInfo(typeof(G3ProcessExitRegressionTests).Assembly.Location,"--probe-setup-instance "+mutexName){
+   UseShellExecute=false,CreateNoWindow=true})){
+   if(!child.WaitForExit(5000)){child.Kill();throw new Exception("Duplicate launcher did not exit promptly");}
+   return child.ExitCode;
+  }
+ }
+ public static int Main(string[] args){
+  if(args.Length==2&&args[0]=="--probe-setup-instance"){
+   using(var instance=new SetupInstance(args[1],false))return instance.Acquired?0:1618;
+  }
+  string mutexName=@"Global\g3NetworX.OpsLinX.Test."+Guid.NewGuid().ToString("N");
+  using(var instance=new SetupInstance(mutexName,false)){
+   Require(instance.Acquired,"first launcher acquires the lock");
+   Require(ProbeSetupInstance(mutexName)==1618,"a second launcher process exits while the first is active");
+  }
+  Require(ProbeSetupInstance(mutexName)==0,"launcher can start again after the first exits");
   using(var live=Start("ping -n 3 127.0.0.1 >nul")){var held=live.Handle;Require(SetupForm.ProcessCouldBeActive(live.Id),"live process remains busy");live.WaitForExit();}
   foreach(int code in new[]{0,7,259})using(var exited=Start("exit /b "+code)){var held=exited.Handle;exited.WaitForExit();Require(!SetupForm.ProcessCouldBeActive(exited.Id),"confirmed exited process "+code+" does not block");}
   Require(SetupForm.ProcessCouldBeActive(int.MaxValue),"unreadable process state remains busy");

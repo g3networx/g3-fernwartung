@@ -278,8 +278,6 @@ internal sealed class SetupForm:Form {
  }
  static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
-  if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
-
   if(Directory.Exists(root)&&(File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0)return 13;Directory.CreateDirectory(root);var acl=new DirectorySecurity();acl.SetAccessRuleProtection(true,false);acl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null));
 
   foreach(var id in new[]{WellKnownSidType.LocalSystemSid,WellKnownSidType.BuiltinAdministratorsSid})acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(id,null),FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
@@ -314,8 +312,45 @@ internal sealed class SetupForm:Form {
 
  }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_update: "+ex.Reason);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
 
- [STAThread]static int Main(string[] args){if(args.Length==2&&args[0]=="--g3-install-worker")return Worker(args[1]);int pid=0;if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new SetupForm(pid));return 0;}
+ [STAThread]static int Main(string[] args){
+  bool worker=args.Length==2&&args[0]=="--g3-install-worker";
+  if(worker&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
+  // Both locks span Windows sessions. The launcher must not block its own elevated worker.
+  string mutexName=@"Global\g3NetworX.OpsLinX.Setup."+(worker?"Worker":"Launcher");
+  using(var instance=new SetupInstance(mutexName,worker)){
+   if(!instance.Acquired)return 1618;
+   if(worker)return Worker(args[1]);
+   int pid=0;
+   if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);
+   Application.EnableVisualStyles();
+   Application.SetCompatibleTextRenderingDefault(false);
+   Application.Run(new SetupForm(pid));
+   return 0;
+  }
+ }
 
+}
+
+internal sealed class SetupInstance:IDisposable {
+ readonly System.Threading.Mutex mutex;
+ public bool Acquired {get;private set;}
+
+ public SetupInstance(string name,bool worker){
+  var security=new MutexSecurity();
+  foreach(var account in new[]{WellKnownSidType.BuiltinAdministratorsSid,WellKnownSidType.LocalSystemSid})
+   security.AddAccessRule(new MutexAccessRule(new SecurityIdentifier(account,null),MutexRights.FullControl,AccessControlType.Allow));
+  if(!worker)
+   security.AddAccessRule(new MutexAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid,null),MutexRights.Synchronize|MutexRights.Modify,AccessControlType.Allow));
+  bool created;
+  mutex=new System.Threading.Mutex(false,name,out created,security);
+  try{Acquired=mutex.WaitOne(0);}
+  catch(System.Threading.AbandonedMutexException){Acquired=true;}
+ }
+
+ public void Dispose(){
+  if(Acquired)mutex.ReleaseMutex();
+  mutex.Dispose();
+ }
 }
 
 internal static class SetupProgress {
