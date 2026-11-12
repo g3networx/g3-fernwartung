@@ -79,6 +79,11 @@ fn refresh()->Result<(),()> {
         if let Err(error) = crate::g3_device_management::store_policy(&id, policy) {
             hbb_common::log::warn!("Could not save the device management policy: {error}");
         }
+        if let Some(job) = policy.get("job") {
+            if let Err(error) = crate::g3_device_management::handle_update(job) {
+                hbb_common::log::warn!("Could not start the managed update: {error}");
+            }
+        }
     }
     let activity=data["activity_token"].as_str().ok_or(())?;
     if activity.len()!=43{return Err(())}

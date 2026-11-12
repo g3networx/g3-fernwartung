@@ -1,12 +1,85 @@
 use serde_derive::Deserialize;
 use serde_json::{json, Value};
-use std::io::{self, ErrorKind};
+use std::{
+    fs,
+    io::{self, ErrorKind},
+    os::windows::{fs::MetadataExt, process::CommandExt},
+    path::{Path, PathBuf},
+    process::Command,
+};
 use winreg::{
     enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY, KEY_WRITE},
     RegKey,
 };
 
 const REGISTRY_PATH: &str = r"SOFTWARE\g3NetworX\OpsLinX\DeviceManagement";
+const VERIFIER: &str = "verify-opslinx-package.exe";
+const MANAGED_UPDATE: &str = "g3-managed-update";
+const PENDING: &str = "pending.json";
+
+#[derive(Deserialize)]
+struct UpdateJob {
+    id: u64,
+    operation: String,
+    receipt: String,
+}
+
+fn update_directory() -> io::Result<PathBuf> {
+    let app = match variant() {
+        Some("full") => "g3Fernwartung",
+        Some("host") => "g3Host",
+        _ => return Err(io::Error::new(ErrorKind::Unsupported, "Unsupported OpsLinX variant")),
+    };
+    let program_files = std::env::var_os("ProgramFiles").ok_or(ErrorKind::NotFound)?;
+    let install = PathBuf::from(program_files).join(app);
+    let current = std::env::current_exe()?;
+    let installed_here = current.parent().is_some_and(|directory| {
+        directory.to_string_lossy().eq_ignore_ascii_case(&install.to_string_lossy())
+    });
+    if !installed_here || !install.join(VERIFIER).is_file() {
+        return Err(io::Error::new(ErrorKind::NotFound, "Managed update verifier is not installed"));
+    }
+    let directory = install.join(MANAGED_UPDATE);
+    match fs::create_dir(&directory) {
+        Ok(()) => (),
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
+        Err(error) => return Err(error),
+    }
+    let metadata = fs::symlink_metadata(&directory)?;
+    if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(io::Error::new(ErrorKind::PermissionDenied, "Unsafe managed update directory"));
+    }
+    Ok(directory)
+}
+
+fn resume_update(directory: &Path) -> io::Result<()> {
+    Command::new(directory.join(VERIFIER))
+        .arg("--managed-update")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()?;
+    Ok(())
+}
+
+pub fn handle_update(value: &Value) -> io::Result<()> {
+    let job: UpdateJob = serde_json::from_value(value.clone()).map_err(io::Error::other)?;
+    if job.id == 0 || job.operation != "update" || job.receipt.len() != 43
+        || !job.receipt.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    {
+        return Err(io::Error::new(ErrorKind::InvalidData, "Invalid managed update offer"));
+    }
+    let directory = update_directory()?;
+    let pending = directory.join(PENDING);
+    if pending.exists() {
+        return Err(io::Error::new(ErrorKind::AlreadyExists, "A managed update is pending"));
+    }
+    let app = variant().ok_or(ErrorKind::Unsupported)?;
+    let offer = serde_json::to_vec(&json!({"id":job.id, "receipt":job.receipt, "variant":app}))?;
+    let staged = directory.join("pending.tmp");
+    fs::copy(directory.with_file_name(VERIFIER), directory.join(VERIFIER))?;
+    fs::write(&staged, offer)?;
+    fs::rename(staged, pending)?;
+    resume_update(&directory)
+}
 
 #[derive(Deserialize)]
 struct Policy {
@@ -44,7 +117,17 @@ pub fn registration() -> io::Result<Option<Value>> {
         }
         Err(error) => return Err(error),
     };
-    Ok(Some(json!({ "installation_id": installation_id, "variant": variant })))
+    let ready = match update_directory() {
+        Ok(directory) if directory.join(PENDING).exists() => {
+            if let Err(error) = resume_update(&directory) {
+                hbb_common::log::warn!("Could not resume the managed update: {error}");
+            }
+            false
+        }
+        Ok(_) => true,
+        Err(_) => false,
+    };
+    Ok(Some(json!({ "installation_id": installation_id, "variant": variant, "update_ready": ready })))
 }
 
 fn decode_policy(value: &str) -> Option<(&str, u64, bool)> {

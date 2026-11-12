@@ -7,6 +7,8 @@ internal static class VerifyOpsLinXPackage
     {
         try
         {
+            if (args.Length == 1 && args[0] == "--managed-update")
+                return ManagedOpsLinXUpdate.Run();
             if (args.Length != 3 || new FileInfo(args[2]).Length > OpsLinXPackageSignature.MaximumSignatureSize)
                 return 2;
             OpsLinXPackageSignature.Verify(args[0], args[1], File.ReadAllBytes(args[2]));

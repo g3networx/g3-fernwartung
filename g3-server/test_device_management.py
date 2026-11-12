@@ -19,6 +19,7 @@ class DeviceManagementTest(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
         self.app.config["TESTING"] = True
+        self.app.secret_key = "device-management-test-key"
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
@@ -138,15 +139,15 @@ class DeviceManagementTest(unittest.TestCase):
     def test_claim_waits_for_session_and_busy_installer_can_retry(self):
         self.app.config["DEVICE_MANAGEMENT_ENABLED"] = True
         self.heartbeat()
-        self.post("uninstall", installation_id=self.installation_id)
+        self.post("update", installation_id=self.installation_id)
         self.db.execute("INSERT INTO activity_sessions VALUES (1, 0, ?)", (int(time.time()),))
         self.db.commit()
-        self.assertNotIn("job", self.heartbeat(ready=True))
+        self.assertNotIn("job", self.heartbeat(ready="update"))
         self.db.execute("UPDATE activity_sessions SET closed = 1")
         self.db.commit()
-        job = self.heartbeat(ready=True)["job"]
-        self.assertEqual(job["operation"], "uninstall")
-        self.assertNotIn("job", self.heartbeat(ready=True))
+        job = self.heartbeat(ready="update")["job"]
+        self.assertEqual(job["operation"], "update")
+        self.assertEqual(self.heartbeat(ready="update")["job"], job)
         self.assertEqual(self.post("cancel", operation_id=job["id"]).status_code, 404)
         route = "/client-management/operations/{}/result".format(job["id"])
         busy = {"result": "busy", "exit_code": 1618}
@@ -154,7 +155,7 @@ class DeviceManagementTest(unittest.TestCase):
         headers = {"Authorization": "Bearer " + job["receipt"]}
         self.assertEqual(self.client.post(route, json=busy, headers=headers).status_code, 200)
         self.assertEqual(self.client.post(route, json=busy, headers=headers).status_code, 200)
-        retry = self.heartbeat(ready=True)["job"]
+        retry = self.heartbeat(ready="update")["job"]
         self.assertEqual(retry["id"], job["id"])
         self.assertNotEqual(retry["receipt"], job["receipt"])
         complete = {"result": "complete", "exit_code": 0}

@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20059",
+  "version": "1.5.3-g3.62.20060",
   "displayVersion": "g3.6.2 Build 121126",
   "buildDate": "2026-11-12",
-  "windowsVersion": "1.62.20059",
-  "dailyInternalSequence": 3,
-  "feature": "rustdesk-1.5.3-compatibility-lab"
+  "windowsVersion": "1.62.20060",
+  "dailyInternalSequence": 4,
+  "feature": "webgui-managed-windows-update"
 }

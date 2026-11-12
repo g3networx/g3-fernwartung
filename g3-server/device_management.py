@@ -1,8 +1,9 @@
 """Portal-side management for explicitly enrolled OpsLinX installations."""
 
 from contextlib import contextmanager
+from base64 import urlsafe_b64encode
 from hashlib import sha256
-from hmac import compare_digest
+from hmac import compare_digest, digest
 import re
 import secrets
 import time
@@ -57,9 +58,13 @@ def install(app, portal):
                     created INTEGER NOT NULL,
                     created_by INTEGER NOT NULL,
                     receipt_digest TEXT,
+                    claim_nonce TEXT,
                     last_exit_code INTEGER
                 )
             """)
+            columns = portal.db().execute("PRAGMA table_info(managed_device_operations)").fetchall()
+            if "claim_nonce" not in {column[1] for column in columns}:
+                portal.run("ALTER TABLE managed_device_operations ADD COLUMN claim_nonce TEXT")
             portal.run("""
                 CREATE UNIQUE INDEX IF NOT EXISTS managed_device_one_queued_operation
                 ON managed_device_operations (device_id, installation_id)
@@ -109,7 +114,7 @@ def install(app, portal):
             policy = outbound_policy(db, device)
             result = {"outbound_blocked": bool(policy["blocked"]), "policy_revision": policy["revision"]}
             if ready:
-                job = claim(db, device_id, installation_id)
+                job = claim(db, device_id, installation_id, ready == "update")
                 if job:
                     result["job"] = job
         return result
@@ -122,7 +127,7 @@ def install(app, portal):
             status = authenticated_installation(
                 device_id, native_id, registration.get("installation_id"),
                 registration.get("variant"), sha256(verified_public_key).hexdigest(),
-                ready=registration.get("ready") is True,
+                ready="update" if registration.get("update_ready") is True else False,
             )
             if status:
                 response["management"] = status
@@ -145,18 +150,32 @@ def install(app, portal):
             ORDER BY variant, last_seen DESC
         """, (device["id"], device["customer_id"], device["rustdesk_id"])).fetchall()
 
-    def claim(db, device_id, installation_id):
+    def claim(db, device_id, installation_id, update_only):
         if db.execute("""
             SELECT 1 FROM activity_sessions
             WHERE device_id = ? AND closed = 0 AND last_seen >= ?
         """, (device_id, int(time.time()) - 120)).fetchone():
             return None
-        receipt = secrets.token_urlsafe(32)
+        secret = app.secret_key
+        if not secret:
+            return None
+        key = secret.encode() if isinstance(secret, str) else secret
         row = db.execute("""
-            UPDATE managed_device_operations SET state = 'running', receipt_digest = ?
-            WHERE device_id = ? AND installation_id = ? AND state = 'queued'
+            SELECT id, operation, claim_nonce, receipt_digest FROM managed_device_operations
+            WHERE device_id = ? AND installation_id = ? AND state IN ('queued', 'running')
+              AND (? = 0 OR operation = 'update')
+        """, (device_id, installation_id, update_only)).fetchone()
+        if row is None:
+            return None
+        nonce = row["claim_nonce"] if row["claim_nonce"] and row["receipt_digest"] else secrets.token_hex(16)
+        context = f"opslinx-operation:{device_id}:{installation_id}:{row['id']}:{nonce}".encode()
+        receipt = urlsafe_b64encode(digest(key, context, "sha256")).rstrip(b"=").decode()
+        receipt_digest = sha256(receipt.encode()).hexdigest()
+        row = db.execute("""
+            UPDATE managed_device_operations SET state = 'running', receipt_digest = ?, claim_nonce = ?
+            WHERE id = ? AND (state = 'queued' OR (? AND state = 'running' AND receipt_digest = ?))
             RETURNING id, operation
-        """, (sha256(receipt.encode()).hexdigest(), device_id, installation_id)).fetchone()
+        """, (receipt_digest, nonce, row["id"], update_only, receipt_digest)).fetchone()
         return {"id": row["id"], "operation": row["operation"], "receipt": receipt} if row else None
 
     @blueprint.post("/client-management/operations/<int:operation_id>/result")
@@ -189,7 +208,7 @@ def install(app, portal):
                     return {"recorded": True}
                 abort(409)
             db.execute("""
-                UPDATE managed_device_operations SET state = ?, last_exit_code = ?
+                UPDATE managed_device_operations SET state = ?, last_exit_code = ?, claim_nonce = NULL
                 WHERE id = ?
             """, (state, exit_code, operation_id))
             db.execute("INSERT INTO audit(ts,actor,event,target,ip) VALUES (?,?,?,?,?)",
@@ -250,11 +269,14 @@ def install(app, portal):
             return redirect(url_for("device_management.manage", did=did), code=303)
         installations = matching_installations(db, device)
         operations = db.execute("""
-            SELECT o.* FROM managed_device_operations o
+            SELECT o.*, EXISTS (
+                SELECT 1 FROM activity_sessions s
+                WHERE s.device_id = o.device_id AND s.closed = 0 AND s.last_seen >= ?
+            ) AS active_session FROM managed_device_operations o
             JOIN managed_installations i USING (device_id, installation_id)
             WHERE o.device_id = ? AND i.customer_id = ? AND i.native_id = ?
             ORDER BY o.id DESC LIMIT 25
-        """, (did, device["customer_id"], device["rustdesk_id"])).fetchall()
+        """, (int(time.time()) - 120, did, device["customer_id"], device["rustdesk_id"])).fetchall()
         return render_template(
             "device_management.html", device=device, installations=installations, operations=operations,
             policy=outbound_policy(db, device), csrf=portal.csrf(),

@@ -4,6 +4,8 @@ Der Portalcode verwendet die vorhandene Anmeldung, die Gerätezuordnung und den 
 
 ## Portal-Anbindung
 
+`python prepare-device-management.py /pfad/zur/portal-kopie` bindet das Modul in einer Staging-Kopie ein. Die Freigabe erfolgt über `DEVICE_MANAGEMENT_ENABLED` in der Flask-Konfiguration. Die HA-Knoten verwenden denselben bestehenden Flask-Sitzungsschlüssel, damit ein erneut abgefragter Auftrag dieselbe Quittung erhält.
+
 Das Hauptmodul unter `/opt/rustdesk-addressbook` registriert `device_management.install(app, portal)` vor dem Aufruf von `portal.init()`. Das Modul legt seine Tabellen über dieselbe Initialisierung an wie die übrigen Portal-Erweiterungen. Die Geräteansicht kann zur Route `/devices/<did>/management` verlinken. Die Route überprüft die Admin-Rolle und prüft die Formularanfragen per CSRF-Token.
 
 Nach erfolgreicher Ed25519-Prüfung setzt `client-bootstrap` weiterhin `g.verified_device_id`. Im Zweig für `credential_policy == 2` ergänzt der Handler seine bisherige Antwort vor dem Senden:
@@ -23,6 +25,6 @@ Die Oberfläche erfasst und protokolliert Update- und Deinstallationsaufträge. 
 
 Der Update-Button im Vollclient und die manuelle Installation über den signierten Installer bleiben auch bei aktiver Sperre für ausgehende Fernsteuerung verfügbar. Lokale und zentrale Aufträge verwenden dieselbe Installations- und Sitzungssperre.
 
-Das Portal stellt einen Auftrag nur der verifizierten Installation zu, wenn deren Client Bereitschaft meldet und keine aktuelle Sitzung erfasst ist. Die Antwort enthält eine auf diesen Auftrag beschränkte Quittung für die Rückmeldung. Meldet der lokale Installer Code 1618, wird der Auftrag erneut vorgemerkt. Bei fehlender Rückmeldung bleibt der Zustand sichtbar und es erfolgt keine automatische Wiederholung.
+Das Portal stellt Updateaufträge der verifizierten Installation zu, sobald deren Windows-Dienst Bereitschaft meldet und keine aktuelle Sitzung erfasst ist. Der Dienst legt den Auftrag im Installationsverzeichnis ab und startet den Updatehelfer. Dieser prüft Launcher und MSI gegen die integrierte OpsLinX-CA und ruft den bestehenden Installer auf. Dessen Sitzungssperre schützt auch laufende Verbindungen, die das Portal noch nicht erfasst hat.
 
-Der Windows-Dienst übernimmt bislang die Sperrvorgabe. Die Ausführung und Quittierung der Update- und Deinstallationsaufträge müssen noch angebunden werden. Der Laborversuch soll zuerst während einer laufenden Sitzung die Zurückstellung und anschließend den Abschluss des Auftrags prüfen.
+Bei Code 1618 bleibt der Auftrag vorgemerkt. Der Updatehelfer speichert das Installationsergebnis vor der Rückmeldung. Bei einem Verbindungsfehler kann der Windows-Dienst die Rückmeldung beim nächsten Durchlauf erneut anstoßen. Der Updatehelfer übernimmt ausschließlich Updateaufträge.

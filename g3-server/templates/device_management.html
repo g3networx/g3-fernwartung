@@ -42,8 +42,13 @@
         {{ 'Update' if operation.operation == 'update' else 'Deinstallation' }}
         {% set state = {'queued': 'vorgemerkt', 'running': 'in Arbeit', 'succeeded': 'abgeschlossen',
                         'failed': 'fehlgeschlagen', 'cancelled': 'zurückgezogen'} %}
-        {{ 'wartet auf freie Installation' if operation.state == 'queued' and operation.last_exit_code == 1618
-           else state[operation.state] }}
+        {% if operation.state == 'queued' and operation.active_session %}
+          wartet auf das Ende der Fernwartung
+        {% elif operation.state == 'queued' and operation.last_exit_code == 1618 %}
+          wartet auf freie Installation
+        {% else %}
+          {{ state[operation.state] }}
+        {% endif %}
         {% if operation.state == 'queued' %}
         <form method="post">
           <input type="hidden" name="csrf" value="{{ csrf }}">
