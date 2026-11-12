@@ -521,10 +521,20 @@ impl Client {
         let local_ids = tokio::task::spawn_blocking(|| {
             let mut ids = crate::g3_local_connection_ids();
             #[cfg(not(target_os = "ios"))]
-            ids.push(crate::ipc::get_id());
-            ids
+            {
+                let installed_id = crate::ipc::get_id();
+                #[cfg(windows)]
+                if crate::g3_device_management::outbound_blocked(&installed_id) {
+                    return None;
+                }
+                ids.push(installed_id);
+            }
+            Some(ids)
         })
-            .await.unwrap_or_else(|_|vec![Config::get_id()]);
+            .await.unwrap_or_else(|_|Some(vec![Config::get_id()]));
+        let Some(local_ids) = local_ids else {
+            bail!("Aktive Fernsteuerung ist für dieses Gerät gesperrt.");
+        };
         if crate::g3_self_connection::target_is_self(peer, &local_ids) {
             bail!(crate::g3_self_connection::ERROR);
         }

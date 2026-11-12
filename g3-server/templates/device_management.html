@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geräteverwaltung</title>
+<main>
+  <a href="/">Adressbuch</a>
+  <h1>{{ device.name }}</h1>
+  <p>Geräte-ID {{ device.rustdesk_id }}</p>
+  {% if installations %}
+  <section>
+    <h2>Fernsteuerung</h2>
+    <p>Vorgabe für ausgehende Verbindungen: {{ 'gesperrt' if policy.blocked else 'erlaubt' }}</p>
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button name="action" value="{{ 'allow-outbound' if policy.blocked else 'block-outbound' }}">
+        {{ 'Aktive Fernsteuerung erlauben' if policy.blocked else 'Aktive Fernsteuerung sperren' }}
+      </button>
+    </form>
+  </section>
+  <section>
+    <h2>Installationen</h2>
+    {% for installation in installations %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
+      <strong>{{ 'Host' if installation.variant == 'host' else 'Vollclient' }}</strong>
+      <button name="action" value="update">Update vormerken</button>
+      <button name="action" value="uninstall">Deinstallation vormerken</button>
+    </form>
+    {% endfor %}
+  </section>
+  {% else %}
+    <p>Für dieses Gerät ist noch keine verwaltete Installation angemeldet.</p>
+  {% endif %}
+  {% if operations %}
+  <section>
+    <h2>Aufträge</h2>
+    <ul>
+    {% for operation in operations %}
+      <li>
+        {{ 'Update' if operation.operation == 'update' else 'Deinstallation' }}
+        {% set state = {'queued': 'vorgemerkt', 'running': 'in Arbeit', 'succeeded': 'abgeschlossen',
+                        'failed': 'fehlgeschlagen', 'cancelled': 'zurückgezogen'} %}
+        {{ 'wartet auf freie Installation' if operation.state == 'queued' and operation.last_exit_code == 1618
+           else state[operation.state] }}
+        {% if operation.state == 'queued' %}
+        <form method="post">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="operation_id" value="{{ operation.id }}">
+          <button name="action" value="cancel">Auftrag zurückziehen</button>
+        </form>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</main>
+</html>

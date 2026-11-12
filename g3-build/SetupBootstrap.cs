@@ -312,13 +312,81 @@ internal sealed class SetupForm:Form {
 
  }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_update: "+ex.Reason);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
 
+ static int UninstallWorker() {
+  var installDirectory = Path.GetDirectoryName(InstalledExe);
+  var native = Path.Combine(installDirectory, "librustdesk.dll");
+  var gatePath = Path.Combine(installDirectory, "g3-update-session.lock");
+  var statePath = @"HKEY_LOCAL_MACHINE\SOFTWARE\" + AppName + @"\InstallState\" + AppName;
+  var registeredCode = Registry.GetValue(statePath, "MsiProductCode", null) as string;
+  var registeredDirectory = Registry.GetValue(statePath, "InstallLocation", "") as string;
+  Guid product;
+  if (!Guid.TryParseExact(registeredCode, "B", out product)
+      || product == Guid.Empty || String.IsNullOrEmpty(registeredDirectory)
+      || !String.Equals(registeredDirectory.TrimEnd(Path.DirectorySeparatorChar), installDirectory, StringComparison.OrdinalIgnoreCase)
+      || !File.Exists(InstalledExe) || !File.Exists(native) || !File.Exists(gatePath)
+      || Array.IndexOf(GateDllHashes.Split(';'), Digest(native)) < 0)
+   return 1618;
+
+  using (var gate = new UpdateSessionGate(gatePath)) {
+   if (!String.Equals(Registry.GetValue(statePath, "MsiProductCode", null) as string, registeredCode, StringComparison.OrdinalIgnoreCase)
+       || !File.Exists(native) || Array.IndexOf(GateDllHashes.Split(';'), Digest(native)) < 0)
+    return 1618;
+   using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + AppName)) {
+    var image = key == null ? "" : key.GetValue("ImagePath", "") as string;
+    if (String.IsNullOrEmpty(image) || !image.StartsWith(Quote(InstalledExe) + " ", StringComparison.OrdinalIgnoreCase))
+     return 1618;
+   }
+   bool restore = false;
+   try {
+    using (var service = new ServiceController(AppName)) {
+     if (service.Status == ServiceControllerStatus.Running) {
+      restore = true;
+      service.Stop();
+      service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(40));
+     } else if (service.Status != ServiceControllerStatus.Stopped) {
+      return 1618;
+     }
+    }
+    var paths = Kind == "host_msi" ? new[]{InstalledExe, Path.Combine(installDirectory, "g3Host-ui.exe")} : new[]{InstalledExe};
+    ReleaseInstalledProcesses(gate, paths, false);
+    var info = new ProcessStartInfo(
+     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "msiexec.exe"),
+     "/x " + product.ToString("B") + " /qn REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable") {
+      UseShellExecute = false, CreateNoWindow = true
+    };
+    using (var process = Process.Start(info)) {
+     process.WaitForExit();
+     if (process.ExitCode != 0 && process.ExitCode != 3010)
+      return process.ExitCode;
+     return File.Exists(InstalledExe) || Registry.GetValue(statePath, "MsiProductCode", null) != null
+      ? 1603 : process.ExitCode;
+    }
+   } finally {
+    if (restore && File.Exists(InstalledExe)) {
+     using (var service = new ServiceController(AppName)) {
+      service.Refresh();
+      if (service.Status == ServiceControllerStatus.Stopped) service.Start();
+      service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(40));
+     }
+    }
+   }
+  }
+ }
+
  [STAThread]static int Main(string[] args){
+  bool uninstall = args.Length == 1 && args[0] == "--g3-uninstall-worker";
+  if (uninstall && !WindowsIdentity.GetCurrent().IsSystem) return 740;
   bool worker=args.Length==2&&args[0]=="--g3-install-worker";
   if(worker&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
   // Both locks span Windows sessions. The launcher must not block its own elevated worker.
-  string mutexName=@"Global\g3NetworX.OpsLinX.Setup."+(worker?"Worker":"Launcher");
-  using(var instance=new SetupInstance(mutexName,worker)){
+  string mutexName=@"Global\g3NetworX.OpsLinX.Setup."+((worker||uninstall)?"Worker":"Launcher");
+  using(var instance=new SetupInstance(mutexName,worker||uninstall)){
    if(!instance.Acquired)return 1618;
+   if(uninstall) {
+    try { return UninstallWorker(); }
+    catch(UpdateBusyException) { return 1618; }
+    catch(Exception error) { Console.Error.WriteLine(error.Message); return 1603; }
+   }
    if(worker)return Worker(args[1]);
    int pid=0;
    if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);
