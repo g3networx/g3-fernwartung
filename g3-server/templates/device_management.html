@@ -8,6 +8,7 @@
   <h1>{{ device.name }}</h1>
   <p>Geräte-ID {{ device.rustdesk_id }}</p>
   {% if installations %}
+  {% if config.get('DEVICE_MANAGEMENT_POLICY_ENABLED') %}
   <section>
     <h2>Fernsteuerung</h2>
     <p>Vorgabe für ausgehende Verbindungen: {{ 'gesperrt' if policy.blocked else 'erlaubt' }}</p>
@@ -18,6 +19,7 @@
       </button>
     </form>
   </section>
+  {% endif %}
   <section>
     <h2>Installationen</h2>
     {% for installation in installations %}
@@ -26,7 +28,9 @@
       <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
       <strong>{{ 'Host' if installation.variant == 'host' else 'Vollclient' }}</strong>
       <button name="action" value="update">Update vormerken</button>
+      {% if config.get('DEVICE_MANAGEMENT_UNINSTALL_ENABLED') %}
       <button name="action" value="uninstall">Deinstallation vormerken</button>
+      {% endif %}
     </form>
     {% endfor %}
   </section>

@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 
 
-def patch_application(source):
+def patch_application(source, enable=False):
     module = ast.parse(source)
     installers = {"bootstrap_client.install"}
     for statement in module.body:
@@ -20,14 +20,19 @@ def patch_application(source):
     ]
     if len(candidates) != 1:
         raise ValueError("Expected one top-level bootstrap_client.install call")
-    if "device_management.install(" in source:
-        return source
     statement = candidates[0]
     app, portal = (ast.unparse(arg) for arg in statement.value.args)
+    activation = f"{app}.config['DEVICE_MANAGEMENT_ENABLED'] = True\n"
+    install = f"device_management.install({app}, {portal})\n"
+    if install in source:
+        if enable and activation not in source:
+            return source.replace(install, activation + install, 1)
+        return source
     lines = source.splitlines(keepends=True)
     lines[statement.end_lineno:statement.end_lineno] = [
         "import device_management\n",
-        f"device_management.install({app}, {portal})\n",
+        activation if enable else "",
+        install,
     ]
     return "".join(lines)
 
@@ -63,12 +68,13 @@ def patch_device_list(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("staged_portal", type=Path)
+    parser.add_argument("--enable", action="store_true", help="Enable management in the staged configuration")
     options = parser.parse_args()
     target = options.staged_portal.resolve(strict=True)
     if target == Path("/opt/rustdesk-addressbook").resolve():
         parser.error("Supply a staging copy of the portal")
     edits = {
-        "app.py": patch_application,
+        "app.py": lambda source: patch_application(source, enable=options.enable),
         "bootstrap_client.py": patch_bootstrap,
     }
     updates = {}

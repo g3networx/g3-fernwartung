@@ -19,6 +19,7 @@ class DeviceManagementTest(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
         self.app.config["TESTING"] = True
+        self.app.config.update(DEVICE_MANAGEMENT_UNINSTALL_ENABLED=True, DEVICE_MANAGEMENT_POLICY_ENABLED=True)
         self.app.secret_key = "device-management-test-key"
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row

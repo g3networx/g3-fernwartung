@@ -35,9 +35,18 @@ def install(app, portal):
     blueprint = Blueprint("device_management", __name__, template_folder="templates")
     initialize = portal.init
 
-    def init():
-        initialize()
+    def initialize_schema():
         with app.app_context():
+            db = portal.db()
+            existing = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table', 'index')"
+            )}
+            required = {"managed_installations", "managed_device_operations",
+                        "managed_device_one_queued_operation", "managed_outbound_policy"}
+            if required <= existing and any(
+                column[1] == "claim_nonce" for column in db.execute("PRAGMA table_info(managed_device_operations)")
+            ):
+                return
             portal.run("""
                 CREATE TABLE IF NOT EXISTS managed_installations (
                     device_id INTEGER NOT NULL,
@@ -83,7 +92,12 @@ def install(app, portal):
                 )
             """)
 
+    def init():
+        initialize()
+        initialize_schema()
+
     portal.init = init
+    app.config["DEVICE_MANAGEMENT_INITIALIZE"] = initialize_schema
 
     def enabled():
         return app.config.get("DEVICE_MANAGEMENT_ENABLED") is True
@@ -235,6 +249,10 @@ def install(app, portal):
                 if not installations:
                     abort(409)
                 action = request.form.get("action")
+                if action == "uninstall" and not app.config.get("DEVICE_MANAGEMENT_UNINSTALL_ENABLED"):
+                    abort(404)
+                if action in ("block-outbound", "allow-outbound") and not app.config.get("DEVICE_MANAGEMENT_POLICY_ENABLED"):
+                    abort(404)
                 if action in OPERATIONS:
                     installation_id = request.form.get("installation_id")
                     if installation_id not in installations:
