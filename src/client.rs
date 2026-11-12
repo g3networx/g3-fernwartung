@@ -374,6 +374,39 @@ fn is_opslinx_client() -> bool {
     )
 }
 
+fn opslinx_support_cursor_ready(peer: Option<&PeerInfo>) -> bool {
+    // Older Windows hosts can hold the session open if their whiteboard starts
+    // before sign-in. Keep regular input and disconnect available on those hosts.
+    peer.is_some_and(|peer| {
+        let user = peer.username.trim();
+        peer.platform != crate::common::PLATFORM_WINDOWS
+            || hbb_common::get_version_number(&peer.version) >= hbb_common::get_version_number("1.5.3")
+            || (!user.is_empty() && !user.eq_ignore_ascii_case("SYSTEM"))
+    })
+}
+
+#[cfg(test)]
+#[test]
+fn opslinx_support_cursor_respects_legacy_windows_sign_in() {
+    let mut peer = PeerInfo {
+        platform: crate::common::PLATFORM_WINDOWS.to_owned(),
+        version: "1.5.0".to_owned(),
+        ..Default::default()
+    };
+    assert!(!opslinx_support_cursor_ready(None));
+    assert!(!opslinx_support_cursor_ready(Some(&peer)));
+    peer.username = " system ".to_owned();
+    assert!(!opslinx_support_cursor_ready(Some(&peer)));
+    peer.username = "lab-user".to_owned();
+    assert!(opslinx_support_cursor_ready(Some(&peer)));
+    peer.username.clear();
+    peer.version = "1.5.3".to_owned();
+    assert!(opslinx_support_cursor_ready(Some(&peer)));
+    peer.platform = "Linux".to_owned();
+    peer.version = "1.5.0".to_owned();
+    assert!(opslinx_support_cursor_ready(Some(&peer)));
+}
+
 fn opslinx_always_relay() -> bool {
     LocalConfig::get_option("g3-always-relay") == "Y"
 }
@@ -3111,9 +3144,15 @@ impl LoginConfigHandler {
         if !login_method.is_empty() && !self.set_login_method(login_method) {
             log::warn!("Failed to initialize login method: {}", login_method);
         }
-        let config = self.load_config();
+        let mut config = self.load_config();
         self.remember = !config.password.is_empty();
-        self.config = config;
+        if is_opslinx_client() && config.show_my_cursor.v {
+            config.show_my_cursor.v = false;
+            config.view_only.v = false;
+            self.save_config(config);
+        } else {
+            self.config = config;
+        }
 
         let conn_token = conn_token
             .map(|x| serde_json::from_str::<ConnToken>(&x).ok())
@@ -3475,6 +3514,12 @@ impl LoginConfigHandler {
                 }
             }
         } else if name == "show-my-cursor" {
+            if !config.show_my_cursor.v
+                && is_opslinx_client()
+                && !opslinx_support_cursor_ready(self.peer_info.as_ref())
+            {
+                return None;
+            }
             config.show_my_cursor.v = !config.show_my_cursor.v;
             option.show_my_cursor = if config.show_my_cursor.v {
                 BoolOption::Yes
@@ -3574,7 +3619,10 @@ impl LoginConfigHandler {
         if view_only || self.get_toggle_option("show-remote-cursor") {
             msg.show_remote_cursor = BoolOption::Yes.into();
         }
-        if view_only && self.get_toggle_option("show-my-cursor") {
+        if view_only
+            && self.get_toggle_option("show-my-cursor")
+            && (!is_opslinx_client() || opslinx_support_cursor_ready(self.peer_info.as_ref()))
+        {
             msg.show_my_cursor = BoolOption::Yes.into();
         }
         if self.get_toggle_option("follow-remote-cursor") {

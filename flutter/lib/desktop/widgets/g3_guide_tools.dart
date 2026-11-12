@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../common.dart' show versionCmp;
 import '../../consts.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
@@ -39,6 +40,16 @@ class _G3GuideToolsState extends State<G3GuideTools> {
   Future<void> _setGuiding(bool enabled) async {
     final model = widget.ffi.ffiModel;
     if (_changing || !model.keyboard) return;
+    final peer = model.pi;
+    final remoteUser = peer.username.trim().toLowerCase();
+    if (enabled &&
+        peer.platform == kPeerPlatformWindows &&
+        versionCmp(peer.version, '1.5.3') < 0 &&
+        (remoteUser.isEmpty || remoteUser == 'system')) {
+      setState(() => _error =
+          'Für den Zeigemodus nach der Windows-Anmeldung neu verbinden.');
+      return;
+    }
     setState(() {
       _changing = true;
       _error = null;
