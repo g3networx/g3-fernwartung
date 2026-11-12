@@ -150,7 +150,7 @@ jobs:
             throw 'The clean verification runner already trusts the g3 CA.'
           }
           $verify = Join-Path $env:RUNNER_TEMP 'verify-opslinx-package.exe'
-          & 'C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe' /nologo /target:exe /reference:System.Security.dll "/out:$verify" '/resource:g3-build\codesigning\g3-root-ca.cer,g3.signing.root' '/resource:g3-build\codesigning\g3-device-ca.cer,g3.signing.issuer' 'g3-build\codesigning\OpsLinXPackageSignature.cs' 'g3-build\codesigning\VerifyOpsLinXPackage.cs'
+          & 'C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe' /nologo /target:exe /reference:System.Security.dll /reference:System.Web.Extensions.dll /reference:System.ServiceProcess.dll "/out:$verify" '/resource:g3-build\codesigning\g3-root-ca.cer,g3.signing.root' '/resource:g3-build\codesigning\g3-device-ca.cer,g3.signing.issuer' 'g3-build\codesigning\OpsLinXPackageSignature.cs' 'g3-build\codesigning\VerifyOpsLinXPackage.cs' 'g3-build\codesigning\ManagedOpsLinXUpdate.cs'
           if ($LASTEXITCODE) { throw 'Verifier compilation failed.' }
           $packages = Get-ChildItem signed -File | Where-Object Extension -in '.exe','.msi'
           if ($packages.Count -ne 5) { throw 'Unexpected signed package count.' }
