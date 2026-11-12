@@ -25,6 +25,7 @@ cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_registry_password::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_otp_handoff::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_password_probe_persistence_tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter g3_self_connection::tests;Check
 cargo build --locked --release --package dylib_virtual_display
 Check
 $hash=(Get-FileHash target/release/librustdesk.dll).Hash.ToLowerInvariant()

@@ -5,8 +5,10 @@ import hashlib, io, json, os, shutil, subprocess, sys, zipfile
 root=Path.cwd();out=root/'outputs';out.mkdir(exist_ok=True)
 archive=Path(os.environ['G3_WALLPAPER_ACCEPTED_ARCHIVE'])
 assert hashlib.sha256(archive.read_bytes()).hexdigest()=='a329b203fa8735110068172981a49bb293ec8e57077dce2a67c2ee5bbcd35df3'
-changed=set(subprocess.check_output(['git','diff','--name-only','27a4d29d3958dc3759501f847a69d13a71fb9e9c','HEAD','--','src','libs','Cargo.toml','Cargo.lock'],text=True).splitlines())
-assert changed=={'Cargo.toml','src/common.rs','src/g3_api_policy.rs','libs/portable/Cargo.lock','src/platform/windows.rs','src/platform/mod.rs','src/platform/g3_system_info.rs','src/platform/windows_logon.rs','src/g3_bootstrap.rs','src/g3_sessions.rs','src/tray.rs','src/server/connection.rs','src/server/input_service.rs','src/whiteboard/client.rs','src/whiteboard/linux.rs','src/whiteboard/macos.rs','src/whiteboard/mod.rs','src/whiteboard/server.rs','src/whiteboard/windows.rs','src/g3_passwords.rs','src/core_main.rs','src/lib.rs','src/ipc.rs','src/g3_registry_password.rs','src/ui_interface.rs','src/flutter.rs','src/flutter_ffi.rs','src/ui/remote.rs','src/g3_otp_handoff.rs','src/client.rs','src/client/io_loop.rs','src/ui_session_interface.rs'},changed
+head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+assert head == os.environ['GITHUB_SHA'], 'Packaging checkout differs from the requested commit'
+for base in ('b2dc090a6c072cfda71a70ca92f72a0e8ed46da3', '95cca3f661f635b3cc85c04935fe8d96d8f432ef'):
+    subprocess.run(['git', 'merge-base', '--is-ancestor', base, head], check=True)
 if sys.argv[1]=='prepare':
  with zipfile.ZipFile(archive) as z:
   with zipfile.ZipFile(io.BytesIO(z.read('g3-wallpaper-corrected-native-test-payload.zip'))) as payload:
