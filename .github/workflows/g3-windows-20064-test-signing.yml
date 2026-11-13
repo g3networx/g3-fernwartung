@@ -1,0 +1,191 @@
+name: Sign OpsLinX Windows 20064 for LD-BI01
+on:
+  push:
+    branches: [g3-codesigning-setup]
+    paths: [.github/workflows/g3-windows-20064-test-signing.yml]
+permissions:
+  contents: read
+  actions: read
+env:
+  SOURCE_COMMIT: 73de6c48ea99ff71be2d4abdc5d7332b3f3971d5
+  BUILD_RUN: '43392910785'
+jobs:
+  select-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      artifact: ${{ steps.build.outputs.artifact }}
+    steps:
+      - name: Wait for the reviewed Windows build
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while true; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")
+            jq -e --arg commit "$SOURCE_COMMIT" '.head_sha == $commit and .head_branch == "g3-next-client-review"' <<< "$run" >/dev/null
+            if [[ $(jq -r '.status' <<< "$run") == completed ]]; then
+              jq -e '.conclusion == "success"' <<< "$run" >/dev/null
+              break
+            fi
+            sleep 30
+          done
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/artifacts" | jq -er --arg name "g361-release-$SOURCE_COMMIT" '[.artifacts[] | select(.name == $name and .expired == false)] | if length == 1 then .[0].id else error("Unexpected Windows build artifacts") end')
+          printf 'artifact=%s\n' "$artifact" >> "$GITHUB_OUTPUT"
+  signing:
+    if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    needs: select-build
+    runs-on: windows-2022
+    timeout-minutes: 35
+    environment: signing
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.select-build.outputs.artifact }}
+          run-id: ${{ env.BUILD_RUN }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/opslinx-build
+      - name: Allow the exact 20060 runtime used in the laboratory
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $build = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/43285449530" | ConvertFrom-Json
+          if ($build.head_sha -ne '2733be051465c8da0636146bcf27cb21dfefbef6' -or $build.conclusion -ne 'success') { throw 'The 20060 lab baseline is unavailable.' }
+          $artifact = @( (gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/43285449530/artifacts" | ConvertFrom-Json).artifacts | Where-Object name -eq "g361-release-$($build.head_sha)" )
+          if ($artifact.Count -ne 1) { throw 'Expected one 20060 baseline artifact.' }
+          $path = Join-Path $env:RUNNER_TEMP 'managed-update-baseline.zip'
+          Invoke-WebRequest $artifact[0].archive_download_url -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $path
+          if ('sha256:' + (Get-FileHash $path).Hash.ToLowerInvariant() -ne $artifact[0].digest) { throw '20060 baseline archive digest mismatch.' }
+          $archive = [IO.Compression.ZipFile]::OpenRead($path)
+          try {
+            $reader = [IO.StreamReader]::new($archive.GetEntry('g361-release-provenance.json').Open())
+            try { $baseline = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+          } finally { $archive.Dispose() }
+          if ($baseline.source_commit -ne $build.head_sha -or $baseline.version -ne '1.5.3-g3.62.20060' -or $baseline.native_sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Unexpected 20060 baseline provenance.' }
+          Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value $baseline.native_sha256 -Encoding Ascii
+      - name: Check the Whiteboard title in the Windows runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $payload = Join-Path $env:RUNNER_TEMP 'opslinx-build/g361-runtime-payload.zip'
+          $runtime = [IO.Compression.ZipFile]::OpenRead($payload)
+          try {
+            $native = $runtime.GetEntry('librustdesk.dll')
+            if (!$native) { throw 'Windows runtime DLL missing.' }
+            $reader = [IO.StreamReader]::new($native.Open(), [Text.Encoding]::Latin1, $false)
+            try { $binary = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if (!$binary.Contains('g3 OpsLinX Whiteboard') -or $binary.Contains('RustDesk whiteboard')) {
+              throw 'Unexpected Whiteboard title in the Windows runtime.'
+            }
+          } finally { $runtime.Dispose() }
+      - name: Prepare portable package tools
+        shell: pwsh
+        run: python -m pip install brotli==1.1.0
+      - name: Sign and verify Windows packages
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.OPSLINX_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.OPSLINX_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceCommit = $env:SOURCE_COMMIT
+          if ((git rev-parse HEAD) -ne $sourceCommit) { throw 'Signing source mismatch.' }
+          $env:GITHUB_SHA = $sourceCommit
+          $thumbprint = '2B29AA03DE164FFF1081D924A2BF4F73BBE63453'
+          $pfx = Join-Path $env:RUNNER_TEMP 'opslinx-signing.pfx'
+          try {
+            if (!$env:SIGNING_PFX_BASE64 -or !$env:SIGNING_PFX_PASSWORD) {
+              throw 'Signing environment secrets are missing.'
+            }
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+            $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+            Write-Host 'Importing the signing certificate.'
+            $null = Import-PfxCertificate -FilePath $pfx -Password $password -CertStoreLocation Cert:\CurrentUser\My
+            $signer = Get-Item "Cert:\CurrentUser\My\$thumbprint"
+            if (!$signer.HasPrivateKey) { throw 'OpsLinX private key is missing.' }
+
+            $root = [Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'g3-build/codesigning/g3-root-ca.cer').Path)
+            $issuer = [Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'g3-build/codesigning/g3-device-ca.cer').Path)
+            if ($root.Thumbprint -ne '4F7BCA98FEE3E8CC68B38E5A3DA35C5B81C63542' -or $issuer.Thumbprint -ne '8F07DD7BC81F34B95D73BB0E06589CD6D4BA53DE') {
+              throw 'Unexpected public CA certificates.'
+            }
+            $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
+            $chain.ChainPolicy.TrustMode = 'CustomRootTrust'
+            $chain.ChainPolicy.RevocationMode = 'NoCheck'
+            $chain.ChainPolicy.DisableCertificateDownloads = $true
+            $null = $chain.ChainPolicy.CustomTrustStore.Add($root)
+            $null = $chain.ChainPolicy.ExtraStore.Add($issuer)
+            $null = $chain.ChainPolicy.ApplicationPolicy.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
+            if (!$chain.Build($signer) -or $chain.ChainElements.Count -ne 3) {
+              throw 'OpsLinX signing certificate does not chain to the configured root.'
+            }
+
+            Write-Host 'Custom CA chain verified. Installing public CA certificates on the hosted test runner.'
+            & certutil.exe -f -addstore Root g3-build/codesigning/g3-root-ca.cer
+            if ($LASTEXITCODE -ne 0) { throw 'Test root import failed.' }
+            $null = Import-Certificate -FilePath 'g3-build/codesigning/g3-device-ca.cer' -CertStoreLocation Cert:\CurrentUser\CA
+            & ./g3-build/sign-opslinx-packages.ps1 -BuildOutput (Join-Path $env:RUNNER_TEMP 'opslinx-build')
+          } finally {
+            if (Test-Path -LiteralPath $pfx) { Remove-Item -LiteralPath $pfx -Force }
+            if (Test-Path "Cert:\CurrentUser\My\$thumbprint") { Remove-Item "Cert:\CurrentUser\My\$thumbprint" -DeleteKey -Force }
+          }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opslinx-signed-windows-${{ github.sha }}
+          path: |
+            outputs/g3-OpsLinX-*-install.exe
+            outputs/g3-OpsLinX-*-install.msi
+            outputs/g3-Soforthilfe-*-adhoc.exe
+            outputs/*.p7s
+            outputs/opslinx-signatures.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-signatures:
+    needs: signing
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: opslinx-signed-windows-${{ github.sha }}
+          path: signed
+      - name: Verify all five signed packages on Windows without the g3 CA
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $caIds = @('4F7BCA98FEE3E8CC68B38E5A3DA35C5B81C63542','8F07DD7BC81F34B95D73BB0E06589CD6D4BA53DE')
+          if (Get-ChildItem Cert:\LocalMachine\Root,Cert:\CurrentUser\Root,Cert:\LocalMachine\CA,Cert:\CurrentUser\CA | Where-Object Thumbprint -in $caIds) {
+            throw 'The clean verification runner already trusts the g3 CA.'
+          }
+          $verify = Join-Path $env:RUNNER_TEMP 'verify-opslinx-package.exe'
+          & 'C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe' /nologo /target:exe /reference:System.Security.dll /reference:System.Web.Extensions.dll /reference:System.ServiceProcess.dll "/out:$verify" '/resource:g3-build\codesigning\g3-root-ca.cer,g3.signing.root' '/resource:g3-build\codesigning\g3-device-ca.cer,g3.signing.issuer' 'g3-build\codesigning\OpsLinXPackageSignature.cs' 'g3-build\codesigning\VerifyOpsLinXPackage.cs' 'g3-build\codesigning\ManagedOpsLinXUpdate.cs'
+          if ($LASTEXITCODE) { throw 'Verifier compilation failed.' }
+          $packages = Get-ChildItem signed -File | Where-Object Extension -in '.exe','.msi'
+          if ($packages.Count -ne 5) { throw 'Unexpected signed package count.' }
+          foreach ($file in $packages) {
+            & $verify $file.FullName $file.Name ($file.FullName + '.p7s')
+            if ($LASTEXITCODE) { throw "Built-in CA verification failed for $($file.Name)." }
+          }
+          $test = $packages[0]
+          $tampered = Join-Path $env:RUNNER_TEMP 'tampered-package.bin'
+          Copy-Item -LiteralPath $test.FullName -Destination $tampered
+          $stream = [IO.File]::OpenWrite($tampered)
+          try { $stream.WriteByte(0) } finally { $stream.Dispose() }
+          & $verify $tampered $test.Name ($test.FullName + '.p7s')
+          if (!$LASTEXITCODE) { throw 'Tampered package accepted.' }
+          & $verify $test.FullName 'wrong-package.exe' ($test.FullName + '.p7s')
+          if (!$LASTEXITCODE) { throw 'Wrong package name accepted.' }
+          Write-Host 'All five packages verified with the built-in CA. Changed bytes and wrong package name rejected.'
+          exit 0
