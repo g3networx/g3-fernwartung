@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20060",
-  "displayVersion": "g3.6.2 Build 121126",
-  "buildDate": "2026-11-12",
-  "windowsVersion": "1.62.20060",
-  "dailyInternalSequence": 4,
-  "feature": "webgui-managed-windows-update"
+  "version": "1.5.3-g3.62.20064",
+  "displayVersion": "g3.6.2 Build 131126",
+  "buildDate": "2026-11-13",
+  "windowsVersion": "1.62.20064",
+  "dailyInternalSequence": 0,
+  "feature": "skip-redundant-session-paints"
 }

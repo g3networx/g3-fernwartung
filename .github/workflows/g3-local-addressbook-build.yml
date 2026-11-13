@@ -1,6 +1,6 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3.6.2 RustDesk 1.5.3 Windows lab packages
+name: g3.6.2 RustDesk 1.5.3 Windows lab packages (20064)
 on:
   push:
     branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review]
