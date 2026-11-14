@@ -1,0 +1,86 @@
+name: OpsLinX Android update-notice preview
+on:
+  push:
+    branches: [g3-android-update-notice-preview]
+permissions:
+  contents: read
+  actions: read
+env:
+  ANDROID_FLUTTER_VERSION: '3.24.5'
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Configure OpsLinX test app
+        run: |
+          mkdir -p libs/hbb_common/src
+          printf '%s' 'if is_g3_host(){settings.insert("conn-type"' > libs/hbb_common/src/config.rs
+          python3 g3-build/configure-android-lab.py
+          sed -i 's/net.g3nx.opslinx.lab/net.g3nx.opslinx.updatepreview/' flutter/android/app/build.gradle
+
+      - name: Install flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.ANDROID_FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          if [[ "3.24.5" == ${{env.ANDROID_FLUTTER_VERSION}} ]]; then
+            git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: '14134236513'
+          run-id: '43644826428'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/android-original
+      - name: Reuse native libraries from Windows-independent Android build 20074
+        run: |
+          file="$RUNNER_TEMP/android-original/app-arm64-v8a-release.apk"
+          echo "6353e0c1b5dffa5edb7b77a916cf766447ead01d62fd207fc6e511748a9eaba5  $file" | sha256sum -c
+          dir=flutter/android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p "$dir"
+          unzip -j "$file" lib/arm64-v8a/librustdesk.so lib/arm64-v8a/libc++_shared.so -d "$dir"
+      - name: Build test APK
+        working-directory: flutter
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: |
+          export PATH="$JAVA_HOME/bin:$PATH"
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
+          echo 'org.gradle.workers.max=2' >> android/gradle.properties
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+          flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
+          flutter build apk --release --target-platform android-arm64 --split-per-abi \
+            --build-name=3.6.2 --build-number=20073 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20073 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20073'
+          python - <<'PY'
+          from zipfile import ZipFile
+
+          with ZipFile('build/app/outputs/flutter-apk/app-arm64-v8a-release.apk') as apk:
+              required = {'AndroidManifest.xml', 'classes.dex', 'lib/arm64-v8a/librustdesk.so'}
+              missing = required.difference(apk.namelist())
+              if missing:
+                  raise SystemExit(f'Missing APK files: {sorted(missing)}')
+          PY
+          sha256sum build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opslinx-android-update-preview
+          path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 7
+
