@@ -1,4 +1,4 @@
-name: Sign OpsLinX Android 1.5.3 build 20058
+name: Sign OpsLinX Android 1.5.3 build 20064
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -6,8 +6,8 @@ on:
 permissions:
   actions: read
 env:
-  BUILD_RUN: '43246469467'
-  APK_SHA256: 3eb4dede76746f072d3186d456fc415116041be3554b366a38c8d6f44024c232
+  BUILD_RUN: '43596263278'
+  APK_SHA256: 9c9a9c39927ab6e603af74569c13b436685607f5899d6b505d34cf779f9594de
 jobs:
   stage-apk:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
@@ -19,17 +19,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" | jq -e '.conclusion == "success" and .head_branch == "g3-rustdesk-1.5.3-android-lab" and .head_sha == "d9ca7c77b8a5f092346fc95954c78bf2e5a18a3e"' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" | jq -e '.conclusion == "success" and .head_branch == "g3-rustdesk-1.5.3-android-lab" and .head_sha == "819f9ad3ffd9bae129f865ea610e1c60070928bd"' >/dev/null
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: '13957349845'
+          artifact-ids: '14114969547'
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
       - name: Verify the APK digest
         run: echo "$APK_SHA256  app-arm64-v8a-release.apk" | sha256sum -c
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: opslinx-android-20058-signing-input
+          name: opslinx-android-20064-signing-input
           path: app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 1
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: opslinx-android-20058-signing-input
+          name: opslinx-android-20064-signing-input
           path: unsigned
       - name: Check APK identity, sign and verify
         shell: bash
@@ -73,7 +73,7 @@ jobs:
           PY
           unset OPSLINX_ANDROID_SIGNING
           mkdir signed
-          apk=signed/g3-OpsLinX-Android-1.5.3-g3.62.20058-arm64.apk
+          apk=signed/g3-OpsLinX-Android-1.5.3-g3.62.20064-arm64.apk
           "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android \
             --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "$apk" "$src"
           "$sdk" verify --verbose --print-certs "$apk" | tee "$work/verification"
@@ -85,7 +85,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.3-g3.62.20058', 'version_code': 22058, 'file': apk.name,
+          item = {'version': '1.5.3-g3.62.20064', 'version_code': 22058, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
