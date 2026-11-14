@@ -130,7 +130,7 @@ def install(app, portal):
             policy = outbound_policy(db, device)
             result = {"outbound_blocked": bool(policy["blocked"]), "policy_revision": policy["revision"]}
             if ready:
-                job = claim(db, device_id, installation_id, ready == "update")
+                job = claim(db, device_id, installation_id, ready == "all")
                 if job:
                     result["job"] = job
         return result
@@ -140,10 +140,13 @@ def install(app, portal):
     def bootstrap_response(request_data, device_id, native_id, verified_public_key, response):
         registration = request_data.get("management")
         if enabled() and isinstance(registration, dict):
+            ready = False
+            if registration.get("update_ready") is True:
+                ready = "all" if registration.get("uninstall_ready") is True else "update"
             status = authenticated_installation(
                 device_id, native_id, registration.get("installation_id"),
                 registration.get("variant"), sha256(verified_public_key).hexdigest(),
-                ready="update" if registration.get("update_ready") is True else False,
+                ready=ready,
             )
             if status:
                 response["management"] = status
@@ -166,7 +169,7 @@ def install(app, portal):
             ORDER BY variant, last_seen DESC
         """, (device["id"], device["customer_id"], device["rustdesk_id"])).fetchall()
 
-    def claim(db, device_id, installation_id, update_only):
+    def claim(db, device_id, installation_id, supports_uninstall):
         if db.execute("""
             SELECT 1 FROM activity_sessions
             WHERE device_id = ? AND closed = 0 AND last_seen >= ?
@@ -176,11 +179,12 @@ def install(app, portal):
         if not secret:
             return None
         key = secret.encode() if isinstance(secret, str) else secret
+        allow_uninstall = supports_uninstall and app.config.get("DEVICE_MANAGEMENT_UNINSTALL_ENABLED") is True
         row = db.execute("""
             SELECT id, operation, claim_nonce, receipt_digest FROM managed_device_operations
             WHERE device_id = ? AND installation_id = ? AND state IN ('queued', 'running')
-              AND (? = 0 OR operation = 'update')
-        """, (device_id, installation_id, update_only)).fetchone()
+              AND (? OR operation = 'update')
+        """, (device_id, installation_id, allow_uninstall)).fetchone()
         if row is None:
             return None
         nonce = row["claim_nonce"] if row["claim_nonce"] and row["receipt_digest"] else secrets.token_hex(16)
@@ -189,9 +193,9 @@ def install(app, portal):
         receipt_digest = sha256(receipt.encode()).hexdigest()
         row = db.execute("""
             UPDATE managed_device_operations SET state = 'running', receipt_digest = ?, claim_nonce = ?
-            WHERE id = ? AND (state = 'queued' OR (? AND state = 'running' AND receipt_digest = ?))
+            WHERE id = ? AND (state = 'queued' OR (state = 'running' AND receipt_digest = ?))
             RETURNING id, operation
-        """, (receipt_digest, nonce, row["id"], update_only, receipt_digest)).fetchone()
+        """, (receipt_digest, nonce, row["id"], receipt_digest)).fetchone()
         return {"id": row["id"], "operation": row["operation"], "receipt": receipt} if row else None
 
     @blueprint.post("/client-management/operations/<int:operation_id>/result")
@@ -251,6 +255,8 @@ def install(app, portal):
                 action = request.form.get("action")
                 if action == "uninstall" and not app.config.get("DEVICE_MANAGEMENT_UNINSTALL_ENABLED"):
                     abort(404)
+                if action == "uninstall" and request.form.get("confirm_uninstall") != "yes":
+                    abort(400)
                 if action in ("block-outbound", "allow-outbound") and not app.config.get("DEVICE_MANAGEMENT_POLICY_ENABLED"):
                     abort(404)
                 if action in OPERATIONS:

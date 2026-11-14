@@ -321,7 +321,8 @@ internal sealed class SetupForm:Form {
   var registeredDirectory = Registry.GetValue(statePath, "InstallLocation", "") as string;
   Guid product;
   if (!Guid.TryParseExact(registeredCode, "B", out product)
-      || product == Guid.Empty || String.IsNullOrEmpty(registeredDirectory)
+      || !String.Equals(registeredCode, ProductCode, StringComparison.OrdinalIgnoreCase)
+      || String.IsNullOrEmpty(registeredDirectory)
       || !String.Equals(registeredDirectory.TrimEnd(Path.DirectorySeparatorChar), installDirectory, StringComparison.OrdinalIgnoreCase)
       || !File.Exists(InstalledExe) || !File.Exists(native) || !File.Exists(gatePath)
       || Array.IndexOf(GateDllHashes.Split(';'), Digest(native)) < 0)

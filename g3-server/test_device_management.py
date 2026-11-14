@@ -107,12 +107,14 @@ class DeviceManagementTest(unittest.TestCase):
         self.heartbeat()
         self.assertEqual(self.client.get(self.route).status_code, 200)
         for action in ("update", "uninstall", "update"):
-            self.assertEqual(self.post(action, installation_id=self.installation_id).status_code, 303)
+            self.assertEqual(self.post(action, installation_id=self.installation_id,
+                                       confirm_uninstall="yes").status_code, 303)
         jobs = self.db.execute("SELECT * FROM managed_device_operations").fetchall()
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["operation"], "update")
         self.assertEqual(self.post("cancel", operation_id=jobs[0]["id"]).status_code, 303)
-        self.assertEqual(self.post("uninstall", installation_id=self.installation_id).status_code, 303)
+        self.assertEqual(self.post("uninstall", installation_id=self.installation_id,
+                                   confirm_uninstall="yes").status_code, 303)
         self.assertEqual(self.db.execute("SELECT event FROM audit ORDER BY rowid").fetchall()[1][0],
                          "device_operation_cancelled")
 
@@ -169,6 +171,29 @@ class DeviceManagementTest(unittest.TestCase):
         headers = {"Authorization": "Bearer " + retry["receipt"]}
         self.assertEqual(self.client.post(route, json=complete, headers=headers).status_code, 200)
         self.assertNotIn("job", self.heartbeat(ready=True))
+
+    def test_uninstall_waits_for_confirmation_supported_service_and_idle_session(self):
+        self.app.config["DEVICE_MANAGEMENT_ENABLED"] = True
+        self.heartbeat()
+        self.assertEqual(self.post("uninstall", installation_id=self.installation_id).status_code, 400)
+        self.assertEqual(self.post("uninstall", installation_id=self.installation_id,
+                                   confirm_uninstall="yes").status_code, 303)
+        self.assertNotIn("job", self.heartbeat(ready="update"))
+        self.db.execute("INSERT INTO activity_sessions VALUES (1, 0, ?)", (int(time.time()),))
+        self.db.commit()
+        self.assertNotIn("job", self.heartbeat(ready="all"))
+        self.assertIn("wartet auf das Ende der Fernwartung", self.client.get(self.route).get_data(as_text=True))
+        self.db.execute("UPDATE activity_sessions SET closed = 1")
+        self.db.commit()
+        job = self.heartbeat(ready="all")["job"]
+        self.assertEqual(job["operation"], "uninstall")
+        self.assertEqual(self.heartbeat(ready="all")["job"], job)
+        route = f"/client-management/operations/{job['id']}/result"
+        headers = {"Authorization": "Bearer " + job["receipt"]}
+        for _ in range(2):
+            self.assertEqual(self.client.post(route, json={"result": "complete", "exit_code": 0},
+                                              headers=headers).status_code, 200)
+        self.assertIn("abgeschlossen", self.client.get(self.route).get_data(as_text=True))
 
 
 if __name__ == "__main__":

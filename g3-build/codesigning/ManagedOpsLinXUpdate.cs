@@ -7,6 +7,7 @@ using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 internal static class ManagedOpsLinXUpdate
@@ -20,6 +21,7 @@ internal static class ManagedOpsLinXUpdate
         public ulong id { get; set; }
         public string receipt { get; set; }
         public string variant { get; set; }
+        public string operation { get; set; }
     }
 
     public sealed class Release
@@ -49,7 +51,8 @@ internal static class ManagedOpsLinXUpdate
             var json = new JavaScriptSerializer();
             var job = json.Deserialize<Job>(File.ReadAllText(pending));
             if (job == null || job.id == 0 || job.receipt == null || !Regex.IsMatch(job.receipt, "\\A[A-Za-z0-9_-]{43}\\z")
-                || (job.variant != "full" && job.variant != "host")) return Failed;
+                || (job.variant != "full" && job.variant != "host")
+                || (job.operation != null && job.operation != "update" && job.operation != "uninstall")) return Failed;
 
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             string resultFile = Path.Combine(directory, "result.txt");
@@ -58,7 +61,11 @@ internal static class ManagedOpsLinXUpdate
             int exitCode;
             if (!stored.StartsWith(prefix, StringComparison.Ordinal) || !Int32.TryParse(stored.Substring(prefix.Length), out exitCode))
             {
-                try { exitCode = Install(directory, origin, job.variant, json); }
+                try
+                {
+                    exitCode = job.operation == "uninstall" ? Uninstall(directory, origin, job.variant)
+                                                            : Install(directory, origin, job.variant, json);
+                }
                 catch (Exception error)
                 {
                     File.WriteAllText(Path.Combine(directory, "update-error.txt"), error.Message);
@@ -71,19 +78,77 @@ internal static class ManagedOpsLinXUpdate
                 else File.Move(temporary, resultFile);
             }
 
-            string state = exitCode == Busy ? "busy" : exitCode == 0 || exitCode == 3010 ? "complete" : "failed";
-            var request = Request(origin, "client-management/operations/" + job.id.ToString(CultureInfo.InvariantCulture) + "/result");
-            request.Method = "POST";
-            request.ContentType = "application/json";
-            request.Headers[HttpRequestHeader.Authorization] = "Bearer " + job.receipt;
-            byte[] body = Encoding.UTF8.GetBytes(json.Serialize(new { result = state, exit_code = exitCode }));
-            request.ContentLength = body.Length;
-            using (var output = request.GetRequestStream()) output.Write(body, 0, body.Length);
-            using (var response = (HttpWebResponse)request.GetResponse())
-                if (response.StatusCode != HttpStatusCode.OK) return Failed;
+            // The service cannot retry the final response once it has been removed.
+            // Keep the worker alive for transient network or server failures.
+            bool removed = job.operation == "uninstall" && (exitCode == 0 || exitCode == 3010);
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    Report(origin, job, json, exitCode);
+                    break;
+                }
+                catch (WebException error)
+                {
+                    if (!removed || attempt >= 29 || !CanRetryReport(error)) throw;
+                    Thread.Sleep(TimeSpan.FromSeconds(10));
+                }
+            }
             File.Delete(pending);
             File.Delete(resultFile);
             return exitCode;
+        }
+    }
+
+    private static bool CanRetryReport(WebException error)
+    {
+        using (var response = error.Response as HttpWebResponse)
+            return response == null || (int)response.StatusCode >= 500 || (int)response.StatusCode == 429;
+    }
+
+    private static void Report(Uri origin, Job job, JavaScriptSerializer json, int exitCode)
+    {
+        string state = exitCode == Busy ? "busy" : exitCode == 0 || exitCode == 3010 ? "complete" : "failed";
+        var request = Request(origin, "client-management/operations/" + job.id.ToString(CultureInfo.InvariantCulture) + "/result");
+        request.Method = "POST";
+        request.ContentType = "application/json";
+        request.Headers[HttpRequestHeader.Authorization] = "Bearer " + job.receipt;
+        byte[] body = Encoding.UTF8.GetBytes(json.Serialize(new { result = state, exit_code = exitCode }));
+        request.ContentLength = body.Length;
+        using (var output = request.GetRequestStream()) output.Write(body, 0, body.Length);
+        using (var response = (HttpWebResponse)request.GetResponse())
+            if (response.StatusCode != HttpStatusCode.OK) throw new IOException("Portal did not acknowledge the result.");
+    }
+
+    private static int Uninstall(string directory, Uri origin, string variant)
+    {
+        bool host = variant == "host";
+        string app = host ? "g3Host" : "g3Fernwartung";
+        string installed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), app, app + ".exe");
+        if (!File.Exists(installed)) return Failed;
+        var current = FileVersionInfo.GetVersionInfo(installed);
+        if (current.FileMajorPart != 1 || current.FileMinorPart < 62 || current.FileMinorPart > 255)
+            return Failed;
+        string version = "1.5.3-g3." + current.FileMinorPart.ToString(CultureInfo.InvariantCulture)
+            + "." + current.FileBuildPart.ToString(CultureInfo.InvariantCulture);
+        string kind = host ? "host" : "windows";
+        string name = "g3-OpsLinX-" + (host ? "Host-" : "") + version + (host ? "-host-install.exe" : "-install.exe");
+        string launcher = Path.Combine(directory, name);
+        try
+        {
+            Download(origin, "client/releases/" + version + "/" + kind, launcher, 4 * 1024 * 1024);
+            var info = new ProcessStartInfo(launcher, "--g3-uninstall-worker") {
+                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = directory
+            };
+            using (var installer = Process.Start(info))
+            {
+                installer.WaitForExit();
+                return installer.ExitCode;
+            }
+        }
+        finally
+        {
+            File.Delete(launcher);
         }
     }
 

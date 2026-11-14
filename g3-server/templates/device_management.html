@@ -13,7 +13,7 @@
   {% if config.get('DEVICE_MANAGEMENT_POLICY_ENABLED') %}
   <section class="card">
     <h2>Fernsteuerung</h2>
-    <p>Vorgabe für ausgehende Verbindungen: {{ 'gesperrt' if policy.blocked else 'erlaubt' }}</p>
+    <p>Vorgabe für ausgehende Verbindungen: {{ 'gesperrt' if policy.blocked else 'erlaubt' }}. Eingehender Support bleibt möglich.</p>
     <form method="post">
       <input type="hidden" name="csrf" value="{{ management_csrf }}">
       <button name="action" value="{{ 'allow-outbound' if policy.blocked else 'block-outbound' }}">
@@ -30,10 +30,17 @@
       <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
       <strong>{{ 'Host' if installation.variant == 'host' else 'Vollclient' }}</strong>
       <button name="action" value="update">Update vormerken</button>
-      {% if config.get('DEVICE_MANAGEMENT_UNINSTALL_ENABLED') %}
-      <button name="action" value="uninstall">Deinstallation vormerken</button>
-      {% endif %}
     </form>
+      {% if config.get('DEVICE_MANAGEMENT_UNINSTALL_ENABLED') %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ management_csrf }}">
+      <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
+      <label><input type="checkbox" name="confirm_uninstall" value="yes" required>
+        {{ 'Host' if installation.variant == 'host' else 'Vollclient' }} nach Ende der Fernwartung entfernen
+      </label>
+      <button name="action" value="uninstall">Deinstallation vormerken</button>
+    </form>
+      {% endif %}
     {% endfor %}
   </section>
   {% else %}

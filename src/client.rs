@@ -531,7 +531,7 @@ impl Client {
             }
             Some(ids)
         })
-            .await.unwrap_or_else(|_|Some(vec![Config::get_id()]));
+        .await.map_err(|_| anyhow!("Die lokale Verbindungsfreigabe konnte nicht geprüft werden."))?;
         let Some(local_ids) = local_ids else {
             bail!("Aktive Fernsteuerung ist für dieses Gerät gesperrt.");
         };

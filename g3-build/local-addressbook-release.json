@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20064",
-  "displayVersion": "g3.6.2 Build 131126",
-  "buildDate": "2026-11-13",
-  "windowsVersion": "1.62.20064",
+  "version": "1.5.3-g3.62.20072",
+  "displayVersion": "g3.6.2 Build 141126",
+  "buildDate": "2026-11-14",
+  "windowsVersion": "1.62.20072",
   "dailyInternalSequence": 0,
-  "feature": "skip-redundant-session-paints"
+  "feature": "lab-managed-uninstall-and-outbound-policy"
 }

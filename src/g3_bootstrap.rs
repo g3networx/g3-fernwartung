@@ -80,8 +80,8 @@ fn refresh()->Result<(),()> {
             hbb_common::log::warn!("Could not save the device management policy: {error}");
         }
         if let Some(job) = policy.get("job") {
-            if let Err(error) = crate::g3_device_management::handle_update(job) {
-                hbb_common::log::warn!("Could not start the managed update: {error}");
+            if let Err(error) = crate::g3_device_management::handle_job(job) {
+                hbb_common::log::warn!("Could not start the managed operation: {error}");
             }
         }
     }

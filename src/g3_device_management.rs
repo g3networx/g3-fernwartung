@@ -18,7 +18,7 @@ const MANAGED_UPDATE: &str = "g3-managed-update";
 const PENDING: &str = "pending.json";
 
 #[derive(Deserialize)]
-struct UpdateJob {
+struct ManagedJob {
     id: u64,
     operation: String,
     receipt: String,
@@ -60,12 +60,12 @@ fn resume_update(directory: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn handle_update(value: &Value) -> io::Result<()> {
-    let job: UpdateJob = serde_json::from_value(value.clone()).map_err(io::Error::other)?;
-    if job.id == 0 || job.operation != "update" || job.receipt.len() != 43
+pub fn handle_job(value: &Value) -> io::Result<()> {
+    let job: ManagedJob = serde_json::from_value(value.clone()).map_err(io::Error::other)?;
+    if job.id == 0 || !matches!(job.operation.as_str(), "update" | "uninstall") || job.receipt.len() != 43
         || !job.receipt.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
     {
-        return Err(io::Error::new(ErrorKind::InvalidData, "Invalid managed update offer"));
+        return Err(io::Error::new(ErrorKind::InvalidData, "Invalid device management offer"));
     }
     let directory = update_directory()?;
     let pending = directory.join(PENDING);
@@ -73,7 +73,9 @@ pub fn handle_update(value: &Value) -> io::Result<()> {
         return Err(io::Error::new(ErrorKind::AlreadyExists, "A managed update is pending"));
     }
     let app = variant().ok_or(ErrorKind::Unsupported)?;
-    let offer = serde_json::to_vec(&json!({"id":job.id, "receipt":job.receipt, "variant":app}))?;
+    let offer = serde_json::to_vec(&json!({
+        "id": job.id, "receipt": job.receipt, "variant": app, "operation": job.operation,
+    }))?;
     let staged = directory.join("pending.tmp");
     fs::copy(directory.with_file_name(VERIFIER), directory.join(VERIFIER))?;
     fs::write(&staged, offer)?;
@@ -127,7 +129,10 @@ pub fn registration() -> io::Result<Option<Value>> {
         Ok(_) => true,
         Err(_) => false,
     };
-    Ok(Some(json!({ "installation_id": installation_id, "variant": variant, "update_ready": ready })))
+    Ok(Some(json!({
+        "installation_id": installation_id, "variant": variant,
+        "update_ready": ready, "uninstall_ready": ready,
+    })))
 }
 
 fn decode_policy(value: &str) -> Option<(&str, u64, bool)> {
@@ -166,13 +171,15 @@ pub fn outbound_blocked(installed_id: &str) -> bool {
     let Some(variant) = variant() else {
         return false;
     };
-    let value = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey_with_flags(registry_path(variant), KEY_READ | KEY_WOW64_64KEY)
-        .and_then(|key| key.get_value::<String, _>("OutboundPolicy"));
-    let Ok(value) = value else {
-        return false;
-    };
-    decode_policy(&value)
-        .map(|(native_id, _, blocked)| blocked && (installed_id.is_empty() || installed_id == native_id))
-        .unwrap_or(false)
+    // Host and FullClient can share one installed identity. In that case
+    // the Host service may be the one that receives the portal policy.
+    let sibling = if variant == "full" { "host" } else { "full" };
+    [variant, sibling].into_iter().filter_map(|source| {
+        let value = RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey_with_flags(registry_path(source), KEY_READ | KEY_WOW64_64KEY)
+            .and_then(|key| key.get_value::<String, _>("OutboundPolicy")).ok()?;
+        let (native_id, revision, blocked) = decode_policy(&value)?;
+        (installed_id == native_id || (source == variant && installed_id.is_empty()))
+            .then_some((revision, blocked))
+    }).max().is_some_and(|(_, blocked)| blocked)
 }
