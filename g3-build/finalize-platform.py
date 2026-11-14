@@ -4,6 +4,9 @@ import os,sys,json,hashlib,subprocess,shutil,plistlib,tempfile,struct,time,re,pl
 kind,arch=sys.argv[1:];version=os.environ.get('VERSION','1.5.0-g3.27');root=Path.cwd();inputs=root/'input';out=root/'verified';out.mkdir(exist_ok=True)
 provenance=list(inputs.glob('platform-provenance-*.json'));assert len(provenance)==1,'Exactly one source provenance record required'
 source=json.loads(provenance[0].read_text());version=source.get('version',version);assert source['arch']==arch and source['platform']==kind
+core_version, separator, _ = version.partition('-g3.')
+assert separator and re.fullmatch(r'\d+\.\d+\.\d+', core_version), 'Invalid release core version'
+core_version_line = re.compile(r'(?m)^' + re.escape(core_version) + r'\s*$')
 assert str(source['run_id'])==os.environ['SOURCE_RUN'],'Wrong source run'
 for f in source['files']:
  p=inputs/f['file'];assert p.name==f['file'] and p.is_file();assert hashlib.sha256(p.read_bytes()).hexdigest()==f['sha256'],'Source artifact hash mismatch'
@@ -31,7 +34,7 @@ export XDG_RUNTIME_DIR=/tmp/g3-runtime LIBGL_ALWAYS_SOFTWARE=1
 dbus-run-session -- xvfb-run -a bash -ec '/usr/bin/g3fernwartung > /evidence/gui-smoke.log 2>&1 & client_pid=$!; sleep 10; kill -0 "$client_pid"; import -window root /evidence/client-preview.png; kill "$client_pid"; wait "$client_pid" || true'
 """
  result=subprocess.run(['docker','run','--rm','-v',str(out)+':/packages:ro','-v',str(out)+':/evidence','ubuntu:22.04','bash','-ec',cmd],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
- (out/'install-smoke.log').write_text(result.stdout);assert result.returncode==0,'Container install/version smoke failed';assert '1.5.0' in result.stdout
+ (out/'install-smoke.log').write_text(result.stdout);assert result.returncode==0,'Container install/version smoke failed';assert core_version_line.search(result.stdout),'Unexpected Linux core version'
  checks+=['Ubuntu 22.04 native container install and executable --version','native GUI stays running for 10 seconds in Xvfb; screenshot captured']
 else:
  packages=list(inputs.glob('*.dmg'));assert len(packages)==1
@@ -61,7 +64,7 @@ else:
  expected=re.findall(r'pub extern "C" fn (\w+)\(', (root/'src/bridge_generated.io.rs').read_text())
  assert all('_'+name in exports for name in expected),'Native bridge export missing'
  run(['codesign','--force','--deep','--sign','-',str(app)]);run(['codesign','--verify','--deep','--strict',str(app)])
- result=subprocess.run([str(exe),'--version'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30);(out/'launch-smoke.log').write_text(result.stdout);assert result.returncode==0 and '1.5.0' in result.stdout,'Native macOS executable smoke failed'
+ result=subprocess.run([str(exe),'--version'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30);(out/'launch-smoke.log').write_text(result.stdout);assert result.returncode==0 and core_version_line.search(result.stdout),'Native macOS executable smoke failed'
  with (out/'gui-smoke.log').open('w') as log:
   gui=subprocess.Popen([str(exe)],stdout=log,stderr=subprocess.STDOUT)
   try:
