@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 20073 for the WebGUI lab
+name: Sign OpsLinX Windows 20075 for the WebGUI lab
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: 23f6405dff1f8e4630b9f6dfea99a5d673d65323
-  BUILD_RUN: '43635558652'
+  SOURCE_COMMIT: e3dfe6d3a66f20c75769f46d4fce039c3fc0c236
+  BUILD_RUN: '43645052570'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
