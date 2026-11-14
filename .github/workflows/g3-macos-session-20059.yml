@@ -1,0 +1,62 @@
+name: "Published OpsLinX 20059: Apple Silicon session test"
+on:
+  push:
+    branches: [g3-rustdesk-1.5.3-lab]
+    paths:
+      - .github/workflows/g3-macos-session-20059.yml
+      - g3-build/test-macos-session-20059.py
+permissions:
+  contents: read
+  actions: read
+jobs:
+  target:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Run disposable Linux lab target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -u g3-build/test-macos-session-20059.py target
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: encrypted-target-${{ github.run_attempt }}
+          path: session-20059/target.enc
+          if-no-files-found: error
+          retention-days: 1
+      - name: Change the lab desktop and wait for the viewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -u g3-build/test-macos-session-20059.py animate
+      - name: Remove the disposable test target
+        if: always()
+        run: docker rm -f opslinx-test-target || true
+  viewer:
+    runs-on: macos-26
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Prepare Apple Silicon test and ephemeral key
+        run: python3 -u g3-build/test-macos-session-20059.py prepare
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: viewer-public-key-${{ github.run_attempt }}
+          path: session-20059/viewer-public.pem
+          if-no-files-found: error
+          retention-days: 1
+      - name: Receive two changed remote frames
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m venv session-20059/venv
+          session-20059/venv/bin/pip install Pillow
+          session-20059/venv/bin/python -u g3-build/test-macos-session-20059.py viewer
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: viewer-result-${{ github.run_attempt }}
+          path: session-20059/result.json
+          if-no-files-found: error
