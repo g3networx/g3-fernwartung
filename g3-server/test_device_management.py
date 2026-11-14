@@ -80,11 +80,12 @@ class DeviceManagementTest(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def heartbeat(self, *, key_digest=None, ready=False):
+    def heartbeat(self, *, key_digest=None, ready=False, supports_uninstall=True):
         with self.app.test_request_context():
             g.verified_device_id = 1
             return self.app.config["DEVICE_MANAGEMENT_HEARTBEAT"](
                 1, "111111", self.installation_id, "host", key_digest or self.key_digest, ready,
+                supports_uninstall=supports_uninstall,
             )
 
     def post(self, action, **fields):
@@ -174,6 +175,9 @@ class DeviceManagementTest(unittest.TestCase):
 
     def test_uninstall_waits_for_confirmation_supported_service_and_idle_session(self):
         self.app.config["DEVICE_MANAGEMENT_ENABLED"] = True
+        self.heartbeat(supports_uninstall=False)
+        self.assertEqual(self.post("uninstall", installation_id=self.installation_id,
+                                   confirm_uninstall="yes").status_code, 409)
         self.heartbeat()
         self.assertEqual(self.post("uninstall", installation_id=self.installation_id).status_code, 400)
         self.assertEqual(self.post("uninstall", installation_id=self.installation_id,

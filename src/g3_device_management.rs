@@ -131,7 +131,7 @@ pub fn registration() -> io::Result<Option<Value>> {
     };
     Ok(Some(json!({
         "installation_id": installation_id, "variant": variant,
-        "update_ready": ready, "uninstall_ready": ready,
+        "update_ready": ready, "uninstall_supported": true,
     })))
 }
 

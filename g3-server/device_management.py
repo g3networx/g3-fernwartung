@@ -45,6 +45,8 @@ def install(app, portal):
                         "managed_device_one_queued_operation", "managed_outbound_policy"}
             if required <= existing and any(
                 column[1] == "claim_nonce" for column in db.execute("PRAGMA table_info(managed_device_operations)")
+            ) and any(
+                column[1] == "uninstall_supported" for column in db.execute("PRAGMA table_info(managed_installations)")
             ):
                 return
             portal.run("""
@@ -56,9 +58,12 @@ def install(app, portal):
                     key_digest TEXT NOT NULL,
                     variant TEXT NOT NULL CHECK (variant IN ('host', 'full')),
                     last_seen INTEGER NOT NULL,
+                    uninstall_supported INTEGER NOT NULL DEFAULT 0 CHECK (uninstall_supported IN (0, 1)),
                     PRIMARY KEY (device_id, installation_id)
                 )
             """)
+            if not any(column[1] == "uninstall_supported" for column in db.execute("PRAGMA table_info(managed_installations)")):
+                portal.run("ALTER TABLE managed_installations ADD COLUMN uninstall_supported INTEGER NOT NULL DEFAULT 0")
             portal.run("""
                 CREATE TABLE IF NOT EXISTS managed_device_operations (
                     id INTEGER PRIMARY KEY,
@@ -102,7 +107,8 @@ def install(app, portal):
     def enabled():
         return app.config.get("DEVICE_MANAGEMENT_ENABLED") is True
 
-    def authenticated_installation(device_id, native_id, installation_id, variant, key_digest, ready=False):
+    def authenticated_installation(device_id, native_id, installation_id, variant, key_digest, ready=False,
+                                   supports_uninstall=False):
         """Call after the installed client proves its device key in client-bootstrap."""
         if not enabled() or g.get("verified_device_id") != device_id:
             return {}
@@ -117,14 +123,17 @@ def install(app, portal):
             if not device or device["rustdesk_id"] != native_id:
                 abort(404)
             registered = db.execute("""
-                INSERT INTO managed_installations VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(device_id, installation_id) DO UPDATE SET last_seen = excluded.last_seen
+                INSERT INTO managed_installations
+                    (device_id, installation_id, customer_id, native_id, key_digest, variant, last_seen, uninstall_supported)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(device_id, installation_id) DO UPDATE
+                SET last_seen = excluded.last_seen, uninstall_supported = excluded.uninstall_supported
                 WHERE managed_installations.customer_id = excluded.customer_id
                   AND managed_installations.native_id = excluded.native_id
                   AND managed_installations.key_digest = excluded.key_digest
                   AND managed_installations.variant = excluded.variant
             """, (device_id, installation_id, device["customer_id"], native_id,
-                  key_digest, variant, int(time.time())))
+                  key_digest, variant, int(time.time()), int(supports_uninstall)))
             if not registered.rowcount:
                 abort(409)
             policy = outbound_policy(db, device)
@@ -141,12 +150,13 @@ def install(app, portal):
         registration = request_data.get("management")
         if enabled() and isinstance(registration, dict):
             ready = False
+            supports_uninstall = registration.get("uninstall_supported") is True
             if registration.get("update_ready") is True:
-                ready = "all" if registration.get("uninstall_ready") is True else "update"
+                ready = "all" if supports_uninstall else "update"
             status = authenticated_installation(
                 device_id, native_id, registration.get("installation_id"),
                 registration.get("variant"), sha256(verified_public_key).hexdigest(),
-                ready=ready,
+                ready=ready, supports_uninstall=supports_uninstall,
             )
             if status:
                 response["management"] = status
@@ -263,6 +273,8 @@ def install(app, portal):
                     installation_id = request.form.get("installation_id")
                     if installation_id not in installations:
                         abort(404)
+                    if action == "uninstall" and not installations[installation_id]["uninstall_supported"]:
+                        abort(409)
                     result = db.execute("""
                         INSERT INTO managed_device_operations
                         (device_id, installation_id, operation, state, created, created_by)

@@ -31,7 +31,7 @@
       <strong>{{ 'Host' if installation.variant == 'host' else 'Vollclient' }}</strong>
       <button name="action" value="update">Update vormerken</button>
     </form>
-      {% if config.get('DEVICE_MANAGEMENT_UNINSTALL_ENABLED') %}
+      {% if config.get('DEVICE_MANAGEMENT_UNINSTALL_ENABLED') and installation.uninstall_supported %}
     <form method="post">
       <input type="hidden" name="csrf" value="{{ management_csrf }}">
       <input type="hidden" name="installation_id" value="{{ installation.installation_id }}">
