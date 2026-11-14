@@ -180,15 +180,74 @@ pub fn outbound_blocked(installed_id: &str) -> bool {
     let Some(variant) = variant() else {
         return false;
     };
-    // Host and FullClient can share one installed identity. In that case
-    // the Host service may be the one that receives the portal policy.
     let sibling = if variant == "full" { "host" } else { "full" };
-    [variant, sibling].into_iter().filter_map(|source| {
-        let value = RegKey::predef(HKEY_LOCAL_MACHINE)
+    let read_policy = |source: &str| {
+        RegKey::predef(HKEY_LOCAL_MACHINE)
             .open_subkey_with_flags(format!(r"{OUTBOUND_POLICY_PATH}\{source}"), KEY_READ | KEY_WOW64_64KEY)
-            .and_then(|key| key.get_value::<String, _>("OutboundPolicy")).ok()?;
-        let (native_id, revision, blocked) = decode_policy(&value)?;
-        (installed_id == native_id || (source == variant && installed_id.is_empty()))
-            .then_some((revision, blocked))
-    }).max().is_some_and(|(_, blocked)| blocked)
+            .and_then(|key| key.get_value::<String, _>("OutboundPolicy"))
+            .ok()
+    };
+    let own_policy = read_policy(variant);
+    let sibling_policy = read_policy(sibling);
+    denies_outbound(
+        installed_id,
+        crate::platform::g3_shared_host::uses_host(),
+        own_policy.as_deref(),
+        sibling_policy.as_deref(),
+    )
+}
+
+fn denies_outbound(
+    installed_id: &str,
+    uses_host: bool,
+    own_policy: Option<&str>,
+    sibling_policy: Option<&str>,
+) -> bool {
+    let own = own_policy.and_then(decode_policy);
+    let sibling = sibling_policy.and_then(decode_policy);
+
+    // A co-installed FullClient can still get its own ID from local IPC.
+    // The Host's service writes its server-confirmed policy to the protected
+    // machine registry. Revisions from different IDs are independent.
+    if uses_host && sibling.is_some_and(|(id, _, blocked)| id != installed_id && blocked) {
+        return true;
+    }
+    [
+        own.filter(|(id, _, _)| installed_id.is_empty() || *id == installed_id),
+        sibling.filter(|(id, _, _)| *id == installed_id),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|(_, revision, blocked)| (revision, blocked))
+    .max()
+    .is_some_and(|(_, blocked)| blocked)
+}
+
+#[cfg(test)]
+mod outbound_policy_tests {
+    use super::denies_outbound;
+
+    #[test]
+    fn paired_full_client_applies_host_block_with_a_different_local_id() {
+        let full = Some("1187832918:17:0");
+        let host = Some("1804109562:3:1");
+        assert!(denies_outbound("1187832918", true, full, host));
+        assert!(!denies_outbound("1187832918", false, full, host));
+        assert!(!denies_outbound(
+            "1187832918",
+            true,
+            full,
+            Some("1804109562:4:0"),
+        ));
+    }
+
+    #[test]
+    fn latest_policy_for_a_shared_id_can_restore_outbound_access() {
+        assert!(!denies_outbound(
+            "1804109562",
+            true,
+            Some("1804109562:3:1"),
+            Some("1804109562:4:0"),
+        ));
+    }
 }

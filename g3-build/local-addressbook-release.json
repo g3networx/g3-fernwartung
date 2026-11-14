@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20075",
-  "displayVersion": "g3.6.2 Build 141126",
-  "buildDate": "2026-11-14",
-  "windowsVersion": "1.62.20075",
-  "dailyInternalSequence": 3,
+  "version": "1.5.3-g3.62.20080",
+  "displayVersion": "g3.6.2 Build 151126",
+  "buildDate": "2026-11-15",
+  "windowsVersion": "1.62.20080",
+  "dailyInternalSequence": 0,
   "feature": "lab-managed-uninstall-and-outbound-policy"
 }
