@@ -3,12 +3,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
+using Microsoft.Win32;
 
 internal static class ManagedOpsLinXUpdate
 {
@@ -120,17 +122,40 @@ internal static class ManagedOpsLinXUpdate
             if (response.StatusCode != HttpStatusCode.OK) throw new IOException("Portal did not acknowledge the result.");
     }
 
+    [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+    private static extern uint MsiGetProductInfo(string product, string property,
+        StringBuilder value, ref uint length);
+
+    private static Version InstalledPackageVersion(string app)
+    {
+        using (var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+        using (var state = localMachine.OpenSubKey(@"SOFTWARE\" + app + @"\InstallState\" + app))
+        {
+            var code = state == null ? null : state.GetValue("MsiProductCode") as string;
+            Guid product;
+            if (!Guid.TryParseExact(code, "B", out product)) return null;
+            var value = new StringBuilder(32);
+            uint length = (uint)value.Capacity;
+            Version version;
+            if (MsiGetProductInfo(product.ToString("B").ToUpperInvariant(), "VersionString", value, ref length) != 0
+                || !Version.TryParse(value.ToString(), out version)
+                || version.Major != 1 || version.Minor < 60 || version.Minor > 62
+                || version.Build < 0 || version.Build > UInt16.MaxValue || version.Revision != -1)
+                return null;
+            return version;
+        }
+    }
+
     private static int Uninstall(string directory, Uri origin, string variant)
     {
         bool host = variant == "host";
         string app = host ? "g3Host" : "g3Fernwartung";
         string installed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), app, app + ".exe");
         if (!File.Exists(installed)) return Failed;
-        var current = FileVersionInfo.GetVersionInfo(installed);
-        if (current.FileMajorPart != 1 || current.FileMinorPart < 62 || current.FileMinorPart > 255)
-            return Failed;
-        string version = "1.5.3-g3." + current.FileMinorPart.ToString(CultureInfo.InvariantCulture)
-            + "." + current.FileBuildPart.ToString(CultureInfo.InvariantCulture);
+        var current = InstalledPackageVersion(app);
+        if (current == null) return Failed;
+        string version = "1.5.3-g3." + current.Minor.ToString(CultureInfo.InvariantCulture)
+            + "." + current.Build.ToString(CultureInfo.InvariantCulture);
         string kind = host ? "host" : "windows";
         string name = "g3-OpsLinX-" + (host ? "Host-" : "") + version + (host ? "-host-install.exe" : "-install.exe");
         string launcher = Path.Combine(directory, name);
@@ -170,8 +195,9 @@ internal static class ManagedOpsLinXUpdate
         Version target;
         if (!version.Success || !Version.TryParse("1." + version.Groups[1].Value + "." + version.Groups[2].Value, out target)
             || target.Build > UInt16.MaxValue) return Failed;
-        var current = FileVersionInfo.GetVersionInfo(installed);
-        if (new Version(current.FileMajorPart, current.FileMinorPart, current.FileBuildPart) >= target)
+        var current = InstalledPackageVersion(app);
+        if (current == null) return Failed;
+        if (current >= target)
         {
             using (var service = new ServiceController(app))
                 return service.Status == ServiceControllerStatus.Running ? 0 : Failed;
