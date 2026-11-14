@@ -13,6 +13,9 @@ use winreg::{
 };
 
 const REGISTRY_PATH: &str = r"SOFTWARE\g3NetworX\OpsLinX\DeviceManagement";
+// DeviceManagement inherits the credential store's private ACL on some
+// installations. The public state contains only the decision and revision.
+const OUTBOUND_POLICY_PATH: &str = r"SOFTWARE\g3OpsLinXOutboundPolicy";
 const VERIFIER: &str = "verify-opslinx-package.exe";
 const MANAGED_UPDATE: &str = "g3-managed-update";
 const PENDING: &str = "pending.json";
@@ -151,12 +154,18 @@ pub fn store_policy(native_id: &str, value: &Value) -> io::Result<()> {
         return Ok(());
     };
     let policy: Policy = serde_json::from_value(value.clone()).map_err(io::Error::other)?;
-    let key = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey_with_flags(registry_path(variant), KEY_READ | KEY_WRITE | KEY_WOW64_64KEY)?;
-    if let Ok(old) = key.get_value::<String, _>("OutboundPolicy") {
+    let root = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let (key, _) = root.create_subkey_with_flags(
+        format!(r"{OUTBOUND_POLICY_PATH}\{variant}"), KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,
+    )?;
+    let previous = key.get_value::<String, _>("OutboundPolicy").or_else(|_| {
+        root.open_subkey_with_flags(registry_path(variant), KEY_READ | KEY_WOW64_64KEY)?
+            .get_value("OutboundPolicy")
+    });
+    if let Ok(old) = previous {
         if let Some((id, revision, _)) = decode_policy(&old) {
             if id == native_id && revision > policy.policy_revision {
-                return Ok(());
+                return key.set_value("OutboundPolicy", &old);
             }
         }
     }
@@ -176,7 +185,7 @@ pub fn outbound_blocked(installed_id: &str) -> bool {
     let sibling = if variant == "full" { "host" } else { "full" };
     [variant, sibling].into_iter().filter_map(|source| {
         let value = RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey_with_flags(registry_path(source), KEY_READ | KEY_WOW64_64KEY)
+            .open_subkey_with_flags(format!(r"{OUTBOUND_POLICY_PATH}\{source}"), KEY_READ | KEY_WOW64_64KEY)
             .and_then(|key| key.get_value::<String, _>("OutboundPolicy")).ok()?;
         let (native_id, revision, blocked) = decode_policy(&value)?;
         (installed_id == native_id || (source == variant && installed_id.is_empty()))
