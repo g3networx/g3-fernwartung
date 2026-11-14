@@ -161,10 +161,11 @@ jobs:
           sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+          flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20058 --dart-define=G3_ANDROID_CLIENT=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20058 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 111126.3'
+            --build-name=3.6.2 --build-number=20064 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20064 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20064'
           python - <<'PY'
           from zipfile import ZipFile
 

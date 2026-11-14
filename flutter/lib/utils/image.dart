@@ -98,10 +98,10 @@ class ImagePainter extends CustomPainter {
     required this.scale,
   });
 
-  ui.Image? image;
-  double x;
-  double y;
-  double scale;
+  final ui.Image? image;
+  final double x;
+  final double y;
+  final double scale;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -127,7 +127,14 @@ class ImagePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(CustomPainter oldDelegate) {
-    return oldDelegate != this;
+  bool shouldRepaint(covariant ImagePainter oldDelegate) {
+    if (image != oldDelegate.image) return true;
+    if (image == null) return false;
+    final hasPosition = !x.isNaN && !y.isNaN;
+    final hadPosition = !oldDelegate.x.isNaN && !oldDelegate.y.isNaN;
+    if (!hasPosition || !hadPosition) return hasPosition != hadPosition;
+    return scale != oldDelegate.scale ||
+        x.truncateToDouble() != oldDelegate.x.truncateToDouble() ||
+        y.truncateToDouble() != oldDelegate.y.truncateToDouble();
   }
 }
