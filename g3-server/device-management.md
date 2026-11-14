@@ -17,7 +17,7 @@ if management:
 return result
 ```
 
-Der installierte Windows-Dienst speichert die Sperrvorgabe im maschinenweiten Registrierungszweig. Der Vollclient prüft sie vor dem Aufbau jeder neuen ausgehenden Verbindung. Bei vorübergehend fehlender Serverantwort verwendet er die zuletzt bestätigte Vorgabe.
+Der installierte Windows-Dienst speichert Sperrstatus und Revision in einem maschinenweiten Registrierungszweig, den Standardbenutzer lesen können. Die Zugangsschlüssel bleiben im geschützten Bereich. Der Vollclient prüft die Sperre vor jeder neuen ausgehenden Verbindung. Bei vorübergehend fehlender Serverantwort verwendet er die zuletzt bestätigte Vorgabe. Die Sperre setzt einen Client voraus, der diese Prüfung unterstützt.
 
 ## Auftragsausführung
 
@@ -25,6 +25,6 @@ Die Oberfläche erfasst und protokolliert Update- und Deinstallationsaufträge. 
 
 Der Update-Button im Vollclient und die manuelle Installation über den signierten Installer bleiben auch bei aktiver Sperre für ausgehende Fernsteuerung verfügbar. Lokale und zentrale Aufträge verwenden dieselbe Installations- und Sitzungssperre.
 
-Das Portal stellt Updateaufträge der verifizierten Installation zu, sobald deren Windows-Dienst Bereitschaft meldet und keine aktuelle Sitzung erfasst ist. Der Dienst legt den Auftrag im Installationsverzeichnis ab und startet den Updatehelfer. Dieser prüft Launcher und MSI gegen die integrierte OpsLinX-CA und ruft den bestehenden Installer auf. Dessen Sitzungssperre schützt auch laufende Verbindungen, die das Portal noch nicht erfasst hat.
+Das Portal stellt Aufträge der verifizierten Installation zu, sobald deren Windows-Dienst Bereitschaft meldet und keine aktuelle Sitzung erfasst ist. Die Deinstallation muss für die Portalinstanz aktiviert sein, setzt einen kompatiblen Dienst voraus und erfordert eine ausdrückliche Bestätigung im Portal. Der Dienst startet den Installationshelfer, der den Launcher des installierten Builds gegen die integrierte OpsLinX-CA prüft. Ein Update prüft zusätzlich die MSI-Datei. Die lokale Sitzungssperre schützt auch laufende Verbindungen, die das Portal noch nicht erfasst hat.
 
-Bei Code 1618 bleibt der Auftrag vorgemerkt. Der Updatehelfer speichert das Installationsergebnis vor der Rückmeldung. Bei einem Verbindungsfehler kann der Windows-Dienst die Rückmeldung beim nächsten Durchlauf erneut anstoßen. Der Updatehelfer übernimmt ausschließlich Updateaufträge.
+Bei Code 1618 bleibt der Auftrag vorgemerkt. Der Updatehelfer speichert das Installationsergebnis vor der Rückmeldung. Bei einem Verbindungsfehler kann der Windows-Dienst die Rückmeldung beim nächsten Durchlauf erneut anstoßen. Nach erfolgreicher Deinstallation übernimmt der Helfer die Rückmeldung, da der Dienst bereits entfernt ist.
