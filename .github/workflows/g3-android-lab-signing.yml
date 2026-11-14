@@ -60,7 +60,7 @@ jobs:
           echo "$APK_SHA256  $src" | sha256sum -c
           badging=$("${sdk%/*}/aapt" dump badging "$src")
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
-          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22058' versionName='3.6.2'" <<< "$badging" \
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22064' versionName='3.6.2'" <<< "$badging" \
             || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
           grep -Eq "^application(-label:|: label=)'g3 OpsLinX'( |$)" <<< "$badging" \
             || { echo 'Unexpected APK display name.'; exit 1; }
@@ -85,7 +85,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.3-g3.62.20064', 'version_code': 22058, 'file': apk.name,
+          item = {'version': '1.5.3-g3.62.20064', 'version_code': 22064, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
