@@ -51,6 +51,19 @@ jobs:
           dir=flutter/android/app/src/main/jniLibs/arm64-v8a
           mkdir -p "$dir"
           unzip -j "$file" lib/arm64-v8a/librustdesk.so lib/arm64-v8a/libc++_shared.so -d "$dir"
+          crate="$RUNNER_TEMP/rustls-platform-verifier-android-0.1.1.crate"
+          curl -fsSL --retry 3 https://static.crates.io/crates/rustls-platform-verifier-android/rustls-platform-verifier-android-0.1.1.crate -o "$crate"
+          echo "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f  $crate" | sha256sum -c
+          tar -xf "$crate" -C "$RUNNER_TEMP"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('flutter/android/app/build.gradle')
+          text = path.read_text()
+          start = text.index('    def dependencyText =')
+          end = text.index('    if (!mavenDir.exists())', start)
+          locator = '    def mavenDir = new File(System.getenv("RUNNER_TEMP"), "rustls-platform-verifier-android-0.1.1/maven")\n'
+          path.write_text(text[:start] + locator + text[end:])
+          PY
       - name: Build test APK
         working-directory: flutter
         env:
