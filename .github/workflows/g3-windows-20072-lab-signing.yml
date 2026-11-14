@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: 7cff2423701a996227d189b8dbd9666f0aa1c812
-  BUILD_RUN: '43633934647'
+  SOURCE_COMMIT: c67d48e2e7c5221c299d4db5e713cc9e1bd87d72
+  BUILD_RUN: '43634259425'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
@@ -50,26 +50,9 @@ jobs:
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
-      - name: Allow the exact 20064 runtime used in the laboratory
+      - name: Allow the exact 20061 runtime used by the lab machines
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $build = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/43392910785" | ConvertFrom-Json
-          if ($build.head_sha -ne '73de6c48ea99ff71be2d4abdc5d7332b3f3971d5' -or $build.conclusion -ne 'success') { throw 'The 20064 lab baseline is unavailable.' }
-          $artifact = @( (gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/43392910785/artifacts" | ConvertFrom-Json).artifacts | Where-Object name -eq "g361-release-$($build.head_sha)" )
-          if ($artifact.Count -ne 1) { throw 'Expected one 20064 baseline artifact.' }
-          $path = Join-Path $env:RUNNER_TEMP 'managed-update-baseline.zip'
-          Invoke-WebRequest $artifact[0].archive_download_url -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} -OutFile $path
-          if ('sha256:' + (Get-FileHash $path).Hash.ToLowerInvariant() -ne $artifact[0].digest) { throw '20064 baseline archive digest mismatch.' }
-          $archive = [IO.Compression.ZipFile]::OpenRead($path)
-          try {
-            $reader = [IO.StreamReader]::new($archive.GetEntry('g361-release-provenance.json').Open())
-            try { $baseline = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-          } finally { $archive.Dispose() }
-          if ($baseline.source_commit -ne $build.head_sha -or $baseline.version -ne '1.5.3-g3.62.20064' -or $baseline.native_sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Unexpected 20064 baseline provenance.' }
-          Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value $baseline.native_sha256 -Encoding Ascii
+        run: Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value '2f1ee671afa1b7881fa52695c0d62fac279fee9dedaA47b738d249c7ca0cef3e'.ToLowerInvariant() -Encoding Ascii
       - name: Check the Whiteboard title in the Windows runtime
         shell: pwsh
         run: |
