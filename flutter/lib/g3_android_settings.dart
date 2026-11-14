@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -11,16 +10,21 @@ import 'common/widgets/g3_relay_setting.dart';
 import 'consts.dart';
 import 'g3_android_update_transport.dart';
 import 'g3_update_check.dart';
-import 'g3_update_metadata.dart';
 import 'models/platform_model.dart';
 
-Future<void> showG3AndroidSettings(BuildContext context) => showDialog<void>(
+Future<void> showG3AndroidSettings(
+  BuildContext context, {
+  G3AndroidUpdate? update,
+}) =>
+    showDialog<void>(
       context: context,
-      builder: (_) => const _G3AndroidSettings(),
+      builder: (_) => _G3AndroidSettings(update: update),
     );
 
 class _G3AndroidSettings extends StatefulWidget {
-  const _G3AndroidSettings();
+  const _G3AndroidSettings({this.update});
+
+  final G3AndroidUpdate? update;
 
   @override
   State<_G3AndroidSettings> createState() => _G3AndroidSettingsState();
@@ -31,8 +35,10 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
   var _theme = MyTheme.getThemeModePreference();
   var _record = mainGetLocalBoolOptionSync(kOptionAllowAutoRecordOutgoing);
   bool _checking = false;
-  String? _status;
-  ({String version, String digest, int size})? _update;
+  late String? _status = widget.update == null
+      ? null
+      : '${g3VersionLabel(widget.update!.version)} ist verfügbar.';
+  late G3AndroidUpdate? _update = widget.update;
 
   Future<void> _check() async {
     setState(() {
@@ -41,33 +47,10 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       _status = 'Suche nach Updates …';
     });
     try {
-      final update = await g3AndroidUpdateRequest('/client/android/update.json',
-          (response) async {
-        final bytes = <int>[];
-        await for (final chunk
-            in response.stream.timeout(const Duration(seconds: 8))) {
-          if (bytes.length + chunk.length > 16384) throw const FormatException();
-          bytes.addAll(chunk);
-        }
-        final data = jsonDecode(utf8.decode(bytes));
-        if (data is! Map<String, dynamic>) throw const FormatException();
-        final version = data['version'];
-        final digest = data['sha256'];
-        final size = data['size'];
-        if (version is! String ||
-            !g3VersionIsValid(version) ||
-            digest is! String ||
-            !RegExp(r'^[a-f0-9]{64}$').hasMatch(digest) ||
-            size is! int ||
-            size <= 0 ||
-            size > g3MaximumUpdateArtifactSize) {
-          throw const FormatException();
-        }
-        return (version: version, digest: digest, size: size);
-      });
+      final update = await g3AvailableAndroidUpdate();
       if (!mounted) return;
       setState(() {
-        if (g3VersionNewer(update.version, g3ClientVersion)) {
+        if (update != null) {
           _update = update;
           _status = '${g3VersionLabel(update.version)} ist verfügbar.';
         } else {

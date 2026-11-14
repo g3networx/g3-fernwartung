@@ -4,6 +4,24 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('returns validated metadata only when the APK is newer', () async {
+    const version = '1.5.3-g3.62.20074';
+    final digest = List.filled(64, 'a').join();
+    http.Client createClient() => MockClient((request) async {
+          expect(request.url.path, '/client/android/update.json');
+          return http.Response(
+              '{"version":"$version","sha256":"$digest","size":123}', 200);
+        });
+
+    final update = await g3AvailableAndroidUpdate(
+        current: '1.5.3-g3.62.20064', createClient: createClient);
+    expect(update, (version: version, digest: digest, size: 123));
+    expect(
+        await g3AvailableAndroidUpdate(
+            current: version, createClient: createClient),
+        isNull);
+  });
+
   test('tries the next cluster node after a missing or invalid response',
       () async {
     final attempted = <String>[];

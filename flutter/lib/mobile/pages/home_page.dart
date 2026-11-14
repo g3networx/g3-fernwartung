@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/mobile/pages/server_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
@@ -9,6 +11,7 @@ import '../../consts.dart';
 import '../../g3_addressbook.dart';
 import '../../g3_addressbook_credentials.dart';
 import '../../g3_android_settings.dart';
+import '../../g3_android_update_transport.dart';
 import '../../g3_handoff_uri.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
@@ -64,12 +67,15 @@ class HomePage extends StatefulWidget {
   HomePageState createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   var _selectedIndex = 0;
   int get selectedIndex => _selectedIndex;
   final List<PageShape> _pages = [];
   bool get _g3AndroidClient => isAndroid && kG3AndroidClient;
   int _chatPageTabIndex = -1;
+  G3AndroidUpdate? _androidUpdate;
+  final _timeSinceUpdateCheck = Stopwatch();
+  bool _checkingAndroidUpdate = false;
   bool get isChatPageCurrentTab => isAndroid
       ? _selectedIndex == _chatPageTabIndex
       : false; // change this when ios have chat page
@@ -84,6 +90,47 @@ class HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     initPages();
+    if (_g3AndroidClient) {
+      WidgetsBinding.instance.addObserver(this);
+      unawaited(_checkAndroidUpdate());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_checkAndroidUpdate());
+  }
+
+  @override
+  void dispose() {
+    if (_g3AndroidClient) WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkAndroidUpdate() async {
+    if (_checkingAndroidUpdate ||
+        (_timeSinceUpdateCheck.isRunning &&
+            _timeSinceUpdateCheck.elapsed < const Duration(minutes: 1))) {
+      return;
+    }
+    _checkingAndroidUpdate = true;
+    _timeSinceUpdateCheck
+      ..reset()
+      ..start();
+    try {
+      final update = await g3AvailableAndroidUpdate();
+      if (mounted && update != _androidUpdate) {
+        setState(() => _androidUpdate = update);
+      }
+    } catch (_) {
+      // Keep a previously found update when the feed is temporarily offline.
+    } finally {
+      _checkingAndroidUpdate = false;
+    }
+  }
+
+  void _showAndroidSettings() {
+    unawaited(showG3AndroidSettings(context, update: _androidUpdate));
   }
 
   void initPages() {
@@ -123,13 +170,23 @@ class HomePageState extends State<HomePage> {
           appBar: AppBar(
             centerTitle: true,
             title: _g3AndroidClient ? const Text('g3 OpsLinX') : appTitle(),
+            bottom: _androidUpdate == null
+                ? null
+                : PreferredSize(
+                    preferredSize: const Size.fromHeight(48),
+                    child: TextButton.icon(
+                      onPressed: _showAndroidSettings,
+                      icon: const Icon(Icons.system_update),
+                      label: const Text('Update verfügbar'),
+                    ),
+                  ),
             actions: [
               ..._pages.elementAt(_selectedIndex).appBarActions,
               if (_g3AndroidClient)
                 IconButton(
                   tooltip: 'Einstellungen',
                   icon: const Icon(Icons.settings_outlined),
-                  onPressed: () => showG3AndroidSettings(context),
+                  onPressed: _showAndroidSettings,
                 ),
             ],
           ),
