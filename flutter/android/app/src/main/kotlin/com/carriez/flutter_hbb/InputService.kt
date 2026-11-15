@@ -70,6 +70,9 @@ const val TOUCH_PAN_END = 6
 
 const val WHEEL_STEP = 120
 const val WHEEL_DURATION = 50L
+// Android 10 and earlier sample accessibility gestures every 100 ms.
+// Include two intermediate moves so scrolling can continue after touch slop.
+private const val LEGACY_WHEEL_DURATION = 220L
 const val LONG_TAP_DELAY = 200L
 
 class InputService : AccessibilityService() {
@@ -254,8 +257,13 @@ class InputService : AccessibilityService() {
             moveTo(screenX, swipe.startY.toFloat())
             lineTo(screenX, swipe.endY.toFloat())
         }
+        val duration = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            LEGACY_WHEEL_DURATION
+        } else {
+            WHEEL_DURATION
+        }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, WHEEL_DURATION))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
         wheelHandler.post {
             if (!canDispatchWheel()) return@post
