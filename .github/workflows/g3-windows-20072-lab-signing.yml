@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 20080 for the WebGUI lab
+name: Sign OpsLinX Windows 20080 for production
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -50,9 +50,13 @@ jobs:
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
-      - name: Allow the exact 20073 runtime used by the lab machines
+      - name: Recognize the reviewed 20064 production and 20073 lab runtimes
         shell: pwsh
-        run: Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value 'a5b0645a2993ae3ddcf5e78ff7680e1974079de0e44d82aa417601d576c03f5b' -Encoding Ascii
+        run: |
+          Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value @(
+            'ae54fcc0e1c51be36a6a72f621d2a71b1ee95c5693a34e174f071fc3a16269ac',
+            'a5b0645a2993ae3ddcf5e78ff7680e1974079de0e44d82aa417601d576c03f5b'
+          ) -Encoding Ascii
       - name: Check the Whiteboard title in the Windows runtime
         shell: pwsh
         run: |
