@@ -2016,6 +2016,13 @@ class InputModel {
       } else if (dy < 0) {
         dy = accel;
       }
+      if (peerPlatform == kPeerPlatformAndroid && dy != 0) {
+        // Android turns the wheel delta into a touch gesture at the pointer.
+        final position = handleMouse(
+            _getMouseEvent(e, _kMouseEventMove),
+            _pointerPositionForRemoteCanvas(e));
+        if (position == null) return;
+      }
       bind.sessionSendMouse(
           sessionId: sessionId,
           msg: '{"type": "wheel", "x": "$dx", "y": "$dy"}');

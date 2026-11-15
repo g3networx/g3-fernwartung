@@ -53,6 +53,8 @@ const val WHEEL_UP = 963
 // src/common.rs MOUSE_TYPE_WHEEL: the controller sends a wheel tick as a
 // MouseEvent with these type bits and the scroll delta in y (y < 0 = down).
 const val MOUSE_TYPE_WHEEL = 3
+private const val MOUSE_TYPE_MASK = 7
+private const val MAX_QUEUED_WHEEL_GESTURES = 8
 
 // Wheel-tick travel for MOUSE_TYPE_WHEEL events. Three quarters of the legacy
 // WHEEL_STEP; tuned on real devices during review (the full 120px felt too
@@ -101,6 +103,7 @@ class InputService : AccessibilityService() {
     private val longPressDuration = ViewConfiguration.getTapTimeout().toLong() + ViewConfiguration.getLongPressTimeout().toLong()
 
     private val wheelActionsQueue = LinkedList<GestureDescription>()
+    private val wheelHandler = Handler(Looper.getMainLooper())
     private var isWheelActionsPolling = false
     private var isWaitingLongPress = false
 
@@ -205,68 +208,14 @@ class InputService : AccessibilityService() {
         // values that current controllers never send. Gated to API 24+ like
         // the rest of the gesture path - below that, legacy devices take the
         // Shizuku backend or a no-op, not this class.
-        if (mask == MOUSE_TYPE_WHEEL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            // A horizontal tick (the controller sends y = 0 when the
-            // horizontal delta dominates) or a delta truncated to zero is not
-            // a vertical swipe.
-            if (_y == 0) {
-                return
-            }
-            if (mouseY < MOUSE_WHEEL_STEP) {
-                return
-            }
-            val path = Path()
-            path.moveTo(mouseX.toFloat(), mouseY.toFloat())
-            val deltaY = if (_y < 0) -MOUSE_WHEEL_STEP else MOUSE_WHEEL_STEP
-            path.lineTo(mouseX.toFloat(), (mouseY + deltaY).toFloat())
-            val stroke = GestureDescription.StrokeDescription(
-                path,
-                0,
-                WHEEL_DURATION
-            )
-            val builder = GestureDescription.Builder()
-            builder.addStroke(stroke)
-            wheelActionsQueue.offer(builder.build())
-            consumeWheelActions()
-            return
+        val wheelTravel = when {
+            mask == WHEEL_DOWN -> -WHEEL_STEP
+            mask == WHEEL_UP -> WHEEL_STEP
+            (mask and MOUSE_TYPE_MASK) == MOUSE_TYPE_WHEEL && _y < 0 -> -MOUSE_WHEEL_STEP
+            (mask and MOUSE_TYPE_MASK) == MOUSE_TYPE_WHEEL && _y > 0 -> MOUSE_WHEEL_STEP
+            else -> return
         }
-
-        if (mask == WHEEL_DOWN) {
-            if (mouseY < WHEEL_STEP) {
-                return
-            }
-            val path = Path()
-            path.moveTo(mouseX.toFloat(), mouseY.toFloat())
-            path.lineTo(mouseX.toFloat(), (mouseY - WHEEL_STEP).toFloat())
-            val stroke = GestureDescription.StrokeDescription(
-                path,
-                0,
-                WHEEL_DURATION
-            )
-            val builder = GestureDescription.Builder()
-            builder.addStroke(stroke)
-            wheelActionsQueue.offer(builder.build())
-            consumeWheelActions()
-
-        }
-
-        if (mask == WHEEL_UP) {
-            if (mouseY < WHEEL_STEP) {
-                return
-            }
-            val path = Path()
-            path.moveTo(mouseX.toFloat(), mouseY.toFloat())
-            path.lineTo(mouseX.toFloat(), (mouseY + WHEEL_STEP).toFloat())
-            val stroke = GestureDescription.StrokeDescription(
-                path,
-                0,
-                WHEEL_DURATION
-            )
-            val builder = GestureDescription.Builder()
-            builder.addStroke(stroke)
-            wheelActionsQueue.offer(builder.build())
-            consumeWheelActions()
-        }
+        queueWheelGesture(mouseX, mouseY, wheelTravel)
     }
 
     @RequiresApi(Build.VERSION_CODES.N)
@@ -294,25 +243,53 @@ class InputService : AccessibilityService() {
     }
 
     @RequiresApi(Build.VERSION_CODES.N)
+    private fun queueWheelGesture(x: Int, y: Int, travel: Int) {
+        val width = SCREEN_INFO.width * SCREEN_INFO.scale
+        val height = SCREEN_INFO.height * SCREEN_INFO.scale
+        if (width <= 0 || height < 2) return
+
+        val swipe = wheelSwipe(y, travel, height)
+        val screenX = x.coerceIn(0, width - 1).toFloat()
+        val path = Path().apply {
+            moveTo(screenX, swipe.startY.toFloat())
+            lineTo(screenX, swipe.endY.toFloat())
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, WHEEL_DURATION))
+            .build()
+        wheelHandler.post {
+            if (!canDispatchWheel()) return@post
+            if (wheelActionsQueue.size == MAX_QUEUED_WHEEL_GESTURES) {
+                wheelActionsQueue.removeFirst()
+            }
+            wheelActionsQueue.addLast(gesture)
+            consumeWheelActions()
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
     private fun consumeWheelActions() {
-        if (isWheelActionsPolling) {
-            return
-        } else {
-            isWheelActionsPolling = true
-        }
-        wheelActionsQueue.poll()?.let {
-            dispatchGesture(it, null, null)
-            timer.purge()
-            timer.schedule(object : TimerTask() {
-                override fun run() {
-                    isWheelActionsPolling = false
-                    consumeWheelActions()
-                }
-            }, WHEEL_DURATION + 10)
-        } ?: let {
-            isWheelActionsPolling = false
+        if (isWheelActionsPolling) return
+        if (!canDispatchWheel()) {
+            wheelActionsQueue.clear()
             return
         }
+        val gesture = wheelActionsQueue.poll() ?: return
+        isWheelActionsPolling = true
+        val result = object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription) = finishWheelGesture()
+            override fun onCancelled(gestureDescription: GestureDescription) = finishWheelGesture()
+        }
+        if (!dispatchGesture(gesture, result, wheelHandler)) finishWheelGesture()
+    }
+
+    private fun canDispatchWheel() =
+        ctx === this && (MainService.isStart || !packageName.startsWith("net.g3nx.opslinx."))
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    private fun finishWheelGesture() {
+        isWheelActionsPolling = false
+        wheelHandler.post { consumeWheelActions() }
     }
 
     @RequiresApi(Build.VERSION_CODES.N)
