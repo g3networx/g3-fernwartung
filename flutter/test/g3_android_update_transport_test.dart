@@ -1,9 +1,15 @@
 import 'package:flutter_hbb/g3_android_update_transport.dart';
+import 'package:flutter_hbb/g3_update_check.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('Android shows the actual build number for an update', () {
+    expect(g3VersionLabel('1.5.3-g3.62.20083', useBuildNumber: true),
+        'g3.6.2 Build 20083');
+  });
+
   test('returns validated metadata only when the APK is newer', () async {
     const version = '1.5.3-g3.62.20074';
     final digest = List.filled(64, 'a').join();
