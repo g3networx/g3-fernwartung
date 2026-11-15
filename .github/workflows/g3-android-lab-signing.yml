@@ -1,4 +1,4 @@
-name: Sign OpsLinX Android 1.5.3 build 20082
+name: Sign OpsLinX Android 1.5.3 build 20083
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -6,8 +6,8 @@ on:
 permissions:
   actions: read
 env:
-  BUILD_RUN: '43717623979'
-  APK_SHA256: 59457e34166c53ed7c7eb7bc9a548747a3b3451e32a981eeb77889c047a46caf
+  BUILD_RUN: '43722736165'
+  APK_SHA256: b7f3b1fa5b494706185c66830e3e16eba58d88eacf98a2016cf636b612350e55
 jobs:
   stage-apk:
     if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
@@ -19,17 +19,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" | jq -e '.conclusion == "success" and .head_branch == "g3-rustdesk-1.5.3-android-lab" and .head_sha == "5708ff52a93c55c59db2fa8501418a7a106bf781"' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" | jq -e '.conclusion == "success" and .head_branch == "g3-rustdesk-1.5.3-android-lab" and .head_sha == "cfc3be3c88792969d47c8c617c78d93ac51dc148"' >/dev/null
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: '14163703800'
+          artifact-ids: '14165654340'
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
       - name: Verify the APK digest
         run: echo "$APK_SHA256  app-arm64-v8a-release.apk" | sha256sum -c
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: opslinx-android-20082-signing-input
+          name: opslinx-android-20083-signing-input
           path: app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 1
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: opslinx-android-20082-signing-input
+          name: opslinx-android-20083-signing-input
           path: unsigned
       - name: Check APK identity, sign and verify
         shell: bash
@@ -60,7 +60,7 @@ jobs:
           echo "$APK_SHA256  $src" | sha256sum -c
           badging=$("${sdk%/*}/aapt" dump badging "$src")
           # Flutter 3.24 adds 2000 to versionCode for the ARM64 split.
-          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22082' versionName='3.6.2'" <<< "$badging" \
+          grep -q "^package: name='net.g3nx.opslinx.lab' versionCode='22083' versionName='3.6.2'" <<< "$badging" \
             || { echo 'Unexpected APK identity.'; grep '^package:' <<< "$badging"; exit 1; }
           grep -Eq "^application(-label:|: label=)'g3 OpsLinX'( |$)" <<< "$badging" \
             || { echo 'Unexpected APK display name.'; exit 1; }
@@ -73,7 +73,7 @@ jobs:
           PY
           unset OPSLINX_ANDROID_SIGNING
           mkdir signed
-          apk=signed/g3-OpsLinX-Android-1.5.3-g3.62.20082-arm64.apk
+          apk=signed/g3-OpsLinX-Android-1.5.3-g3.62.20083-arm64.apk
           "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android \
             --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "$apk" "$src"
           "$sdk" verify --verbose --print-certs "$apk" | tee "$work/verification"
@@ -85,7 +85,7 @@ jobs:
           python - "$apk" "$expected" <<'PY'
           import hashlib, json, pathlib, sys
           apk = pathlib.Path(sys.argv[1])
-          item = {'version': '1.5.3-g3.62.20082', 'version_code': 22082, 'file': apk.name,
+          item = {'version': '1.5.3-g3.62.20083', 'version_code': 22083, 'file': apk.name,
                   'size': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
                   'signer_sha256': sys.argv[2]}
           (apk.parent / 'android-release.json').write_text(json.dumps(item, indent=2) + '\n')
