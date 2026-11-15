@@ -6,6 +6,36 @@ from pathlib import Path
 import shutil
 
 
+def patch_operation_receipt(source, module, app):
+    endpoint = "device_management.operation_result"
+    exemptions = []
+    for guard in module.body:
+        if not isinstance(guard, ast.FunctionDef) or not any(
+            ast.unparse(decorator) == f"{app}.before_request" for decorator in guard.decorator_list
+        ):
+            continue
+        for comparison in ast.walk(guard):
+            if not isinstance(comparison, ast.Compare) or ast.unparse(comparison.left) != "request.endpoint":
+                continue
+            if len(comparison.ops) != 1 or not isinstance(comparison.ops[0], ast.NotIn):
+                continue
+            group, = comparison.comparators
+            if isinstance(group, ast.Tuple) and any(
+                isinstance(item, ast.Constant) and item.value == "client_bootstrap" for item in group.elts
+            ):
+                exemptions.append(group)
+    if len(exemptions) != 1:
+        raise ValueError("Expected one portal CSRF exemption list for native client requests")
+    group, = exemptions
+    if any(isinstance(item, ast.Constant) and item.value == endpoint for item in group.elts):
+        return source
+    original = ast.get_source_segment(source, group)
+    if not original.startswith("(") or source.count(original) != 1:
+        raise ValueError("Expected one occurrence of the portal CSRF exemption list")
+    # Only this API authenticates with a per-job receipt instead of a browser form.
+    return source.replace(original, f"({endpoint!r}, {original[1:]}", 1)
+
+
 def patch_application(source, enable=False):
     module = ast.parse(source)
     installers = {"bootstrap_client.install"}
@@ -22,6 +52,7 @@ def patch_application(source, enable=False):
         raise ValueError("Expected one top-level bootstrap_client.install call")
     statement = candidates[0]
     app, portal = (ast.unparse(arg) for arg in statement.value.args)
+    source = patch_operation_receipt(source, module, app)
     activation = f"{app}.config['DEVICE_MANAGEMENT_ENABLED'] = True\n"
     install = f"device_management.install({app}, {portal})\n"
     if install in source:
