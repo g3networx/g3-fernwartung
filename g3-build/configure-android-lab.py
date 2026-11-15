@@ -11,10 +11,14 @@ def replace_once(path, old, new):
         raise RuntimeError(f'Unexpected source layout: {path}')
     path.write_text(text.replace(old, new), encoding='utf-8')
 
-# The common OpsLinX patch configures the rendezvous server and its public key.
+# Keep the configured OpsLinX servers and require local approval for every
+# incoming Android session, including on phones updated from an older build.
 config = root / 'libs/hbb_common/src/config.rs'
-replace_once(config, 'if is_g3_host(){settings.insert("conn-type"',
-             'if cfg!(target_os = "android"){settings.insert("conn-type".to_owned(),"outgoing".to_owned());} if is_g3_host(){settings.insert("conn-type"')
+replace_once(
+    config,
+    'if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned());',
+    'if is_g3_adhoc() || cfg!(target_os = "android"){ settings.insert("approve-mode".to_owned(),"click".to_owned());',
+)
 replace_once(android / 'build.gradle', 'applicationId "com.carriez.flutter_hbb"',
              'applicationId "net.g3nx.opslinx.lab"')
 
@@ -44,8 +48,10 @@ paths = android / 'src/main/res/xml/opslinx_update_paths.xml'
 paths.parent.mkdir(parents=True, exist_ok=True)
 paths.write_text('<paths><cache-path name="update" path="opslinx-updates/" /></paths>\n', encoding='utf-8')
 for node in list(app):
-    if node.get(ns + 'name') in ('.BootReceiver', '.InputService'):
+    if node.get(ns + 'name') == '.BootReceiver':
         app.remove(node)
+    if node.get(ns + 'name') == '.InputService':
+        node.set(ns + 'label', 'g3 OpsLinX Steuerung')
     if node.get(ns + 'name') == '.MainActivity':
         for intent in list(node.findall('intent-filter')):
             if any(data.get(ns + 'scheme') == 'rustdesk' for data in intent.findall('data')):

@@ -163,9 +163,9 @@ jobs:
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20074 --dart-define=G3_ANDROID_CLIENT=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20074 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20074'
+            --build-name=3.6.2 --build-number=20081 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20081 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20081'
           python - <<'PY'
           from zipfile import ZipFile
 

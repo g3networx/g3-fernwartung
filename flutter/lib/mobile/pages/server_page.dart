@@ -17,19 +17,22 @@ import '../../utils/android_documents.dart';
 import 'home_page.dart';
 
 class ServerPage extends StatefulWidget implements PageShape {
+  final bool assistedSupport;
+
   @override
-  final title = translate("Share screen");
+  String get title =>
+      assistedSupport ? 'Hilfe erhalten' : translate("Share screen");
 
   @override
   final icon = const Icon(Icons.mobile_screen_share);
 
   @override
-  final appBarActions = (!bind.isDisableSettings() &&
-          bind.mainGetBuildinOption(key: kOptionHideSecuritySetting) != 'Y')
+  List<Widget> get appBarActions => !assistedSupport && !bind.isDisableSettings() &&
+          bind.mainGetBuildinOption(key: kOptionHideSecuritySetting) != 'Y'
       ? [_DropDownAction()]
       : [];
 
-  ServerPage({Key? key}) : super(key: key);
+  const ServerPage({Key? key, this.assistedSupport = false}) : super(key: key);
 
   @override
   State<StatefulWidget> createState() => _ServerPageState();
@@ -210,17 +213,85 @@ class _ServerPageState extends State<ServerPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       children: [
-                        buildPresetPasswordWarningMobile(),
-                        gFFI.serverModel.isStart
-                            ? ServerInfo()
-                            : ServiceNotRunningNotification(),
-                        const ConnectionManager(),
-                        const PermissionChecker(),
+                        if (widget.assistedSupport) ...[
+                          _AssistedSupportPanel(model: serverModel),
+                          if (serverModel.mediaOk) const ConnectionManager(),
+                        ] else ...[
+                          buildPresetPasswordWarningMobile(),
+                          serverModel.isStart
+                              ? ServerInfo()
+                              : ServiceNotRunningNotification(),
+                          const ConnectionManager(),
+                          const PermissionChecker(),
+                        ],
                         SizedBox.fromSize(size: const Size(0, 15.0)),
                       ],
                     ),
                   ),
                 )));
+  }
+}
+
+class _AssistedSupportPanel extends StatelessWidget {
+  const _AssistedSupportPanel({required this.model});
+
+  final ServerModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final sharing = model.mediaOk;
+    final ready = sharing && model.connectStatus > 0;
+    return PaddingCard(
+      title: ready ? 'Fernwartung bereit' : 'Hilfe für dieses Handy',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(ready
+              ? 'Gib die Geräte-ID an den Support weiter und bestätige die eingehende Anfrage auf diesem Handy.'
+              : sharing
+                  ? 'Verbindung zum OpsLinX-Server wird aufgebaut.'
+                  : 'Teile deinen Bildschirm mit dem Support. Du entscheidest bei jeder eingehenden Anfrage, ob du sie annimmst.'),
+          if (ready) ...[
+            const SizedBox(height: 12),
+            const Text('Geräte-ID'),
+            Row(children: [
+              Expanded(child: SelectableText(model.serverId.text)),
+              IconButton(
+                tooltip: 'Geräte-ID kopieren',
+                icon: const Icon(Icons.copy_outlined),
+                onPressed: () => Clipboard.setData(
+                    ClipboardData(text: model.serverId.text.trim())),
+              ),
+            ]),
+          ],
+          PermissionRow(
+            'Handy-Steuerung erlauben',
+            model.inputOk,
+            model.toggleInput,
+            enabled: androidVersion >= 24 &&
+                !model.clients.any((client) => !client.disconnected),
+          ),
+          if (!model.inputOk)
+            const Text(
+                'Ohne Freigabe in den Android-Bedienungshilfen kann der Support nur zuschauen.'),
+          const SizedBox(height: 12),
+          if (sharing)
+            OutlinedButton.icon(
+              onPressed: model.stopService,
+              icon: const Icon(Icons.stop),
+              label: const Text('Fernwartung beenden'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: model.requestingAndroidSupport
+                  ? null
+                  : model.requestAndroidSupport,
+              icon: const Icon(Icons.screen_share_outlined),
+              label: const Text('Bildschirm freigeben'),
+            ),
+        ],
+      ),
+    );
   }
 }
 

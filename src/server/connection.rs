@@ -3009,6 +3009,17 @@ impl Connection {
         }
         // After handling CloseReason messages, proceed to process other message types
         if let Some(message::Union::LoginRequest(mut lr)) = msg.union {
+            #[cfg(target_os = "android")]
+            if option_env!("G3_OPSLINX_ANDROID").is_some()
+                && (lr.union.is_some()
+                    || !matches!(
+                        scrap::android::call_main_service_get_by_name("is_ready").as_deref(),
+                        Ok("true")
+                    ))
+            {
+                self.send_login_error("Screen sharing is not ready").await;
+                return false;
+            }
             // Reject before authorization, consent UI, capture and accounting.
             // This also catches Full/Host/Ad-Hoc and separate RDP-user IDs.
             let marker = crate::g3_self_connection::login_machine_marker(&mut lr);

@@ -51,6 +51,7 @@ const val DEFAULT_NOTIFY_TITLE = "RustDesk"
 const val DEFAULT_NOTIFY_TEXT = "Service is running"
 const val DEFAULT_NOTIFY_ID = 1
 const val NOTIFY_ID_OFFSET = 100
+private const val ACT_STOP_OPSLINX_SUPPORT = "net.g3nx.opslinx.STOP_SUPPORT"
 
 const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_VP9
 
@@ -63,9 +64,12 @@ const val VIDEO_KEY_FRAME_RATE = 30
 
 class MainService : Service() {
 
+    private val isOpsLinx by lazy { packageName.startsWith("net.g3nx.opslinx.") }
+
     @Keep
     @RequiresApi(Build.VERSION_CODES.N)
     fun rustPointerInput(kind: Int, mask: Int, x: Int, y: Int) {
+        if (isOpsLinx && !isStart) return
         // turn on screen with LEFT_DOWN when screen off
         if (!powerManager.isInteractive && (kind == 0 || mask == LEFT_DOWN)) {
             if (wakeLock.isHeld) {
@@ -91,6 +95,7 @@ class MainService : Service() {
     @Keep
     @RequiresApi(Build.VERSION_CODES.N)
     fun rustKeyEventInput(input: ByteArray) {
+        if (isOpsLinx && !isStart) return
         InputService.ctx?.onKeyEvent(input)
     }
 
@@ -106,6 +111,9 @@ class MainService : Service() {
             }
             "is_start" -> {
                 isStart.toString()
+            }
+            "is_ready" -> {
+                isReady.toString()
             }
             else -> ""
         }
@@ -190,7 +198,9 @@ class MainService : Service() {
     private val wakeLock: PowerManager.WakeLock by lazy { powerManager.newWakeLock(PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "rustdesk:wakelock")}
 
     companion object {
+        @Volatile
         private var _isReady = false // media permission ready status
+        @Volatile
         private var _isStart = false // screen capture start status
         private var _isAudioStart = false // audio capture start status
         val isReady: Boolean
@@ -271,6 +281,7 @@ class MainService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.d(logTag, "onTaskRemoved, closing outgoing sessions")
         FFI.closeAllSessions()
+        if (isOpsLinx && isReady) destroy()
         super.onTaskRemoved(rootIntent)
     }
 
@@ -346,6 +357,10 @@ class MainService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("whichService", "this service: ${Thread.currentThread()}")
         super.onStartCommand(intent, flags, startId)
+        if (isOpsLinx && intent?.action == ACT_STOP_OPSLINX_SUPPORT) {
+            destroy()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACT_INIT_MEDIA_PROJECTION_AND_SERVICE) {
             if (intent.getBooleanExtra(EXT_INIT_FROM_BOOT, false)) {
                 FFI.startService()
@@ -847,19 +862,26 @@ class MainService : Service() {
         } else {
             PendingIntent.getActivity(this, 0, intent, FLAG_UPDATE_CURRENT)
         }
-        val notification = notificationBuilder
+        val builder = (if (isOpsLinx) NotificationCompat.Builder(this, notificationChannel)
+            else notificationBuilder)
             .setOngoing(true)
             .setSmallIcon(R.mipmap.ic_stat_logo)
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentTitle(DEFAULT_NOTIFY_TITLE)
+            .setContentTitle(if (isOpsLinx) "g3 OpsLinX" else DEFAULT_NOTIFY_TITLE)
             .setContentText(translate(DEFAULT_NOTIFY_TEXT))
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setColor(ContextCompat.getColor(this, R.color.primary))
             .setWhen(System.currentTimeMillis())
-            .build()
+        if (isOpsLinx && mediaProjectionForegroundService) {
+            val stop = Intent(this, MainService::class.java).setAction(ACT_STOP_OPSLINX_SUPPORT)
+            val flags = FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) FLAG_IMMUTABLE else 0)
+            builder.addAction(0, "Fernwartung beenden", PendingIntent.getService(this, 1, stop, flags))
+        }
+        val notification = builder.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(DEFAULT_NOTIFY_ID, notification, foregroundServiceType())
         } else {

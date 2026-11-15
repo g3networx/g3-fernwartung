@@ -145,7 +145,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (isAndroid && !bind.isOutgoingOnly()) {
       _chatPageTabIndex = _pages.length;
-      _pages.addAll([ChatPage(type: ChatPageType.mobileMain), ServerPage()]);
+      _pages.addAll([
+        ChatPage(type: ChatPageType.mobileMain),
+        ServerPage(assistedSupport: _g3AndroidClient),
+      ]);
     }
     if (!_g3AndroidClient || bind.isIncomingOnly()) {
       _pages.add(SettingsPage());

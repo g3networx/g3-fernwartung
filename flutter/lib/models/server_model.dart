@@ -456,6 +456,23 @@ class ServerModel with ChangeNotifier {
   }
 
   /// Start the screen sharing service.
+  Future<void> requestAndroidSupport() async {
+    if (_isStart || _requestingAndroidSupport) return;
+    _requestingAndroidSupport = true;
+    notifyListeners();
+    try {
+      await checkRequestNotificationPermission();
+      await parent.target?.invokeMethod("init_service");
+    } catch (_) {
+      _requestingAndroidSupport = false;
+      notifyListeners();
+      showToast(translate('Failed'));
+    }
+  }
+
+  bool _requestingAndroidSupport = false;
+  bool get requestingAndroidSupport => _requestingAndroidSupport;
+
   Future<void> startService() async {
     _isStart = true;
     notifyListeners();
@@ -471,6 +488,7 @@ class ServerModel with ChangeNotifier {
 
   /// Stop the screen sharing service.
   Future<void> stopService() async {
+    _requestingAndroidSupport = false;
     _isStart = false;
     closeAll();
     await parent.target?.invokeMethod("stop_service");
@@ -492,9 +510,13 @@ class ServerModel with ChangeNotifier {
     debugPrint("changeStatue value $value");
     switch (name) {
       case "media":
+        final wasReady = _mediaOk;
         _mediaOk = value;
-        if (value && !_isStart) {
-          startService();
+        if (value) {
+          _requestingAndroidSupport = false;
+          if (!_isStart) unawaited(startService());
+        } else if (isAndroid && kG3AndroidClient && wasReady && _isStart) {
+          unawaited(stopService());
         }
         break;
       case "input":
