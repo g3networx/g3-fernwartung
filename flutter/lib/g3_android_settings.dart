@@ -37,7 +37,7 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
   bool _checking = false;
   late String? _status = widget.update == null
       ? null
-      : '${g3VersionLabel(widget.update!.version)} ist verfügbar.';
+      : '${g3VersionLabel(widget.update!.version, useBuildNumber: true)} ist verfügbar.';
   late G3AndroidUpdate? _update = widget.update;
 
   Future<void> _check() async {
@@ -52,7 +52,8 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       setState(() {
         if (update != null) {
           _update = update;
-          _status = '${g3VersionLabel(update.version)} ist verfügbar.';
+          _status =
+              '${g3VersionLabel(update.version, useBuildNumber: true)} ist verfügbar.';
         } else {
           _status = 'Dieser Client ist aktuell.';
         }
