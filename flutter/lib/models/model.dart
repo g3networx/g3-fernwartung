@@ -1873,6 +1873,7 @@ class FfiModel with ChangeNotifier {
     }
     if (_viewOnly != value) {
       _viewOnly = value;
+      if (!value) parent.target?.inputModel.guideMarker.value = null;
       notifyListeners();
     }
   }
@@ -1880,6 +1881,7 @@ class FfiModel with ChangeNotifier {
   void setShowMyCursor(bool value) {
     if (_showMyCursor != value) {
       _showMyCursor = value;
+      if (!value) parent.target?.inputModel.guideMarker.value = null;
       notifyListeners();
     }
   }

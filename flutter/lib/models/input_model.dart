@@ -497,6 +497,7 @@ class InputModel {
   bool get isViewOnly => parent.target!.ffiModel.viewOnly;
   bool get showMyCursor => parent.target!.ffiModel.showMyCursor;
   bool guideClickOnly = false;
+  final guideMarker = Rxn<Offset>();
   double get devicePixelRatio => parent.target!.canvasModel.devicePixelRatio;
   bool get isViewCamera => parent.target!.connType == ConnType.viewCamera;
   int get trackpadSpeed => _trackpadSpeed;
@@ -2248,6 +2249,11 @@ class InputModel {
     if (evtToPeer != null) {
       bind.sessionSendMouse(
           sessionId: sessionId, msg: json.encode(modify(evtToPeer)));
+      if (isViewOnly &&
+          showMyCursor &&
+          evtToPeer['type'] == kMouseEventTypeDefault) {
+        _showGuideMarker(evtToPeer);
+      }
     }
     return evtToPeer;
   }
@@ -2263,6 +2269,15 @@ class InputModel {
     }
     await bind.sessionSendMouse(
         sessionId: session, msg: json.encode(modify(click)));
+    if (guideClickOnly && model.viewOnly && model.showMyCursor) {
+      _showGuideMarker(movement);
+    }
+  }
+
+  void _showGuideMarker(Map<String, dynamic> movement) {
+    final x = double.tryParse(movement['x'].toString());
+    final y = double.tryParse(movement['y'].toString());
+    if (x != null && y != null) guideMarker.value = Offset(x, y);
   }
 
   Point? handlePointerDevicePos(

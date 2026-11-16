@@ -21,6 +21,7 @@ import '../../models/shortcut_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
+import '../widgets/g3_guide_tools.dart' show G3GuideMarker;
 import '../../g3_system_info.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
@@ -1030,6 +1031,7 @@ class _RemotePageState extends State<RemotePage>
                   zoomCursor: _zoomCursor,
                 )));
     }
+    paints.add(Positioned.fill(child: G3GuideMarker(ffi: _ffi)));
     paints.add(
       Positioned(
         top: 10,

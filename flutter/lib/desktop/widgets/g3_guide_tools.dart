@@ -1,11 +1,94 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 
 import '../../common.dart' show versionCmp;
 import '../../consts.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
+
+Offset guideMarkerInCanvas(Offset marker, Rect remote, CanvasModel canvas) {
+  final scaled = (marker - remote.topLeft) * canvas.scale;
+  if (canvas.scrollStyle == ScrollStyle.scrollauto) {
+    return scaled + Offset(canvas.x, canvas.y);
+  }
+  final width = remote.width * canvas.scale;
+  final height = remote.height * canvas.scale;
+  return scaled +
+      Offset(
+        math.max(0.0, (canvas.size.width - width) / 2) - width * canvas.scrollX,
+        math.max(0.0, (canvas.size.height - height) / 2) -
+            height * canvas.scrollY,
+      );
+}
+
+class G3GuideMarker extends StatelessWidget {
+  const G3GuideMarker({super.key, required this.ffi});
+
+  final FFI ffi;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        final marker = ffi.inputModel.guideMarker.value;
+        if (marker == null) return const SizedBox.shrink();
+        return Consumer<CanvasModel>(builder: (context, canvas, _) {
+          final remote = ffi.ffiModel.rect;
+          if (remote == null || !remote.contains(marker)) {
+            return const SizedBox.shrink();
+          }
+          final position = guideMarkerInCanvas(marker, remote, canvas);
+          return IgnorePointer(
+            child: Stack(
+              children: [
+                Positioned(
+                  left: position.dx,
+                  top: position.dy,
+                  child: Semantics(
+                    label: 'Gesetzter Zeigepfeil',
+                    image: true,
+                    child: const CustomPaint(
+                      size: Size(24, 24),
+                      painter: _GuideArrowPainter(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      });
+}
+
+class _GuideArrowPainter extends CustomPainter {
+  const _GuideArrowPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final arrow = Path()
+      ..moveTo(0, 0)
+      ..lineTo(18, 13)
+      ..lineTo(11, 14)
+      ..lineTo(14, 21)
+      ..lineTo(10, 23)
+      ..lineTo(7, 16)
+      ..lineTo(2, 21)
+      ..close();
+    canvas.drawPath(arrow, Paint()..color = const Color(0xffe53935));
+    canvas.drawPath(
+      arrow,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GuideArrowPainter oldDelegate) => false;
+}
 
 class G3GuideTools extends StatefulWidget {
   final String id;
