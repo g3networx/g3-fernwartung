@@ -50,12 +50,13 @@ jobs:
           run-id: ${{ env.BUILD_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/opslinx-build
-      - name: Recognize the reviewed 20064 production and 20073 lab runtimes
+      - name: Recognize the reviewed production and lab runtimes
         shell: pwsh
         run: |
           Add-Content -LiteralPath 'g3-build/update-gate-native-hashes.txt' -Value @(
             'ae54fcc0e1c51be36a6a72f621d2a71b1ee95c5693a34e174f071fc3a16269ac',
-            'a5b0645a2993ae3ddcf5e78ff7680e1974079de0e44d82aa417601d576c03f5b'
+            'a5b0645a2993ae3ddcf5e78ff7680e1974079de0e44d82aa417601d576c03f5b',
+            '907b73a756802be69d1f66e5e0999f25d855458d474d911e362d6907cbc5d469'
           ) -Encoding Ascii
       - name: Check the Whiteboard title in the Windows runtime
         shell: pwsh
