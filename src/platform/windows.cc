@@ -355,6 +355,18 @@ extern "C"
         return strcmp(currentname, inputname) == 0 ? TRUE : FALSE;
     }
 
+    BOOL is_default_input_desktop()
+    {
+        HDESK desktop = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+        if (!desktop)
+            return FALSE;
+        wchar_t name[64];
+        DWORD size;
+        const BOOL ok = GetUserObjectInformationW(desktop, UOI_NAME, name, sizeof(name), &size);
+        CloseDesktop(desktop);
+        return ok && lstrcmpiW(name, L"Default") == 0;
+    }
+
     // Switch the current thread into the input desktop
     bool
     selectInputDesktop()

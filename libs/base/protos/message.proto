@@ -201,6 +201,7 @@ message MouseEvent {
   sint32 x = 2;
   sint32 y = 3;
   repeated ControlKey modifiers = 4;
+  string guide_text = 5;
 }
 
 enum KeyboardMode{

@@ -33,6 +33,8 @@ class _Session extends Fake implements FFI {
 class _Input extends Fake implements InputModel {
   @override
   final guideMarker = Rxn<Offset>();
+  @override
+  final guideMarkerText = ''.obs;
 }
 
 class _Peer extends Fake implements FfiModel {
@@ -65,12 +67,17 @@ void main() {
       expect(arrow, findsNothing);
 
       ffi.inputModel.guideMarker.value = const Offset(-700, 200);
+      ffi.inputModel.guideMarkerText.value = 'Hier die Nummer eingeben';
       await tester.pump();
       expect(tester.getTopLeft(arrow), const Offset(160, 80));
+      final hint = find.text('Hier die Nummer eingeben');
+      expect(hint, findsOneWidget);
+      expect(tester.getTopLeft(hint).dx, greaterThan(160));
 
       ffi.inputModel.guideMarker.value = null;
       await tester.pump();
       expect(arrow, findsNothing);
+      expect(hint, findsNothing);
     } finally {
       semantics.dispose();
     }

@@ -1477,6 +1477,11 @@ fn handle_mouse_show_cursor_(
     argb: u32,
     guiding: bool,
 ) {
+    let text = if guiding && !evt.guide_text.is_empty() {
+        evt.guide_text.chars().filter(|c| !c.is_control()).take(80).collect()
+    } else {
+        username
+    };
     let buttons = evt.mask >> 3;
     let evt_type = evt.mask & MOUSE_TYPE_MASK;
     match evt_type {
@@ -1488,7 +1493,7 @@ fn handle_mouse_show_cursor_(
                     y: evt.y as _,
                     argb,
                     btns: 0,
-                    text: username,
+                    text,
                 }),
             );
         }
@@ -1516,7 +1521,7 @@ fn handle_mouse_show_cursor_(
                         } else {
                             buttons
                         },
-                        text: username,
+                        text,
                     }),
                 );
             }

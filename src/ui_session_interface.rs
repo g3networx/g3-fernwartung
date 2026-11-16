@@ -1236,6 +1236,18 @@ impl<T: InvokeUiSession> Session<T> {
         xy
     }
 
+    pub fn send_guide_mouse(&self, mask: i32, x: i32, y: i32, text: &str) {
+        let mut message = Message::new();
+        message.set_mouse_event(MouseEvent {
+            mask,
+            x,
+            y,
+            guide_text: text.chars().filter(|c| !c.is_control()).take(80).collect(),
+            ..Default::default()
+        });
+        self.send(Data::Message(message));
+    }
+
     pub fn send_mouse(
         &self,
         mut mask: i32,

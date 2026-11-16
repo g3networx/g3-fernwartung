@@ -580,6 +580,7 @@ extern "C" {
     ) -> BOOL;
     fn selectInputDesktop() -> BOOL;
     fn inputDesktopSelected() -> BOOL;
+    fn is_default_input_desktop() -> BOOL;
     fn is_windows_server() -> BOOL;
     fn is_windows_10_or_greater() -> BOOL;
     fn handleMask(
@@ -1048,6 +1049,10 @@ lazy_static::lazy_static! {
 
 pub fn desktop_changed() -> bool {
     unsafe { inputDesktopSelected() == FALSE }
+}
+
+pub fn default_input_desktop_active() -> bool {
+    unsafe { is_default_input_desktop() == TRUE }
 }
 
 pub fn try_change_desktop() -> bool {

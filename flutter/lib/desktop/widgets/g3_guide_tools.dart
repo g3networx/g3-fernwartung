@@ -33,6 +33,7 @@ class G3GuideMarker extends StatelessWidget {
   Widget build(BuildContext context) => Obx(() {
         final marker = ffi.inputModel.guideMarker.value;
         if (marker == null) return const SizedBox.shrink();
+        final text = ffi.inputModel.guideMarkerText.value;
         return Consumer<CanvasModel>(builder: (context, canvas, _) {
           final remote = ffi.ffiModel.rect;
           if (remote == null || !remote.contains(marker)) {
@@ -40,21 +41,50 @@ class G3GuideMarker extends StatelessWidget {
           }
           final position = guideMarkerInCanvas(marker, remote, canvas);
           return IgnorePointer(
-            child: Stack(
-              children: [
-                Positioned(
-                  left: position.dx,
-                  top: position.dy,
-                  child: Semantics(
-                    label: 'Gesetzter Zeigepfeil',
-                    image: true,
-                    child: const CustomPaint(
-                      size: Size(24, 24),
-                      painter: _GuideArrowPainter(),
+            child: LayoutBuilder(
+              builder: (context, bounds) => Stack(
+                children: [
+                  Positioned(
+                    left: position.dx,
+                    top: position.dy,
+                    child: Semantics(
+                      label: 'Gesetzter Zeigepfeil',
+                      image: true,
+                      child: const CustomPaint(
+                        size: Size(24, 24),
+                        painter: _GuideArrowPainter(),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  if (text.isNotEmpty &&
+                      bounds.maxWidth > 0 &&
+                      bounds.maxHeight > 0)
+                    Positioned(
+                      left: (position.dx + 24)
+                          .clamp(0.0, math.max(0.0, bounds.maxWidth - 216))
+                          .toDouble(),
+                      top: (position.dy + 6)
+                          .clamp(0.0, math.max(0.0, bounds.maxHeight - 48))
+                          .toDouble(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                            maxWidth: math.min(208, bounds.maxWidth)),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 4),
+                            child: Text(text,
+                                style: const TextStyle(color: Colors.white)),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           );
         });
@@ -104,9 +134,17 @@ class G3GuideTools extends StatefulWidget {
 
 class _G3GuideToolsState extends State<G3GuideTools> {
   final _overlay = OverlayPortalController();
+  late final _guideText =
+      TextEditingController(text: widget.ffi.inputModel.guideText);
   Offset _position = const Offset(16, 60);
   bool _changing = false;
   String? _error;
+
+  @override
+  void dispose() {
+    _guideText.dispose();
+    super.dispose();
+  }
 
   Future<bool> _setOption(String option, bool enabled) async {
     final sessionId = widget.ffi.sessionId;
@@ -174,7 +212,7 @@ class _G3GuideToolsState extends State<G3GuideTools> {
             LayoutBuilder(builder: (context, constraints) {
           final width = math.min(272.0, constraints.maxWidth);
           final maxX = math.max(0.0, constraints.maxWidth - width);
-          final maxY = math.max(0.0, constraints.maxHeight - 210);
+          final maxY = math.max(0.0, constraints.maxHeight - 280);
           final left = _position.dx.clamp(0.0, maxX).toDouble();
           final top = _position.dy.clamp(0.0, maxY).toDouble();
           return Stack(children: [
@@ -232,6 +270,19 @@ class _G3GuideToolsState extends State<G3GuideTools> {
                                     widget.ffi.inputModel.guideClickOnly =
                                         value;
                                   }),
+                        ),
+                      if (guiding && widget.ffi.inputModel.guideClickOnly)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                          child: TextField(
+                            controller: _guideText,
+                            maxLength: 80,
+                            decoration: const InputDecoration(
+                              labelText: 'Hinweis beim nächsten Klick',
+                            ),
+                            onChanged: (value) =>
+                                widget.ffi.inputModel.guideText = value,
+                          ),
                         ),
                       if (_error != null)
                         Padding(

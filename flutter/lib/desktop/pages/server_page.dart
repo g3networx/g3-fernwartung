@@ -1040,7 +1040,7 @@ class _CmControlPanel extends StatelessWidget {
               child: buildButton(context,
                   color: Colors.redAccent,
                   onClick: handleDisconnect,
-                  text: 'Disconnect',
+                  text: isWindows ? 'Not-Aus' : 'Disconnect',
                   icon: Icon(
                     Icons.link_off_rounded,
                     color: Colors.white,
@@ -1049,7 +1049,15 @@ class _CmControlPanel extends StatelessWidget {
                   textColor: Colors.white),
             ),
           ],
-        )
+        ),
+        if (isWindows && client.blockInput)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Bei gesperrten Eingaben: Strg+Alt+Entf beendet die Fernwartung.',
+              textAlign: TextAlign.center,
+            ),
+          ),
       ],
     ).marginOnly(bottom: buttonBottomMargin);
   }

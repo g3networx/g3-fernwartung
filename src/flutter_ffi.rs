@@ -2126,6 +2126,10 @@ pub fn session_send_mouse(session_id: SessionID, msg: String) {
             } << 3;
         }
         if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+            if let Some(text) = m.get("guide_text").filter(|text| !text.is_empty()) {
+                session.send_guide_mouse(mask, x, y, text);
+                return;
+            }
             session.send_mouse(mask, x, y, alt, ctrl, shift, command);
         }
     }

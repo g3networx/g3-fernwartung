@@ -727,8 +727,9 @@ impl Connection {
         // `on_message` picks the type-specific timeout then.
         conn.stream.set_send_timeout(SEND_TIMEOUT_VIDEO);
 
+        let (_local_stop, mut local_stop) = mpsc::unbounded_channel::<()>();
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
+        std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned, _local_stop));
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
 
         #[cfg(feature = "unix-file-copy-paste")]
@@ -766,6 +767,11 @@ impl Connection {
                 }
                 _ = login_deadline(conn.authorized, started) => {
                     conn.on_close("Timeout", true).await;
+                    break;
+                }
+                Some(()) = local_stop.recv() => {
+                    conn.send_close_reason_no_retry("Fernwartung vor Ort beendet").await;
+                    conn.on_close("local emergency stop", true).await;
                     break;
                 }
                 Some(data) = rx_from_cm.recv() => {
@@ -1273,7 +1279,11 @@ impl Connection {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    fn handle_input(receiver: std_mpsc::Receiver<MessageInput>, tx: Sender) {
+    fn handle_input(
+        receiver: std_mpsc::Receiver<MessageInput>,
+        tx: Sender,
+        _local_stop: mpsc::UnboundedSender<()>,
+    ) {
         let mut block_input_mode = false;
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
@@ -1283,7 +1293,18 @@ impl Connection {
         #[cfg(target_os = "macos")]
         reset_input_ondisconn();
         loop {
-            match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
+            let timeout = if block_input_mode && cfg!(windows) { 100 } else { 500 };
+            let message = receiver.recv_timeout(std::time::Duration::from_millis(timeout));
+            #[cfg(windows)]
+            if block_input_mode && !crate::platform::windows::default_input_desktop_active() {
+                // Ctrl+Alt+Del releases BlockInput and opens the Windows security desktop.
+                // End the session before processing any more remote input.
+                let _ = crate::platform::block_input(false);
+                block_input_mode = false;
+                let _ = _local_stop.send(());
+                break;
+            }
+            match message {
                 Ok(v) => match v {
                     MessageInput::Mouse(mouse_input) => {
                         handle_mouse(
@@ -1311,6 +1332,15 @@ impl Connection {
                         handle_pointer(&msg, id);
                     }
                     MessageInput::BlockOn => {
+                        #[cfg(windows)]
+                        if !crate::platform::windows::default_input_desktop_active() {
+                            Self::send_block_input_error(
+                                &tx,
+                                back_notification::BlockInputState::BlkOnFailed,
+                                "Windows desktop unavailable".to_string(),
+                            );
+                            continue;
+                        }
                         let (ok, msg) = crate::platform::block_input(true);
                         if ok {
                             block_input_mode = true;
@@ -1336,7 +1366,7 @@ impl Connection {
                     }
                 },
                 Err(err) => {
-                    if block_input_mode {
+                    if block_input_mode && !cfg!(windows) {
                         let _ = crate::platform::block_input(true);
                     }
                     if std_mpsc::RecvTimeoutError::Disconnected == err {
@@ -1344,6 +1374,9 @@ impl Connection {
                     }
                 }
             }
+        }
+        if block_input_mode {
+            let _ = crate::platform::block_input(false);
         }
         #[cfg(target_os = "linux")]
         clear_remapped_keycode();

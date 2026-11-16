@@ -497,7 +497,9 @@ class InputModel {
   bool get isViewOnly => parent.target!.ffiModel.viewOnly;
   bool get showMyCursor => parent.target!.ffiModel.showMyCursor;
   bool guideClickOnly = false;
+  String guideText = '';
   final guideMarker = Rxn<Offset>();
+  final guideMarkerText = ''.obs;
   double get devicePixelRatio => parent.target!.canvasModel.devicePixelRatio;
   bool get isViewCamera => parent.target!.connType == ConnType.viewCamera;
   int get trackpadSpeed => _trackpadSpeed;
@@ -2261,6 +2263,11 @@ class InputModel {
   Future<void> _sendGuideClick(
       Map<String, dynamic> movement, Map<String, dynamic> click) async {
     final session = sessionId;
+    final text = guideText.trim();
+    if (text.isNotEmpty) {
+      movement['guide_text'] = text;
+      click['guide_text'] = text;
+    }
     await bind.sessionSendMouse(
         sessionId: session, msg: json.encode(modify(movement)));
     final model = parent.target?.ffiModel;
@@ -2270,14 +2277,17 @@ class InputModel {
     await bind.sessionSendMouse(
         sessionId: session, msg: json.encode(modify(click)));
     if (guideClickOnly && model.viewOnly && model.showMyCursor) {
-      _showGuideMarker(movement);
+      _showGuideMarker(movement, text);
     }
   }
 
-  void _showGuideMarker(Map<String, dynamic> movement) {
+  void _showGuideMarker(Map<String, dynamic> movement, [String text = '']) {
     final x = double.tryParse(movement['x'].toString());
     final y = double.tryParse(movement['y'].toString());
-    if (x != null && y != null) guideMarker.value = Offset(x, y);
+    if (x != null && y != null) {
+      guideMarkerText.value = text;
+      guideMarker.value = Offset(x, y);
+    }
   }
 
   Point? handlePointerDevicePos(
