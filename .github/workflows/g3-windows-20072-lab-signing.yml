@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 20090 for lab
+name: Sign OpsLinX Windows 20091
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: d5ab0ea988dce06c23b540da149d186cbfec1cc0
-  BUILD_RUN: '43912933748'
+  SOURCE_COMMIT: 38ed250c0224501c930748328ea2a5200952d0cf
+  BUILD_RUN: '43950564315'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
@@ -58,7 +58,8 @@ jobs:
             'a5b0645a2993ae3ddcf5e78ff7680e1974079de0e44d82aa417601d576c03f5b',
             '907b73a756802be69d1f66e5e0999f25d855458d474d911e362d6907cbc5d469',
             'ed88e1a4ee13b4149bef082d148cecc0ef20cd40b0a9ef4c722249d23fcf24b4',
-            'd97570363769ffee2ca7ee935f9a4a021cf1e226d73558e56d0e2098d4bda08c'
+            'd97570363769ffee2ca7ee935f9a4a021cf1e226d73558e56d0e2098d4bda08c',
+            '1f0ed5298d935297826f7f9f4151cac6a11651625ae27a23214d4facba577009'
           ) -Encoding Ascii
       - name: Check the Whiteboard title in the Windows runtime
         shell: pwsh
