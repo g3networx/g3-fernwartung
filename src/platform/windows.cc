@@ -244,6 +244,19 @@ extern "C"
 
     bool is_windows_10_or_greater()
     {
+        // Version Helpers depend on the executable's compatibility manifest.
+        // The native Host loads this DLL without a Windows 10 manifest.
+        using RtlGetVersionFn = LONG(WINAPI *)(OSVERSIONINFOW *);
+        const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        if (ntdll)
+        {
+            const auto get_version =
+                reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
+            OSVERSIONINFOW version{};
+            version.dwOSVersionInfoSize = sizeof(version);
+            if (get_version && get_version(&version) == 0)
+                return version.dwMajorVersion >= 10;
+        }
         return IsWindows10OrGreater();
     }
 

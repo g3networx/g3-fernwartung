@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20088",
+  "version": "1.5.3-g3.62.20089",
   "displayVersion": "g3.6.2 Build 161126",
   "buildDate": "2026-11-16",
-  "windowsVersion": "1.62.20088",
-  "dailyInternalSequence": 0,
-  "feature": "supporter-guide-marker"
+  "windowsVersion": "1.62.20089",
+  "dailyInternalSequence": 1,
+  "feature": "windows-host-guide-cursor"
 }
