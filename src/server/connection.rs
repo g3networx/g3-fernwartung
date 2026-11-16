@@ -770,7 +770,7 @@ impl Connection {
                     break;
                 }
                 Some(()) = local_stop.recv() => {
-                    conn.send_close_reason_no_retry("Fernwartung vor Ort beendet").await;
+                    conn.send_close_reason_no_retry("").await;
                     conn.on_close("local emergency stop", true).await;
                     break;
                 }
