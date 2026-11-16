@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/g3_guide_tools.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/model.dart';
@@ -39,6 +40,9 @@ class _Input extends Fake implements InputModel {
 
 class _Peer extends Fake implements FfiModel {
   @override
+  final pi = PeerInfo();
+
+  @override
   Rect? get rect => const Rect.fromLTWH(-1000, 0, 1000, 800);
 }
 
@@ -78,6 +82,27 @@ void main() {
       await tester.pump();
       expect(arrow, findsNothing);
       expect(hint, findsNothing);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('Windows uses the hint in the captured desktop frame',
+      (tester) async {
+    final ffi = _Session();
+    ffi.ffiModel.pi.platform = kPeerPlatformWindows;
+    ffi.inputModel.guideMarker.value = const Offset(-700, 200);
+    ffi.inputModel.guideMarkerText.value = 'Hier die Nummer eingeben';
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(MaterialApp(
+        home: ChangeNotifierProvider<CanvasModel>.value(
+          value: _Canvas(),
+          child: G3GuideMarker(ffi: ffi),
+        ),
+      ));
+      expect(find.bySemanticsLabel('Gesetzter Zeigepfeil'), findsOneWidget);
+      expect(find.text('Hier die Nummer eingeben'), findsNothing);
     } finally {
       semantics.dispose();
     }

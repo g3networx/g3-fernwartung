@@ -34,6 +34,9 @@ class G3GuideMarker extends StatelessWidget {
         final marker = ffi.inputModel.guideMarker.value;
         if (marker == null) return const SizedBox.shrink();
         final text = ffi.inputModel.guideMarkerText.value;
+        // Windows captures the host's whiteboard with the desktop, including
+        // its hint text. Keep the local arrow, but use the captured hint.
+        final drawLocalHint = ffi.ffiModel.pi.platform != kPeerPlatformWindows;
         return Consumer<CanvasModel>(builder: (context, canvas, _) {
           final remote = ffi.ffiModel.rect;
           if (remote == null || !remote.contains(marker)) {
@@ -56,7 +59,7 @@ class G3GuideMarker extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (text.isNotEmpty &&
+                  if (drawLocalHint && text.isNotEmpty &&
                       bounds.maxWidth > 0 &&
                       bounds.maxHeight > 0)
                     Positioned(
