@@ -1,4 +1,4 @@
-name: Sign OpsLinX Windows 20080 for production
+name: Sign OpsLinX Windows 20088 for production
 on:
   push:
     branches: [g3-codesigning-setup]
@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  SOURCE_COMMIT: 17c33588920f744b3800ee9a1ddf6fa0a6c92fc7
-  BUILD_RUN: '43654063051'
+  SOURCE_COMMIT: 803bbdac2a40ad15804bc785bc7a5891a877aa39
+  BUILD_RUN: '43824911550'
 jobs:
   select-build:
     runs-on: ubuntu-24.04
