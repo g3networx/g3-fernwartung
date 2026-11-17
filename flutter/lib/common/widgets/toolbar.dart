@@ -937,10 +937,20 @@ TToggleMenu? toolbarShowRemoteCursor(String id, FFI ffi) {
   final ffiModel = ffi.ffiModel;
   final pi = ffiModel.pi;
   final sessionId = ffi.sessionId;
-  if (pi.platform == kPeerPlatformAndroid ||
-      ffi.canvasModel.cursorEmbedded ||
-      pi.isWayland) {
-    return null;
+  final cursorEmbedded = ffi.canvasModel.cursorEmbedded;
+  if (pi.platform == kPeerPlatformAndroid || cursorEmbedded || pi.isWayland) {
+    if (!isWindows) return null;
+    final explanation = translate(cursorEmbedded
+        ? 'Remote cursor is already part of the image'
+        : 'Not available');
+    return TToggleMenu(
+      child: Tooltip(
+        message: explanation,
+        child: Text(translate('Show remote cursor')),
+      ),
+      value: cursorEmbedded,
+      onChanged: null,
+    );
   }
   final state = ShowRemoteCursorState.find(id);
   final lockState = ShowRemoteCursorLockState.find(id);

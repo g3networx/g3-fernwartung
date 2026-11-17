@@ -127,6 +127,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Optimize reaction time", "Reaktionszeit optimieren"),
         ("Custom", "Benutzerdefiniert"),
         ("Show remote cursor", "Entfernten Cursor anzeigen"),
+        ("Remote cursor is already part of the image", "Cursor bereits im Bild"),
         ("Show quality monitor", "Qualitätsüberwachung anzeigen"),
         ("Disable clipboard", "Zwischenablage deaktivieren"),
         ("Lock after session end", "Nach Sitzungsende sperren"),
