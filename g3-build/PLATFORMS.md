@@ -22,6 +22,16 @@ The Debian package is named `g3fernwartung`, version `1.5.0-g3.17` for the corre
 
 Architectures are `amd64` / x86_64 and `arm64` / aarch64. The validation workflow installs each native package in an isolated Ubuntu 22.04 container, checks the executable version, and starts its GUI in a virtual display. Customer hosts and the runner host package database are not used for installation tests.
 
+## Android production releases
+
+Keep the ARM64 APK, its signing job's `android-release.json`, and the detached `<APK filename>.certum.p7s` together. Sign the APK with the Android release key first and create the timestamped Certum CMS signature over that final APK.
+
+Run `python g3-server/publish-android-release.py PATH/TO/android-release.json --host-pins PATH/TO/host-pins.json --apksigner PATH/TO/apksigner` from the release workstation. The workstation needs Python 3 with Paramiko and Android SDK `apksigner`. The host pin file maps each of the three servers to its trusted SSH SHA-256 fingerprint, without the `SHA256:` prefix. The command prompts for the deployment credential.
+
+The publisher stages both files on `rust.g3nx.net`, `opslinx02.g3nx.net`, and `opslinx03.g3nx.net`. Staging exposes version-specific verification routes while the current feed stays active. Before activating any feed, the server guard verifies the local detached CMS signature against the pinned Certum certificate and downloads both staged files over HTTPS directly from all three nodes to compare their sizes and SHA-256 hashes. If verification fails, the existing feed remains active. If activation or the final public download check fails after a switch, the publisher restores the previous feed configuration.
+
+`python g3-server/publish-android-release.py --install-guard --host-pins PATH/TO/host-pins.json` installs the server guard independently of a release. With a new Certum certificate, update the server guard and Android updater certificate pins as part of the rollover before publishing packages signed with it.
+
 ## Updates and disclosure
 
 These are FullClients. Non-Windows clients direct the user to the platform download page and never execute the Windows MSI updater. A source/build provenance record accompanies every package. No customer enrollment tokens, credentials or private signing keys belong in the source, artifacts or release manifests.
