@@ -6,8 +6,11 @@ import java.util.Date
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers
 import org.bouncycastle.cms.CMSProcessableFile
 import org.bouncycastle.cms.CMSSignedData
-import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder
-import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator
+import org.bouncycastle.cms.bc.BcRSASignerInfoVerifierBuilder
+import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder
+import org.bouncycastle.operator.bc.BcDigestCalculatorProvider
 import org.bouncycastle.util.encoders.Hex
 
 internal object OpsLinxAndroidUpdateSignature {
@@ -25,10 +28,12 @@ internal object OpsLinxAndroidUpdateSignature {
         val certificate = signed.certificates.getMatches(null).single { signer.sid.match(it) }
         val fingerprint = MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
         require(MessageDigest.isEqual(fingerprint, certumCertificate) && certificate.isValidOn(Date()))
-        // Android's system BC provider is a different implementation.
-        val verifier = JcaSimpleSignerInfoVerifierBuilder()
-            .setProvider(BouncyCastleProvider())
-            .build(certificate)
+        val verifier = BcRSASignerInfoVerifierBuilder(
+            DefaultCMSSignatureAlgorithmNameGenerator(),
+            DefaultSignatureAlgorithmIdentifierFinder(),
+            DefaultDigestAlgorithmIdentifierFinder(),
+            BcDigestCalculatorProvider()
+        ).build(certificate)
         require(signer.verify(verifier))
     }
 }

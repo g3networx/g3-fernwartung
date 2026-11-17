@@ -86,7 +86,10 @@ android {
     compileSdkVersion 36
     packaging {
         resources {
-            excludes += 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+            excludes += [
+                'META-INF/versions/9/OSGI-INF/MANIFEST.MF',
+                'META-INF/services/java.security.Provider',
+            ]
         }
     }
     sourceSets {
