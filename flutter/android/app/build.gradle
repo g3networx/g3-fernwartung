@@ -84,6 +84,11 @@ protobuf {
 android {
     namespace "com.carriez.flutter_hbb"
     compileSdkVersion 36
+    packaging {
+        resources {
+            excludes += 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+        }
+    }
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
 
