@@ -120,7 +120,8 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
     } catch (error) {
       if (mounted) {
         final signatureError = error is G3AndroidUpdateSignatureException ||
-            (error is PlatformException && error.code == 'update_certum_invalid');
+            (error is PlatformException &&
+                error.code == 'update_certum_invalid');
         setState(() => _status = signatureError
             ? 'Update blockiert. Die Certum-Signatur fehlt oder ist ungültig.'
             : 'Update konnte nicht geprüft oder geöffnet werden.');

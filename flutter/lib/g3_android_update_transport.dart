@@ -26,6 +26,9 @@ Future<T> g3AndroidUpdateRequest<T>(
     final client = createClient();
     final request = http.Request('GET', Uri.https(host, path))
       ..followRedirects = false;
+    if (const bool.fromEnvironment('G3_ANDROID_CERTUM_LAB')) {
+      request.headers['X-OpsLinX-Update-Lab'] = 'certum-20087';
+    }
     try {
       final response =
           await client.send(request).timeout(const Duration(seconds: 8));
@@ -54,7 +57,11 @@ class G3AndroidUpdateSignatureException implements Exception {
   const G3AndroidUpdateSignatureException();
 }
 
-Future<Uint8List> g3AndroidUpdateSignature(G3AndroidUpdate update) async {
+Future<Uint8List> g3AndroidUpdateSignature(
+  G3AndroidUpdate update, {
+  List<String> hosts = g3AndroidUpdateHosts,
+  http.Client Function() createClient = http.Client.new,
+}) async {
   const limit = 64 * 1024;
   final build = RegExp(r'^\d+\.\d+\.\d+-g3\.\d+\.(\d+)$')
       .firstMatch(update.version)
@@ -73,10 +80,12 @@ Future<Uint8List> g3AndroidUpdateSignature(G3AndroidUpdate update) async {
         if (proof.length + chunk.length > limit) throw const FormatException();
         proof.add(chunk);
       }
-      if (proof.isEmpty) throw const FormatException();
+      if (proof.isEmpty || (length != null && proof.length != length)) {
+        throw const FormatException();
+      }
       return proof.takeBytes();
-    });
-  } catch (_) {
+    }, hosts: hosts, createClient: createClient);
+  } on http.ClientException {
     throw const G3AndroidUpdateSignatureException();
   }
 }

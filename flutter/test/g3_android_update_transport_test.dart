@@ -49,4 +49,30 @@ void main() {
     expect(data, 'release');
     expect(attempted, g3AndroidUpdateHosts.take(3));
   });
+
+  const update = (version: '1.5.3-g3.62.20087', digest: '', size: 123);
+
+  test('loads the detached signature for the exact advertised build', () async {
+    final proof = await g3AndroidUpdateSignature(update,
+        createClient: () => MockClient((request) async {
+              expect(request.url.scheme, 'https');
+              expect(request.url.path,
+                  '/client/platform/android_arm64/20087.certum.p7s');
+              return http.Response.bytes([1, 2, 3], 200);
+            }));
+    expect(proof, [1, 2, 3]);
+  });
+
+  test('rejects a missing or empty signature on every node', () async {
+    var requests = 0;
+    await expectLater(
+      g3AndroidUpdateSignature(update,
+          createClient: () => MockClient((_) async {
+                requests++;
+                return http.Response('', requests == 1 ? 404 : 200);
+              })),
+      throwsA(isA<G3AndroidUpdateSignatureException>()),
+    );
+    expect(requests, g3AndroidUpdateHosts.length);
+  });
 }
