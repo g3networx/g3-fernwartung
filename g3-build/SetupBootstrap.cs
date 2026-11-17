@@ -50,7 +50,11 @@ internal sealed class UpdateSessionGate:IDisposable {
  readonly FileStream file;
  [StructLayout(LayoutKind.Sequential)]struct Overlapped {public UIntPtr Internal,InternalHigh;public uint Offset,OffsetHigh;public IntPtr Event;}
  [DllImport("kernel32.dll",SetLastError=true)]static extern bool LockFileEx(SafeFileHandle handle,uint flags,uint reserved,uint low,uint high,ref Overlapped overlapped);
- public UpdateSessionGate(string path){file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);var overlap=new Overlapped();if(!LockFileEx(file.SafeFileHandle,3,0,1,0,ref overlap)){int error=Marshal.GetLastWin32Error();file.Dispose();if(error==33)throw new UpdateBusyException();throw new System.ComponentModel.Win32Exception(error);}}
+ public UpdateSessionGate(string path,bool exclusive=true){file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);var overlap=new Overlapped();if(!LockFileEx(file.SafeFileHandle,exclusive?3U:1U,0,1,0,ref overlap)){int error=Marshal.GetLastWin32Error();file.Dispose();if(error==33)throw new UpdateBusyException();throw new System.ComponentModel.Win32Exception(error);}}
+ internal static void CheckSessionConflict(string path){
+  // A shared lease is compatible with sessions but cannot coexist with an installer.
+  using(var probe=new UpdateSessionGate(path,false)){}
+ }
  public void Dispose(){file.Dispose();}
 }
 internal sealed class SetupForm:Form {
@@ -137,7 +141,7 @@ internal sealed class SetupForm:Form {
 
   ShowStep(3,"Windows-Berechtigung bestätigen. Danach wird die Installation vorbereitet …",false);
 
-  var info=new ProcessStartInfo(Application.ExecutablePath,"--g3-install-worker "+Quote(msi)){UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden};
+  var info=new ProcessStartInfo(Application.ExecutablePath,"--g3-install-interactive "+Quote(msi)){UseShellExecute=true,Verb="runas"};
 
   // The running GUI remains alive until the worker owns the exclusive session gate.
 
@@ -147,7 +151,9 @@ internal sealed class SetupForm:Form {
    workerLog=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version,"install.log");
    status.Text="Windows bereitet die Installation vor und wartet auf das sichere Sitzungsende …";
 
-   await Task.Run(()=>p.WaitForExit());if(p.ExitCode==1618)throw new UpdateBusyException(ReadBusyReason());if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
+   await Task.Run(()=>p.WaitForExit());
+   if(p.ExitCode==1602){working=false;Close();return;}
+   if(p.ExitCode==1618)throw new UpdateBusyException(ReadBusyReason());if(p.ExitCode!=0&&p.ExitCode!=3010)throw new InvalidOperationException("Installationsfehler "+p.ExitCode+". Protokoll: ProgramData\\g3-NetworX-Setup-"+AppName+"-"+Version+".");
 
   }
 
@@ -174,25 +180,28 @@ internal sealed class SetupForm:Form {
   }
  }
  sealed class Companion:IDisposable {
-  readonly UpdateSessionGate gate;readonly string exe;bool stopped;
-  public Companion(){
-   if(Kind!="host_msi")return;
+  UpdateSessionGate gate;readonly string exe, app;bool stopped;
+  public Companion(bool disconnect){
+   if(Kind!="host_msi"&&!disconnect)return;
    RequireCompanionProtocol();
-   using(var key=Registry.LocalMachine.OpenSubKey(@"Software\g3Fernwartung\InstallState\g3Fernwartung")){
+   app=Kind=="host_msi"?"g3Fernwartung":"g3Host";
+   using(var key=Registry.LocalMachine.OpenSubKey(@"Software\"+app+@"\InstallState\"+app)){
     if(key==null||Convert.ToInt32(key.GetValue("WindowsInstaller",0))!=1)return;
-    exe=Path.Combine(Convert.ToString(key.GetValue("InstallLocation")),"g3Fernwartung.exe");
+    if(app=="g3Host"&&Convert.ToInt32(key.GetValue("SharedDeviceIdentityProtocol",0))!=1)return;
+    exe=Path.Combine(Convert.ToString(key.GetValue("InstallLocation")),app+".exe");
     string root=Path.GetDirectoryName(exe),native=Path.Combine(root,"librustdesk.dll");
     if((File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0||!File.Exists(native)||Array.IndexOf(GateDllHashes.Split(';'),Digest(native))<0)throw new UpdateBusyException(UpdateBusyException.Unrecognized);
-    gate=new UpdateSessionGate(Path.Combine(root,"g3-update-session.lock"));
+    GatePath=Path.Combine(root,"g3-update-session.lock");
    }
   }
-  public void Suspend(){
-   if(gate==null)return;
-   using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\g3Fernwartung")){
-    if(key==null||!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(exe),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("FullClient-Dienstpfad stimmt nicht mit der geprüften Installation überein.");
-   }
-   using(var service=new ServiceController("g3Fernwartung")){if(service.Status!=ServiceControllerStatus.Stopped){service.Stop();stopped=true;service.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}
-   ReleaseInstalledProcesses(gate, new[]{exe}, true);
+  public string GatePath {get;private set;}
+  public void Acquire(){if(GatePath!=null&&gate==null)gate=new UpdateSessionGate(GatePath);}
+  public void ValidateService(){if(GatePath!=null)ValidateServicePath(app,exe,true);}
+  public void Suspend(bool disconnect=false){
+   if(GatePath==null)return;
+   ValidateService();
+   StopService(app,ref stopped);
+   ReleaseInstalledProcesses(gate, InstalledPaths(app,exe), true, disconnect);
   }
   static void PlainDirectory(string path){for(var dir=new DirectoryInfo(path);dir!=null;dir=dir.Parent)if(dir.Exists&&(dir.Attributes&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Konfigurationspfad darf keine Umleitung enthalten.");}
   public void InitializeNewHostProfile(){
@@ -213,7 +222,7 @@ internal sealed class SetupForm:Form {
     File.Copy(input,output,false);File.SetAttributes(output,FileAttributes.Normal);
    }
   }
-  public void Restore(){if(!stopped)return;using(var service=new ServiceController("g3Fernwartung")){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
+  public void Restore(){if(!stopped)return;using(var service=new ServiceController(app)){if(service.Status==ServiceControllerStatus.Stopped)service.Start();service.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));stopped=false;}}
   public void Dispose(){try{Restore();}finally{if(gate!=null)gate.Dispose();}}
  }
  [DllImport("kernel32.dll",SetLastError=true)]static extern IntPtr OpenProcess(uint access,bool inherit,int pid);
@@ -263,8 +272,8 @@ internal sealed class SetupForm:Form {
   return remaining;
  }
 
- static void ReleaseInstalledProcesses(UpdateSessionGate gate, string[] paths, bool compatible) {
-  if (gate == null) throw new InvalidOperationException("Sitzungssperre fehlt.");
+ static void ReleaseInstalledProcesses(UpdateSessionGate gate, string[] paths, bool compatible, bool disconnect=false) {
+  if (gate == null && !disconnect) throw new InvalidOperationException("Sitzungssperre fehlt.");
   var grace = Stopwatch.StartNew();
   while (InstalledProcessesRemain(paths, false) && grace.Elapsed < TimeSpan.FromSeconds(5))
    System.Threading.Thread.Sleep(250);
@@ -276,7 +285,32 @@ internal sealed class SetupForm:Form {
    System.Threading.Thread.Sleep(250);
   }
  }
- static int Worker(string source){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
+ static string[] InstalledPaths(string app,string exe){
+  return app=="g3Host"?new[]{exe,Path.Combine(Path.GetDirectoryName(exe),"g3Host-ui.exe")}:new[]{exe};
+ }
+ static void ValidateServicePath(string app,string exe,bool required){
+  using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+app)){
+   if(key==null&&!required)return;
+   if(key!=null&&Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(exe)+" ",StringComparison.OrdinalIgnoreCase))return;
+   throw new InvalidDataException("Dienstpfad stimmt nicht mit der geprüften Installation überein: "+app);
+  }
+ }
+ static void StopService(string app,ref bool stopped){
+  using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+app)){
+   if(key==null)return;
+   using(var service=new ServiceController(app)){
+    if(service.Status==ServiceControllerStatus.Stopped)return;
+    service.Stop();stopped=true;service.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));
+   }
+  }
+ }
+ static void AcquireGates(string gatePath,ref UpdateSessionGate gate,Companion companion,out string blockedPath){
+  blockedPath=gatePath;
+  if(gate==null)gate=new UpdateSessionGate(gatePath);
+  blockedPath=companion.GatePath;
+  companion.Acquire();
+ }
+ static int Worker(string source,bool interactive){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
   if(Directory.Exists(root)&&(File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0)return 13;Directory.CreateDirectory(root);var acl=new DirectorySecurity();acl.SetAccessRuleProtection(true,false);acl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null));
 
@@ -297,14 +331,35 @@ internal sealed class SetupForm:Form {
    Directory.CreateDirectory(Path.GetDirectoryName(gatePath));
    using(var f=new FileStream(gatePath,FileMode.CreateNew,FileAccess.Write,FileShare.None)){f.Flush();}
   }
-  gate=new UpdateSessionGate(gatePath);
-  companion=new Companion();companion.Suspend();companion.InitializeNewHostProfile();
+  companion=new Companion(false);
+  var installedPaths=InstalledPaths(AppName,InstalledExe);
+  ValidateServicePath(AppName,InstalledExe,false);
+  string blockedPath=null;
+  try{
+   AcquireGates(gatePath,ref gate,companion,out blockedPath);
+  }catch(UpdateBusyException){
+   if(!interactive||!compatible)throw;
+   if(gate!=null){gate.Dispose();gate=null;}
+   UpdateSessionGate.CheckSessionConflict(blockedPath);
+   if(MessageBox.Show("Laufende Fernwartungssitzungen für das Update trennen?",ProductTitle,
+      MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return 1602;
+   companion.Dispose();
+   companion=new Companion(true);
+   companion.ValidateService();
+   // If the sessions ended during confirmation, the regular shutdown can take over.
+   try{AcquireGates(gatePath,ref gate,companion,out blockedPath);}
+   catch(UpdateBusyException){
+    UpdateSessionGate.CheckSessionConflict(blockedPath);
+    companion.Suspend(true);
+    StopService(AppName,ref stoppedByUs);
+    ReleaseInstalledProcesses(gate,installedPaths,true,true);
+    AcquireGates(gatePath,ref gate,companion,out blockedPath);
+   }
+  }
+  companion.Suspend();companion.InitializeNewHostProfile();
   // Native GUI/tray processes exit voluntarily only while this exclusive
   // lease is held. Incoming/outgoing session acquisition is now blocked.
-  using(var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+AppName)){if(key!=null){if(!Convert.ToString(key.GetValue("ImagePath")).StartsWith(Quote(InstalledExe),StringComparison.OrdinalIgnoreCase))return 13;using(var svc=new ServiceController(AppName)){if(svc.Status!=ServiceControllerStatus.Stopped){svc.Stop();stoppedByUs=true;svc.WaitForStatus(ServiceControllerStatus.Stopped,TimeSpan.FromSeconds(40));}}}}
-  var installedPaths = Kind=="host_msi"
-   ? new[]{InstalledExe, Path.Combine(Path.GetDirectoryName(InstalledExe), "g3Host-ui.exe")}
-   : new[]{InstalledExe};
+  if(!stoppedByUs)StopService(AppName,ref stoppedByUs);
   ReleaseInstalledProcesses(gate, installedPaths, hasGate && compatible);
 
   bool repair=String.Equals(Convert.ToString(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\"+AppName+@"\InstallState\"+AppName,"MsiProductCode",null)),ProductCode,StringComparison.OrdinalIgnoreCase);
@@ -377,8 +432,10 @@ internal sealed class SetupForm:Form {
  [STAThread]static int Main(string[] args){
   bool uninstall = args.Length == 1 && args[0] == "--g3-uninstall-worker";
   if (uninstall && !WindowsIdentity.GetCurrent().IsSystem) return 740;
-  bool worker=args.Length==2&&args[0]=="--g3-install-worker";
+  bool interactive=args.Length==2&&args[0]=="--g3-install-interactive";
+  bool worker=args.Length==2&&(args[0]=="--g3-install-worker"||interactive);
   if(worker&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
+  if(interactive&&(WindowsIdentity.GetCurrent().IsSystem||!Environment.UserInteractive||Process.GetCurrentProcess().SessionId==0))return 740;
   // Both locks span Windows sessions. The launcher must not block its own elevated worker.
   string mutexName=@"Global\g3NetworX.OpsLinX.Setup."+((worker||uninstall)?"Worker":"Launcher");
   using(var instance=new SetupInstance(mutexName,worker||uninstall)){
@@ -388,7 +445,7 @@ internal sealed class SetupForm:Form {
     catch(UpdateBusyException) { return 1618; }
     catch(Exception error) { Console.Error.WriteLine(error.Message); return 1603; }
    }
-   if(worker)return Worker(args[1]);
+   if(worker)return Worker(args[1],interactive);
    int pid=0;
    if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);
    Application.EnableVisualStyles();

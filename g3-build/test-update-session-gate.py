@@ -23,7 +23,12 @@ source=(repo/'g3-build/SetupBootstrap.cs').read_text(encoding='utf-8')
 classes=source[source.index('internal sealed class UpdateBusyException'):source.index('internal sealed class SetupForm')]
 (folder/'gate.cs').write_text('''using System;using System.IO;using System.Runtime.InteropServices;using Microsoft.Win32.SafeHandles;
 '''+classes+'''class TestGate {
- static int Main(string[] args){try{using(var gate=new UpdateSessionGate(args[0])){Console.WriteLine("READY");if(args.Length>1)Console.ReadLine();return 0;}}catch(UpdateBusyException){return 1618;}}
+ static int Main(string[] args){
+  try{
+   try{using(var gate=new UpdateSessionGate(args[0])){Console.WriteLine("READY");if(args.Length>1&&args[1]=="hold")Console.ReadLine();return 0;}}
+   catch(UpdateBusyException){if(args.Length<=1||args[1]!="sessions")throw;UpdateSessionGate.CheckSessionConflict(args[0]);return 1;}
+  }catch(UpdateBusyException){return 1618;}
+ }
 }
 ''',encoding='utf-8')
 subprocess.run([str(Path(os.environ['SystemRoot'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),'/nologo','/target:exe','/out:'+str(folder/'gate.exe'),str(folder/'gate.cs')],check=True)
@@ -47,18 +52,20 @@ def launch(exe,*args):
 def stop(p):
  p.communicate('\n',timeout=8);assert p.returncode==0
 
-def probe():return subprocess.run([str(folder/'gate.exe'),str(folder/'g3-update-session.lock')],capture_output=True).returncode
+def probe(*args):return subprocess.run([str(folder/'gate.exe'),str(folder/'g3-update-session.lock'),*args],capture_output=True).returncode
 results=[]
 try:
  a=launch('session.exe','session');b=launch('session.exe','session')
- assert probe()==1618 and a.poll() is None and b.poll() is None
+ assert probe()==1618 and probe('sessions')==1 and a.poll() is None and b.poll() is None
  stop(a);assert probe()==1618 and b.poll() is None
- stop(b);assert probe()==0
+ stop(b);assert probe()==0 and probe('sessions')==0
  results.append({'case':'multiple_active_sessions_defer_update_without_closing_either','passed':True})
  gate=launch('gate.exe',str(folder/'g3-update-session.lock'),'hold')
+ assert probe('sessions')==1618
  assert subprocess.run([str(folder/'session.exe'),'session'],capture_output=True).returncode==1618
  stop(gate);subprocess.run([str(folder/'verify.exe'),str(folder)],check=True);a=launch('session.exe','session');stop(a)
  results.append({'case':'exclusive_installation_blocks_sessions_and_verifies_payload_while_locked','passed':True})
+ results.append({'case':'interactive_probe_distinguishes_active_sessions_from_an_exclusive_installer','passed':True})
  idle=launch('session.exe','idle');active=launch('session.exe','session')
  assert probe()==1618;time.sleep(.6);assert idle.poll() is None and active.poll() is None
  stop(active);gate=launch('gate.exe',str(folder/'g3-update-session.lock'),'hold');assert idle.wait(timeout=5)==0
