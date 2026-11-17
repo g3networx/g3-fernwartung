@@ -5,3 +5,7 @@
 
 # Keep rustls-platform-verifier classes for JNI
 -keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
+
+# The BC LTS service descriptor lists a provider absent from the LTS jar.
+# The updater uses the lightweight RSA verifier without loading providers.
+-dontwarn org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider
