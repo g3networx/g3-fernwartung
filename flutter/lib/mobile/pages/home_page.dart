@@ -71,6 +71,12 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   var _selectedIndex = 0;
   int get selectedIndex => _selectedIndex;
   final List<PageShape> _pages = [];
+  int get _defaultTabIndex {
+    final addressBook =
+        _pages.indexWhere((page) => page is G3MobileAddressBookPage);
+    return addressBook < 0 ? 0 : addressBook;
+  }
+
   bool get _g3AndroidClient => isAndroid && kG3AndroidClient;
   int _chatPageTabIndex = -1;
   G3AndroidUpdate? _androidUpdate;
@@ -90,6 +96,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     initPages();
+    _selectedIndex = _defaultTabIndex;
     if (_g3AndroidClient) {
       WidgetsBinding.instance.addObserver(this);
       unawaited(_checkAndroidUpdate());
@@ -159,9 +166,10 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return WillPopScope(
         onWillPop: () async {
-          if (_selectedIndex != 0) {
+          final defaultTab = _defaultTabIndex;
+          if (_selectedIndex != defaultTab) {
             setState(() {
-              _selectedIndex = 0;
+              _selectedIndex = defaultTab;
             });
           } else {
             return true;
