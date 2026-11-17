@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -48,6 +49,37 @@ Future<T> g3AndroidUpdateRequest<T>(
 }
 
 typedef G3AndroidUpdate = ({String version, String digest, int size});
+
+class G3AndroidUpdateSignatureException implements Exception {
+  const G3AndroidUpdateSignatureException();
+}
+
+Future<Uint8List> g3AndroidUpdateSignature(G3AndroidUpdate update) async {
+  const limit = 64 * 1024;
+  final build = RegExp(r'^\d+\.\d+\.\d+-g3\.\d+\.(\d+)$')
+      .firstMatch(update.version)
+      ?.group(1);
+  if (build == null) throw const G3AndroidUpdateSignatureException();
+  try {
+    return await g3AndroidUpdateRequest(
+        '/client/platform/android_arm64/$build.certum.p7s', (response) async {
+      final length = response.contentLength;
+      if (length != null && (length < 1 || length > limit)) {
+        throw const FormatException();
+      }
+      final proof = BytesBuilder(copy: false);
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 8))) {
+        if (proof.length + chunk.length > limit) throw const FormatException();
+        proof.add(chunk);
+      }
+      if (proof.isEmpty) throw const FormatException();
+      return proof.takeBytes();
+    });
+  } catch (_) {
+    throw const G3AndroidUpdateSignatureException();
+  }
+}
 
 Future<G3AndroidUpdate?> g3AvailableAndroidUpdate({
   String current = g3ClientVersion,

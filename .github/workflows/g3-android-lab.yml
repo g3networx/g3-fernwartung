@@ -163,9 +163,9 @@ jobs:
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20085 --dart-define=G3_ANDROID_CLIENT=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20085 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20085'
+            --build-name=3.6.2 --build-number=20086 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20086 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20086'
           python - <<'PY'
           from zipfile import ZipFile
 
@@ -181,6 +181,26 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: opslinx-android-lab-arm64
+          path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build newer APK for the update test
+        working-directory: flutter
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: |
+          export PATH="$JAVA_HOME/bin:$PATH"
+          flutter build apk --release --target-platform android-arm64 --split-per-abi \
+            --build-name=3.6.2 --build-number=20087 --dart-define=G3_ANDROID_CLIENT=true \
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20087 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20087'
+          sha256sum build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Upload newer APK for the update test
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: opslinx-android-certum-next-arm64
           path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 7

@@ -289,11 +289,20 @@ class MainActivity : FlutterActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun installOpsLinxUpdate(result: MethodChannel.Result) {
+    private fun installOpsLinxUpdate(updateId: String?, proof: ByteArray?, result: MethodChannel.Result) {
         thread {
             try {
-                val update = File(cacheDir, "opslinx-updates/update.apk")
+                require(updateId != null && Regex("update-[A-Za-z0-9]+").matches(updateId))
+                val update = File(cacheDir, "opslinx-updates/$updateId/update.apk")
                 require(update.isFile && update.length() in 1L..150_000_000L)
+                try {
+                    OpsLinxAndroidUpdateSignature.verify(update, requireNotNull(proof))
+                } catch (_: Exception) {
+                    runOnUiThread {
+                        result.error("update_certum_invalid", "Certum signature verification failed", null)
+                    }
+                    return@thread
+                }
                 val installed = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
                 val candidate = requireNotNull(packageManager.getPackageArchiveInfo(
                     update.path, PackageManager.GET_SIGNATURES
@@ -325,7 +334,9 @@ class MainActivity : FlutterActivity() {
             if (documentPicker.handle(call, result)) return@setMethodCallHandler
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
-                "g3_install_android_update" -> installOpsLinxUpdate(result)
+                "g3_install_android_update" -> installOpsLinxUpdate(
+                    call.argument<String>("updateId"), call.argument<ByteArray>("certumProof"), result
+                )
                 "g3_addressbook_read", "g3_addressbook_write", "g3_addressbook_delete" -> {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
                         result.error("addressbook_storage", "Android Keystore unavailable", null)
