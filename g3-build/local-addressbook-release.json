@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20097",
-  "displayVersion": "g3.6.2 Build 171126",
-  "buildDate": "2026-11-17",
-  "windowsVersion": "1.62.20097",
-  "dailyInternalSequence": 1,
-  "feature": "certum-signed-windows-rollout"
+  "version": "1.5.3-g3.62.20104",
+  "displayVersion": "g3.6.2 Build 181126",
+  "buildDate": "2026-11-18",
+  "windowsVersion": "1.62.20104",
+  "dailyInternalSequence": 0,
+  "feature": "windows-remote-cursor-menu"
 }

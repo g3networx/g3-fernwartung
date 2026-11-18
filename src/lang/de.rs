@@ -127,7 +127,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Optimize reaction time", "Reaktionszeit optimieren"),
         ("Custom", "Benutzerdefiniert"),
         ("Show remote cursor", "Entfernten Cursor anzeigen"),
-        ("Remote cursor is already part of the image", "Cursor bereits im Bild"),
         ("Show quality monitor", "Qualitätsüberwachung anzeigen"),
         ("Disable clipboard", "Zwischenablage deaktivieren"),
         ("Lock after session end", "Nach Sitzungsende sperren"),
@@ -827,5 +826,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("install-directory-not-empty-tip", "Der ausgewählte Ordner ist nicht leer. Bei der Installation können vorhandene Daten gelöscht werden. Erwägen Sie, einen anderen Ordner auszuwählen."),
         ("Request approval", "Genehmigung anfordern"),
         ("Forever", "Für immer"),
+        ("Remote cursor is already part of the image", "Cursor bereits im Bild"),
     ].iter().cloned().collect();
 }

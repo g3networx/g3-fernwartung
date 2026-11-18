@@ -127,7 +127,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Optimize reaction time", ""),
         ("Custom", ""),
         ("Show remote cursor", ""),
-        ("Remote cursor is already part of the image", ""),
         ("Show quality monitor", ""),
         ("Disable clipboard", ""),
         ("Lock after session end", ""),
@@ -827,5 +826,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("install-directory-not-empty-tip", ""),
         ("Request approval", ""),
         ("Forever", ""),
+        ("Remote cursor is already part of the image", ""),
     ].iter().cloned().collect();
 }
