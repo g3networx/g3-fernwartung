@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card narrow">
+  <h1>OpsLinX VAS</h1>
+  {% if customers %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf() }}">
+    <label>Kunde <select name="customer_id" required>
+      {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.name }}</option>{% endfor %}
+    </select></label>
+    <button>Video-Hilfe starten</button>
+  </form>
+  {% else %}
+  <p>Für dieses Konto ist kein Kunde für OpsLinX VAS freigegeben.</p>
+  {% endif %}
+</section>
+{% endblock %}
