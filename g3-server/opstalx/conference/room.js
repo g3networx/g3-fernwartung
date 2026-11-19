@@ -11,10 +11,55 @@
   status('Raumcode: ' + code);
   const api = new JitsiMeetExternalAPI(location.host,{
     parentNode:get('call'),roomName:code,jwt,
-    configOverwrite:{disableDeepLinking:true,constraints:{video:{facingMode:{ideal:jwt?'user':'environment'},height:{ideal:720}}}}
+    configOverwrite:{
+      disableDeepLinking:true,
+      startWithVideoMuted:Boolean(jwt),
+      virtualBackground:{disabled:!jwt},
+      disableVirtualBackground:!jwt,
+      constraints:{video:jwt
+        ? {facingMode:{ideal:'user'},height:{ideal:360,max:540},width:{ideal:640,max:960},frameRate:{ideal:20,max:24}}
+        : {facingMode:{ideal:'environment'},height:{ideal:720}}}
+    }
   });
   let self, host=false, channel=false, scene, incoming, author;
   let queue=Promise.resolve();
+  let lightTrack, lightOn=false, lightPeer, lightRequest;
+  let lightController;
+  const localVideoTrack=()=>{
+    const frame=api.getIFrame().contentDocument;
+    return [...(frame?.querySelectorAll('video') || [])]
+      .filter(video=>!/^remoteVideo_/i.test(video.id))
+      .flatMap(video=>video.srcObject?.getVideoTracks?.() || [])
+      .find(track=>track.readyState==='live' && track.getCapabilities?.().torch);
+  };
+  function resetLight(){
+    const track=lightTrack;
+    lightTrack=undefined;
+    lightController=undefined;
+    if (track?.readyState==='live') {
+      void track.applyConstraints({advanced:[{torch:false}]}).catch(()=>{});
+    }
+  }
+  const sendTo=(peer,data)=>api.executeCommand(
+    'sendEndpointTextMessage',peer,JSON.stringify({ar:1,...data})
+  );
+  addEventListener('pagehide',resetLight);
+  get('cameraLight').onclick=async()=>{
+    if(!host||!channel||lightRequest)return;
+    const {rooms}=await api.getRoomsInfo();
+    const guests=rooms.find(room=>room.isMainRoom)?.participants.filter(
+      person=>person.id!==self && person.role!=='moderator'
+    ) || [];
+    if(guests.length!==1){status('Kameralicht ist bei einer Video-Hilfe mit genau einem Gast verfügbar.');return;}
+    lightPeer=guests[0].id;
+    const id=crypto.randomUUID();
+    const timeout=setTimeout(()=>{
+      if(lightRequest?.id===id){lightRequest=undefined;status('Keine Antwort vom Kameralicht.');render();}
+    },6000);
+    lightRequest={id,timeout};
+    sendTo(lightPeer,{type:'torch',id,on:!lightOn});
+    render();
+  };
   let outbound=Promise.resolve();
   const send = data => {
     outbound=outbound.then(async()=>{
@@ -25,6 +70,10 @@
   };
   const render = () => {
     get('freeze').hidden=!host;
+    get('cameraLight').hidden=!host;
+    get('cameraLight').disabled=!channel || Boolean(lightRequest);
+    get('cameraLight').textContent=lightOn?'Kameralicht ausschalten':'Kameralicht einschalten';
+    get('lightNotice').hidden=Boolean(jwt)||Boolean(self);
     get('freeze').disabled=!channel;
     get('invite').hidden=!host;
     get('annotation').hidden=!scene;
@@ -41,7 +90,7 @@
       get('caption').textContent=text;
     }
   };
-  api.on('videoConferenceJoined',e=>{ self=e.id; });
+  api.on('videoConferenceJoined',e=>{ self=e.id; render(); });
   api.on('participantRoleChanged',e=>{
     if (e.id===self || (jwt && !self && e.role==='moderator')) {
       host=Boolean(jwt && e.role==='moderator'); render();
@@ -49,11 +98,20 @@
   });
   api.on('dataChannelOpened',()=>{channel=true;render();});
   api.on('participantLeft',e=>{
+    if (e.id===lightController) resetLight();
+    if (e.id===lightPeer) {
+      clearTimeout(lightRequest?.timeout);
+      lightRequest=undefined;lightPeer=undefined;lightOn=false;render();
+    }
     if(e.id===author){scene=undefined;incoming=undefined;author=undefined;render();}
   });
   api.on('videoConferenceLeft',()=>{
+    resetLight();
+    clearTimeout(lightRequest?.timeout);
+    lightRequest=undefined;lightOn=false;lightPeer=undefined;
+    get('lightNotice').hidden=true;
     self=undefined;host=false;channel=false;scene=undefined;incoming=undefined;author=undefined;
-    status('Video-Hilfe beendet');render();
+    status('Video-Hilfe beendet');render();get('lightNotice').hidden=true;
   });
   get('invite').onclick=async()=>{
     try{await navigator.clipboard.writeText(location.origin+'/vas/?room='+code);status('Einladung kopiert. Raumcode: '+code);}
@@ -94,10 +152,47 @@
   };
   async function receive({senderInfo,eventData}){
     const id=senderInfo?.id,text=eventData?.text;
-    if(!id||typeof text!=='string'||text.length>6200||host)return;
+    if(!id||typeof text!=='string'||text.length>6200)return;
     let m;
     try{m=JSON.parse(text);}catch(_){return;}
     if(m?.ar!==1||typeof m.id!=='string'||!/^[a-f0-9-]{36}$/.test(m.id))return;
+    if(host){
+      if(m.type==='torch-status'&&id===lightPeer&&m.id===lightRequest?.id){
+        clearTimeout(lightRequest.timeout);lightRequest=undefined;
+        lightOn=m.on===true;
+        const messages={ok:lightOn?'Kameralicht eingeschaltet.':'Kameralicht ausgeschaltet.',
+          consent:'Der Gast muss zuerst der Video-Hilfe beitreten.',
+          unsupported:'Das Kameralicht steht auf dieser Kamera nicht zur Verfügung.',
+          failed:'Das Kameralicht konnte nicht umgeschaltet werden.'};
+        status(messages[m.result]||messages.failed);render();
+      }
+      return;
+    }
+    if (m.type==='torch' && typeof m.on==='boolean'){
+      const {rooms}=await api.getRoomsInfo();
+      if(!rooms.find(r=>r.isMainRoom)?.participants.some(p=>p.id===id&&p.role==='moderator'))return;
+      let result='ok', on=false;
+      if(!m.on){resetLight();}
+      else if(!self || jwt){result='consent';}
+      else {
+        const track=localVideoTrack();
+        if(!track){result='unsupported';}
+        else try {
+          lightTrack=track;lightController=id;
+          await track.applyConstraints({advanced:[{torch:true}]});
+          if(!self || lightController!==id){
+            await track.applyConstraints({advanced:[{torch:false}]});
+            result='consent';
+          }else{
+            on=true;
+          }
+        }catch(_){resetLight();result='failed';}
+      }
+      if(result==='ok') status(on?'Kameralicht durch Support eingeschaltet.':'Kameralicht aus.');
+      sendTo(id,{type:'torch-status',id:m.id,on,result});
+      return;
+    }
+
     if(author!==id){
       const {rooms}=await api.getRoomsInfo();
       if(!rooms.find(r=>r.isMainRoom)?.participants.some(p=>p.id===id&&p.role==='moderator'))return;
@@ -114,6 +209,7 @@
     if(m.type==='mark'&&p&&Number.isFinite(p.x)&&p.x>=0&&p.x<=1&&Number.isFinite(p.y)&&p.y>=0&&p.y<=1&&typeof p.text==='string'&&p.text.length<=160){scene.mark=p;render();}
     if(m.type==='clear'){scene=undefined;render();}
   }
+  render();
   api.on('endpointTextMessageReceived', e => {
     queue=queue.then(()=>receive(e.data || e)).catch(()=>{});
   });
