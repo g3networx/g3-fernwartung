@@ -3,6 +3,12 @@
   const code = new URL(location.href).searchParams.get('room')?.toLowerCase();
   if (!/^[a-f0-9]{32}$/.test(code || '')) return;
   const jwt = new URLSearchParams(location.hash.slice(1)).get('jwt');
+  const twoCoreSupporter = Boolean(jwt) && navigator.hardwareConcurrency <= 2;
+  const lightSupporterVideo = Boolean(jwt)
+    && (navigator.hardwareConcurrency <= 4 || navigator.deviceMemory <= 4);
+  const supporterCamera = lightSupporterVideo
+    ? {facingMode:{ideal:'user'},height:{ideal:180,max:180},width:{ideal:320,max:320},frameRate:{ideal:20,max:20}}
+    : {facingMode:{ideal:'user'},height:{ideal:360,max:540},width:{ideal:640,max:960},frameRate:{ideal:20,max:24}};
   if (jwt) history.replaceState(null, '', location.pathname + location.search);
   const get = id => document.getElementById(id);
   get('join').hidden = true;
@@ -11,16 +17,58 @@
   status('Raumcode: ' + code);
   const api = new JitsiMeetExternalAPI(location.host,{
     parentNode:get('call'),roomName:code,jwt,
+    interfaceConfigOverwrite:twoCoreSupporter ? {DISABLE_VIDEO_BACKGROUND:true} : undefined,
     configOverwrite:{
       disableDeepLinking:true,
       startWithVideoMuted:Boolean(jwt),
-      virtualBackground:{disabled:!jwt},
+      virtualBackground:{
+        disabled:!jwt,
+        ...(lightSupporterVideo && {
+          advanced:{tierOverride:'low',targetFps:20,inferenceStride:twoCoreSupporter ? 4 : 2},
+        }),
+      },
       disableVirtualBackground:!jwt,
       constraints:{video:jwt
-        ? {facingMode:{ideal:'user'},height:{ideal:360,max:540},width:{ideal:640,max:960},frameRate:{ideal:20,max:24}}
+        ? supporterCamera
         : {facingMode:{ideal:'environment'},height:{ideal:720}}}
     }
   });
+  let stopBackgroundBudget;
+  function startBackgroundBudget() {
+    const meeting = api.getIFrame().contentWindow;
+    const advanced = meeting?.APP?.store?.getState()['features/base/config']?.virtualBackground?.advanced;
+    // Jitsi's background processor reads the same options object for every frame.
+    if (!advanced || Object.isFrozen(advanced)) return;
+    let stride = 4;
+    let relaxedSamples = 0;
+    let last = performance.now();
+    let cpuPressure;
+    const observer = typeof PressureObserver === 'function'
+      ? new PressureObserver(records => { cpuPressure = records.at(-1)?.state; })
+      : undefined;
+    observer?.observe('cpu',{sampleInterval:1000}).catch(()=>{observer.disconnect();});
+    const timer = setInterval(()=>{
+      const now = performance.now();
+      const late = now-last > 1100;
+      last = now;
+      if (document.hidden) return;
+      if (cpuPressure==='critical' || late) {
+        stride=8;
+        relaxedSamples=0;
+      } else if (cpuPressure==='serious') {
+        stride=6;
+        relaxedSamples=0;
+      } else if (++relaxedSamples >= 5) {
+        stride=4;
+      }
+      advanced.inferenceStride=stride;
+    },1000);
+    stopBackgroundBudget=()=>{
+      clearInterval(timer);
+      observer?.disconnect();
+      advanced.inferenceStride=4;
+    };
+  }
   let self, host=false, channel=false, scene, incoming, author;
   let queue=Promise.resolve();
   let lightTrack, lightOn=false, lightPeer, lightRequest;
@@ -90,7 +138,15 @@
       get('caption').textContent=text;
     }
   };
-  api.on('videoConferenceJoined',e=>{ self=e.id; render(); });
+  api.on('videoConferenceJoined',e=>{
+    self=e.id;
+    if (twoCoreSupporter) {
+      api.executeCommand('setVideoQuality',360);
+      stopBackgroundBudget?.();
+      startBackgroundBudget();
+    }
+    render();
+  });
   api.on('participantRoleChanged',e=>{
     if (e.id===self || (jwt && !self && e.role==='moderator')) {
       host=Boolean(jwt && e.role==='moderator'); render();
@@ -106,6 +162,8 @@
     if(e.id===author){scene=undefined;incoming=undefined;author=undefined;render();}
   });
   api.on('videoConferenceLeft',()=>{
+    stopBackgroundBudget?.();
+    stopBackgroundBudget=undefined;
     resetLight();
     clearTimeout(lightRequest?.timeout);
     lightRequest=undefined;lightOn=false;lightPeer=undefined;

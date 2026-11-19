@@ -19,6 +19,28 @@ int getWindowsTargetBuildNumber_() {
   return buildNumber;
 }
 
+/// Raises a normal viewer process one priority class on Windows.
+int raiseWindowsViewerPriority() {
+  const normalPriority = 0x20;
+  const aboveNormalPriority = 0x8000;
+  final kernel = DynamicLibrary.open('kernel32.dll');
+  final getPriority =
+      kernel.lookupFunction<Uint32 Function(IntPtr), int Function(int)>(
+    'GetPriorityClass',
+  );
+  final process = win32.GetCurrentProcess();
+  final priority = getPriority(process);
+  if (priority == 0) return win32.GetLastError();
+  if (priority != normalPriority) return 0;
+  final setPriority =
+      kernel.lookupFunction<Int32 Function(IntPtr, Uint32), int Function(int, int)>(
+    'SetPriorityClass',
+  );
+  return setPriority(process, aboveNormalPriority) == 0
+      ? win32.GetLastError()
+      : 0;
+}
+
 /// Get Windows OS version pointer
 ///
 /// [Note]

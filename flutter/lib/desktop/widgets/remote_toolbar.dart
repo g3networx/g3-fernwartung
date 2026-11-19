@@ -882,13 +882,14 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
           onPressed: openGuide,
         ));
       }
-      if (isWindows && opsTalxWindowsLab) {
+      if (isWindows && opsTalxWindowsEnabled) {
         toolbarItems.add(_IconMenuButton(
           tooltip: 'Video-Hilfe (separates Fenster)',
           icon: const Icon(Icons.video_call, color: Colors.white, size: 22),
           color: _ToolbarTheme.blueColor,
           hoverColor: _ToolbarTheme.hoverBlueColor,
-          onPressed: () => openOpsTalxVideoWindow(context),
+          onPressed: () =>
+              openOpsTalxVideoWindow(context, fromRemoteSession: true),
         ));
       }
       toolbarItems.add(_IconMenuButton(

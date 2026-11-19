@@ -1,11 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../native/win32.dart' show raiseWindowsViewerPriority;
 
-const opsTalxWindowsLab = bool.fromEnvironment('G3_OPSTALX_LAB');
+const opsTalxWindowsEnabled = bool.fromEnvironment('G3_OPSTALX');
 const _startPage = 'https://linx.g3nx.net/opstalx/vas';
 
-Future<void> openOpsTalxVideoWindow(BuildContext context) async {
+Future<void> openOpsTalxVideoWindow(
+  BuildContext context, {
+  bool fromRemoteSession = false,
+}) async {
   if (!Platform.isWindows) return;
   final roots = [
     Platform.environment['ProgramFiles(x86)'],
@@ -25,6 +29,13 @@ Future<void> openOpsTalxVideoWindow(BuildContext context) async {
           ['--app=$_startPage'],
           mode: ProcessStartMode.detached,
         );
+        // A browser app launch can reuse an existing browser process.
+        if (fromRemoteSession && Platform.numberOfProcessors <= 2) {
+          final error = raiseWindowsViewerPriority();
+          if (error != 0) {
+            debugPrint('OpsLinX VAS viewer priority: Windows error $error');
+          }
+        }
         return;
       } on ProcessException {
         // Try the next installed browser.

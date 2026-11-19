@@ -128,7 +128,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   () => showG3Enrollment(context), primary: true),
               const SizedBox(height: 8),
             ],
-            if (isWindows && opsTalxWindowsLab && !isIncomingOnly && !g3IsAdhoc()) ...[
+            if (isWindows && opsTalxWindowsEnabled && !isIncomingOnly && !g3IsAdhoc()) ...[
               _g3Action(context, Icons.video_call_outlined, 'Video-Hilfe',
                   () => openOpsTalxVideoWindow(context)),
               const SizedBox(height: 8),
