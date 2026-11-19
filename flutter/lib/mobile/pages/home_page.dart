@@ -16,6 +16,7 @@ import '../../g3_handoff_uri.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
 import 'connection_page.dart';
+import 'opstalx_lab_page.dart';
 
 abstract class PageShape extends Widget {
   final String title = "";
@@ -52,10 +53,24 @@ class G3MobileAddressBookPage extends StatelessWidget implements PageShape {
               RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.authority)) {
             await connect(context, uri.authority);
           } else {
-            throw const FormatException('Ungültige Verbindungsfreigabe');
+            throw const FormatException('UngÃ¼ltige Verbindungsfreigabe');
           }
         }),
       );
+}
+
+class _OpsTalxNavigationPage extends StatelessWidget implements PageShape {
+  const _OpsTalxNavigationPage();
+
+  @override
+  String get title => 'Video-Hilfe';
+  @override
+  Widget get icon => const Icon(Icons.video_call_outlined);
+  @override
+  List<Widget> get appBarActions => const [];
+
+  @override
+  Widget build(BuildContext context) => const OpsTalxLabPage();
 }
 
 class HomePage extends StatefulWidget {
@@ -157,6 +172,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ServerPage(assistedSupport: _g3AndroidClient),
       ]);
     }
+    if (_g3AndroidClient && const bool.fromEnvironment('G3_OPSTALX_LAB')) {
+      _pages.add(const _OpsTalxNavigationPage());
+    }
     if (!_g3AndroidClient || bind.isIncomingOnly()) {
       _pages.add(SettingsPage());
     }
@@ -188,7 +206,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     child: TextButton.icon(
                       onPressed: _showAndroidSettings,
                       icon: const Icon(Icons.system_update),
-                      label: const Text('Update verfügbar'),
+                      label: const Text('Update verfÃ¼gbar'),
                     ),
                   ),
             actions: [
