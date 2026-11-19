@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import time
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from flask import abort, g, jsonify, redirect, render_template, request
 
@@ -83,11 +84,17 @@ def install(app, m, native_identity, native_json):
 
 def configure(app):
     key_path = os.environ.get("OPSTALX_SIGNING_KEY_FILE")
-    if key_path:
-        app.config["OPSTALX_SIGNING_KEY"] = load_pem_private_key(
-            Path(key_path).read_bytes(), password=None
+    if not key_path:
+        return
+    try:
+        key = load_pem_private_key(Path(key_path).read_bytes(), password=None)
+        if not isinstance(key, Ed25519PrivateKey):
+            raise ValueError("Expected an Ed25519 key")
+        customers = frozenset(
+            int(value) for value in os.environ.get("OPSTALX_CUSTOMER_IDS", "").split(",")
+            if value.strip()
         )
-    app.config["OPSTALX_CUSTOMER_IDS"] = frozenset(
-        int(value) for value in os.environ.get("OPSTALX_CUSTOMER_IDS", "").split(",")
-        if value.strip()
-    )
+    except (OSError, ValueError, TypeError):
+        app.logger.warning("OpsTalX start disabled because the VAS configuration is invalid")
+        return
+    app.config.update(OPSTALX_SIGNING_KEY=key, OPSTALX_CUSTOMER_IDS=customers)
