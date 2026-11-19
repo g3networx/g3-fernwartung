@@ -3,6 +3,6 @@
   "displayVersion": "g3.6.2 Build 191126",
   "buildDate": "2026-11-19",
   "windowsVersion": "1.62.20113",
-  "dailyInternalSequence": 0,
-  "feature": "bootstrap-polling"
+  "dailyInternalSequence": 1,
+  "feature": "opstalx-vas-lab"
 }
