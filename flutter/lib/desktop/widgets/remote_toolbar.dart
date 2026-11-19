@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/desktop/widgets/opstalx_video_window.dart';
 import 'package:flutter_hbb/g3_update.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'dart:convert';
@@ -879,6 +880,15 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
           color: _ToolbarTheme.blueColor,
           hoverColor: _ToolbarTheme.hoverBlueColor,
           onPressed: openGuide,
+        ));
+      }
+      if (isWindows && opsTalxWindowsLab) {
+        toolbarItems.add(_IconMenuButton(
+          tooltip: 'Video-Hilfe (separates Fenster)',
+          icon: const Icon(Icons.video_call, color: Colors.white, size: 22),
+          color: _ToolbarTheme.blueColor,
+          hoverColor: _ToolbarTheme.hoverBlueColor,
+          onPressed: () => openOpsTalxVideoWindow(context),
         ));
       }
       toolbarItems.add(_IconMenuButton(

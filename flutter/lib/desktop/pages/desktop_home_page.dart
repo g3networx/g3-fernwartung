@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/desktop/widgets/opstalx_video_window.dart';
 import 'package:flutter_hbb/g3_update.dart';
 import 'package:flutter_hbb/g3_enrollment.dart';
 import 'dart:async';
@@ -125,6 +126,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             if (!g3IsAdhoc()) ...[
               _g3Action(context, Icons.folder_open_rounded, 'Gerät zuordnen',
                   () => showG3Enrollment(context), primary: true),
+              const SizedBox(height: 8),
+            ],
+            if (isWindows && opsTalxWindowsLab && !isIncomingOnly && !g3IsAdhoc()) ...[
+              _g3Action(context, Icons.video_call_outlined, 'Video-Hilfe',
+                  () => openOpsTalxVideoWindow(context)),
               const SizedBox(height: 8),
             ],
             if (_g3AvailableVersion != null) Padding(
