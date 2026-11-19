@@ -21,7 +21,7 @@ cargo build --locked --features hwcodec,vram,flutter --lib --release
 Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_api_policy::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_passwords::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap::;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_registry_password::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_otp_handoff::tests;Check
 cargo test --locked --release --lib --features hwcodec,vram,flutter g3_password_probe_persistence_tests;Check

@@ -80,7 +80,9 @@ def patch_bootstrap(source):
             raise ValueError("Expected one authenticated credential-policy response")
         source = source.replace(original, replacement)
 
-    # An installed device polls every 30 seconds. Budget for 200 devices
+    if 'from bootstrap_polling import BootstrapTraffic,heartbeat,heartbeat_token' in source:
+        return source
+    # Legacy installed devices poll every 30 seconds. Budget for 200 devices
     # sharing an address in the portal's 15-minute rate-limit window.
     old_limit = "m.limited('bootstrap:'+str(request.remote_addr),300);"
     new_limit = "m.limited('bootstrap:'+str(request.remote_addr),6000);"
@@ -136,6 +138,8 @@ def main():
         path.write_text(updated, encoding="utf-8")
     source = Path(__file__).resolve().parent
     shutil.copyfile(source / "device_management.py", target / "device_management.py")
+    if 'from bootstrap_polling import ' in updates[target / 'bootstrap_client.py']:
+        shutil.copyfile(source / 'bootstrap_polling.py', target / 'bootstrap_polling.py')
     shutil.copyfile(source / "templates/device_management.html", templates / "device_management.html")
 
 

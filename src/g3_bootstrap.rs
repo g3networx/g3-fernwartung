@@ -2,6 +2,8 @@
 use hbb_common::{config::Config};
 use serde_json::Value;
 use std::{sync::Once,time::Duration};
+#[path = "g3_bootstrap_poll.rs"]
+mod polling;
 
 fn customer_code(source:&str)->Option<&str> {
     let start=source.to_ascii_lowercase().find("kunde_")?+6;
@@ -29,10 +31,15 @@ pub fn start() {
     #[cfg(windows)]
     {let _=crate::g3_registry_password::restore_profile();crate::g3_registry_password::enable_password_alternatives();}
     static ONCE:Once=Once::new();
-    ONCE.call_once(||{std::thread::spawn(||loop{
+    ONCE.call_once(||{std::thread::spawn(||{
+      let mut heartbeat = String::new();
+      let mut failures = 0u32;
+      loop{
         // Registration/key confirmation may finish after the service starts.
-        let _=refresh();
-        std::thread::sleep(Duration::from_secs(30));
+        if refresh(&mut heartbeat).is_ok() { failures = 0; }
+        else { failures = failures.saturating_add(1); }
+        std::thread::sleep(Duration::from_secs(polling::delay(failures, hbb_common::rand::random())));
+      }
     });});
 }
 fn managed_passwords(data:&Value)->Result<Vec<String>,()> {
@@ -47,20 +54,15 @@ fn managed_passwords(data:&Value)->Result<Vec<String>,()> {
     }
     Ok(passwords)
 }
-fn refresh()->Result<(),()> {
-    let id=Config::get_id();
-    if id.is_empty(){return Err(())}
-    let client=reqwest::blocking::Client::builder().https_only(true)
-        .redirect(reqwest::redirect::Policy::none()).use_rustls_tls()
-        .timeout(Duration::from_secs(10)).build().map_err(|_|())?;
+fn bootstrap_report(client:&reqwest::blocking::Client,id:&str)->Result<Value,()> {
     let url="https://linx.g3nx.net/client-bootstrap";
-    let response=client.get(url).query(&[("id",id.as_str())]).send().map_err(|_|())?;
+    let response=client.get(url).query(&[("id",id)]).send().map_err(|_|())?;
     #[cfg(windows)]
     let response=if response.status()==reqwest::StatusCode::NOT_FOUND && crate::get_app_name()=="g3Host" {
         let source=crate::platform::g3_msi_enrollment_source();
         let code=customer_code(&source).ok_or(())?;
-        enroll_customer(&client,"https://linx.g3nx.net",&id,code)?;
-        client.get(url).query(&[("id",id.as_str())]).send().map_err(|_|())?
+        enroll_customer(client,"https://linx.g3nx.net",id,code)?;
+        client.get(url).query(&[("id",id)]).send().map_err(|_|())?
     }else{response};
     let challenge:Value=response.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
     let nonce=challenge["challenge"].as_str().ok_or(())?;
@@ -71,8 +73,26 @@ fn refresh()->Result<(),()> {
     if let Ok(Some(registration)) = crate::g3_device_management::registration() {
         request["management"] = registration;
     }
-    let data:Value=client.post(url).json(&request)
-        .send().map_err(|_|())?.error_for_status().map_err(|_|())?.json().map_err(|_|())?;
+    client.post(url).json(&request)
+        .send().map_err(|_|())?.error_for_status().map_err(|_|())?.json().map_err(|_|())
+}
+fn refresh(heartbeat:&mut String)->Result<(),()> {
+    let id=Config::get_id();
+    if !(6..=40).contains(&id.len()) || !id.bytes().all(|c|c.is_ascii_alphanumeric() || c==b'_' || c==b'-'){return Err(())}
+    let client=reqwest::blocking::Client::builder().https_only(true)
+        .redirect(reqwest::redirect::Policy::none()).use_rustls_tls()
+        .timeout(Duration::from_secs(10)).build().map_err(|_|())?;
+    let data:Value=if heartbeat.is_empty() {
+        bootstrap_report(&client,&id)?
+    } else {
+        let mut request=serde_json::json!({"id":id,"credential_policy":2});
+        #[cfg(windows)]
+        if let Ok(Some(registration))=crate::g3_device_management::registration(){request["management"]=registration;}
+        let response=client.post("https://linx.g3nx.net/client-heartbeat").bearer_auth(heartbeat.as_str())
+            .json(&request).send().map_err(|_|())?;
+        if matches!(response.status().as_u16(),401|404) { bootstrap_report(&client,&id)? }
+        else { response.error_for_status().map_err(|_|())?.json().map_err(|_|())? }
+    };
     if data["registered"]!=true{return Err(())}
     #[cfg(windows)]
     if let Some(policy) = data.get("management") {
@@ -107,6 +127,11 @@ fn refresh()->Result<(),()> {
     }
     if crate::get_app_name()=="g3Host" && Config::get_option("g3-host-password-ui").is_empty() {
         Config::set_option("g3-host-password-ui".to_owned(),"1".to_owned());
+    }
+    if let Some(token)=data["heartbeat_token"].as_str() {
+        if token.len()==54 && token.bytes().all(|c|c.is_ascii_alphanumeric() || c==b'_' || c==b'-') {
+            *heartbeat=token.to_owned();
+        }
     }
     Ok(())
 }
