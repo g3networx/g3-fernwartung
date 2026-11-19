@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 const opsTalxWindowsLab = bool.fromEnvironment('G3_OPSTALX_LAB');
-const _startPage = 'https://talx.opslinx.de/ar/start';
+const _startPage = 'https://linx.g3nx.net/opstalx/vas';
 
 Future<void> openOpsTalxVideoWindow(BuildContext context) async {
   if (!Platform.isWindows) return;
@@ -35,7 +35,7 @@ Future<void> openOpsTalxVideoWindow(BuildContext context) async {
   await showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('OpsTalX'),
+      title: const Text('OpsLinX VAS'),
       content: const Text(
         'Für das separate Video-Fenster wird Microsoft Edge oder Google Chrome benötigt.',
       ),
