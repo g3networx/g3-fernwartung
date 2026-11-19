@@ -172,7 +172,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ServerPage(assistedSupport: _g3AndroidClient),
       ]);
     }
-    if (_g3AndroidClient && const bool.fromEnvironment('G3_OPSTALX_LAB')) {
+    if (_g3AndroidClient && const bool.fromEnvironment('G3_OPSTALX')) {
       _pages.add(const _OpsTalxNavigationPage());
     }
     if (!_g3AndroidClient || bind.isIncomingOnly()) {
