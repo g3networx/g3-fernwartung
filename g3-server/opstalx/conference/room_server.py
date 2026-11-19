@@ -19,7 +19,7 @@ def decode(value):
     return urlsafe_b64decode(value + '=' * (-len(value) % 4))
 
 key = (Path(os.environ['CREDENTIALS_DIRECTORY']) / 'jwt.key').read_bytes().strip()
-portal_key = load_pem_public_key(Path('/etc/opstalx-ar/portal-fixture.pub').read_bytes())
+portal_key = load_pem_public_key(Path('/etc/opstalx-ar/portal-release.pub').read_bytes())
 base = 'https://talx.opslinx.de'
 used = {}
 lock = Lock()

@@ -1,4 +1,4 @@
-(() => {
+(async () => {
   'use strict';
   const code = new URL(location.href).searchParams.get('room')?.toLowerCase();
   if (!/^[a-f0-9]{32}$/.test(code || '')) return;
@@ -15,12 +15,30 @@
   get('controls').hidden = false;
   const status = text => { get('status').textContent = text; };
   status('Raumcode: ' + code);
+  let codecPreferenceOrder;
+  if (jwt) {
+    const video = {contentType:'video/H264',width:640,height:360,bitrate:600000,framerate:20};
+    const capabilities = navigator.mediaCapabilities;
+    const efficientH264 = capabilities?.decodingInfo && capabilities?.encodingInfo
+      && await Promise.race([
+        Promise.all([
+          capabilities.decodingInfo({type:'webrtc',video}),
+          capabilities.encodingInfo({type:'webrtc',video}),
+        ]).then(results=>results.every(info=>info.supported && info.powerEfficient)).catch(()=>false),
+        new Promise(resolve=>setTimeout(()=>resolve(false),500)),
+      ]);
+    codecPreferenceOrder = efficientH264 ? ['H264','VP8','VP9','AV1'] : ['VP8','H264','VP9','AV1'];
+  }
   const api = new JitsiMeetExternalAPI(location.host,{
     parentNode:get('call'),roomName:code,jwt,
     interfaceConfigOverwrite:twoCoreSupporter ? {DISABLE_VIDEO_BACKGROUND:true} : undefined,
     configOverwrite:{
       disableDeepLinking:true,
       startWithVideoMuted:Boolean(jwt),
+      ...(codecPreferenceOrder && {
+        videoQuality:{codecPreferenceOrder},
+        p2p:{codecPreferenceOrder},
+      }),
       virtualBackground:{
         disabled:!jwt,
         ...(lightSupporterVideo && {

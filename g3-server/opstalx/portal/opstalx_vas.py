@@ -84,17 +84,27 @@ def install(app, m, native_identity, native_json):
 
 def configure(app):
     key_path = os.environ.get("OPSTALX_SIGNING_KEY_FILE")
-    if not key_path:
-        return
     try:
+        if key_path:
+            customers = [
+                int(value) for value in os.environ.get("OPSTALX_CUSTOMER_IDS", "").split(",")
+                if value.strip()
+            ]
+        else:
+            config_path = Path("/etc/opslinx/opstalx-vas.json")
+            if not config_path.is_file():
+                return
+            configuration = json.loads(config_path.read_text(encoding="utf-8"))
+            key_path = configuration["key_file"]
+            customers = configuration["customer_ids"]
+        if not isinstance(customers, list) or any(
+            type(customer) is not int or customer <= 0 for customer in customers
+        ):
+            raise ValueError("Expected positive customer IDs")
         key = load_pem_private_key(Path(key_path).read_bytes(), password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise ValueError("Expected an Ed25519 key")
-        customers = frozenset(
-            int(value) for value in os.environ.get("OPSTALX_CUSTOMER_IDS", "").split(",")
-            if value.strip()
-        )
-    except (OSError, ValueError, TypeError):
+    except (KeyError, OSError, ValueError, TypeError):
         app.logger.warning("OpsTalX start disabled because the VAS configuration is invalid")
         return
-    app.config.update(OPSTALX_SIGNING_KEY=key, OPSTALX_CUSTOMER_IDS=customers)
+    app.config.update(OPSTALX_SIGNING_KEY=key, OPSTALX_CUSTOMER_IDS=frozenset(customers))
