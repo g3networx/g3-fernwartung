@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20112",
+  "version": "1.5.3-g3.62.20113",
   "displayVersion": "g3.6.2 Build 191126",
   "buildDate": "2026-11-19",
-  "windowsVersion": "1.62.20112",
+  "windowsVersion": "1.62.20113",
   "dailyInternalSequence": 0,
   "feature": "bootstrap-polling"
 }
