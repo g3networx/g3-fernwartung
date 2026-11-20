@@ -39,4 +39,4 @@ jobs:
       - name: Verify device registration and relay over TLS on port 443
         working-directory: server-lab
         run: |
-          sudo unshare --net sh -ec 'ip link set lo up; exec /usr/bin/python3 -u "$@"' sh +            test-tls-registration.py target/debug/hbbs 443
+          sudo unshare --net sh -ec 'ip link set lo up; exec /usr/bin/python3 -u "$@"' sh test-tls-registration.py target/debug/hbbs 443
