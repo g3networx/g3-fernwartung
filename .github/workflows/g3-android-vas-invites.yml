@@ -4,6 +4,8 @@ on:
     branches: [g3-opslinx-tls-registration-lab]
     paths:
       - .github/workflows/g3-android-vas-invites.yml
+      - Cargo.toml
+      - g3-build/hbb-common.patch
       - src/rendezvous_mediator.rs
       - src/flutter_ffi.rs
       - flutter/lib/g3_vas_inbox.dart
