@@ -19,6 +19,39 @@ replace_once(
     'if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned());',
     'if is_g3_adhoc() || cfg!(target_os = "android"){ settings.insert("approve-mode".to_owned(),"click".to_owned());',
 )
+websocket = root / 'libs/hbb_common/src/websocket.rs'
+replace_once(
+    websocket,
+    '    #[inline]\n    pub fn set_raw(&mut self) {',
+    '''    /// A WSS connection that always verifies the certificate, including on retries.
+    #[cfg(target_os = "android")]
+    pub async fn new_verified(url: &str, ms_timeout: u64) -> ResultType<Self> {
+        if !url.starts_with("wss://") {
+            bail!("verified WebSocket requires TLS");
+        }
+        let proxy = Config::get_socks();
+        let (stream, addr) = Self::try_connect(
+            url,
+            None,
+            proxy.as_ref(),
+            ms_timeout,
+            TlsType::Rustls,
+            false,
+            Some(false),
+            Some(false),
+        )
+        .await?;
+        Ok(Self {
+            stream,
+            addr,
+            encrypt: None,
+            send_timeout: ms_timeout,
+        })
+    }
+
+    #[inline]
+    pub fn set_raw(&mut self) {''',
+)
 replace_once(android / 'build.gradle', 'applicationId "com.carriez.flutter_hbb"',
              'applicationId "net.g3nx.opslinx.lab"')
 

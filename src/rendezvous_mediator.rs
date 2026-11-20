@@ -54,15 +54,16 @@ pub fn request_vas_identity_registration() {
 #[cfg(target_os = "android")]
 #[tokio::main(flavor = "current_thread")]
 async fn register_vas_identity() {
-    let host = check_port(Config::get_rendezvous_server(), RENDEZVOUS_PORT);
-    if use_ws() && !hbb_common::websocket::check_ws(&host).starts_with("wss://") {
-        return;
-    }
+    use hbb_common::anyhow::Context;
+
+    // VAS uses the OpsLinX portal identity index, even when native remote
+    // control is disabled. Register it through the authenticated cluster proxy.
     let register = async {
-        // Register the public identity without starting the Android receiver.
-        let mut connection = connect_tcp(host, CONNECT_TIMEOUT).await?;
-        let key = crate::get_key(true).await;
-        crate::secure_tcp_required(&mut connection, &key).await?;
+        let mut connection = hbb_common::websocket::WsFramedStream::new_verified(
+            "wss://linx.g3nx.net/ws/id",
+            CONNECT_TIMEOUT,
+        )
+        .await?;
         let mut request = Message::new();
         request.set_register_pk(RegisterPk {
             id: Config::get_id(),
@@ -72,10 +73,24 @@ async fn register_vas_identity() {
             ..Default::default()
         });
         connection.send(&request).await?;
-        let _ = connection.next().await;
-        ResultType::<()>::Ok(())
+        let response = connection.next().await.context("Registration connection closed")??;
+        match Message::parse_from_bytes(&response)?.union {
+            Some(rendezvous_message::Union::RegisterPkResponse(response))
+                if response.result.enum_value() == Ok(register_pk_response::Result::OK) =>
+            {
+                Ok(())
+            }
+            Some(rendezvous_message::Union::RegisterPkResponse(response)) => {
+                bail!("The server rejected device registration: {:?}", response.result)
+            }
+            _ => bail!("No registration acknowledgement from the rendezvous server"),
+        }
     };
-    let _ = tokio::time::timeout(Duration::from_secs(8), register).await;
+    match tokio::time::timeout(Duration::from_secs(8), register).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => log::debug!("VAS device registration deferred: {error}"),
+        Err(_) => log::debug!("VAS device registration timed out"),
+    }
 }
 
 fn connection_meta(
