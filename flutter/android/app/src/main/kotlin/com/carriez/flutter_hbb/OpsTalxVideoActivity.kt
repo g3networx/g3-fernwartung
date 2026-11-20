@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,7 @@ class OpsTalxVideoActivity : Activity() {
     companion object {
         const val ROOM_URL = "opstalx_room_url"
         private const val CAMERA_REQUEST = 20
+        private const val RETURN_TO_APP = "https://talx.opslinx.de/vas/return-to-app"
         private val room = Regex("(?:[0-9]{10}|[0-9a-f]{32})")
         private val grant = Regex("grant=[A-Za-z0-9_-]{1,1000}\\.[A-Za-z0-9_-]{86}")
 
@@ -58,8 +60,18 @@ class OpsTalxVideoActivity : Activity() {
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            userAgentString = "$userAgentString OpsLinXAndroidVAS/1"
         }
         view.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                if (url == RETURN_TO_APP) {
+                    view.stopLoading()
+                    finish()
+                    return
+                }
+                super.onPageStarted(view, url, favicon)
+            }
+
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
                 !hasTrustedOrigin(Uri.parse(url))
