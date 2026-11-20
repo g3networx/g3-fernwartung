@@ -39,10 +39,17 @@ use crate::{
 
 type Message = RendezvousMessage;
 
+// A separate registration socket must never replace the endpoint of an active
+// screen-sharing service. Let its rendezvous mediator handle registration.
+#[cfg(target_os = "android")]
+pub(crate) static ANDROID_SUPPORT_STARTED: AtomicBool = AtomicBool::new(false);
+
 #[cfg(target_os = "android")]
 pub fn request_vas_identity_registration() {
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
+    if ANDROID_SUPPORT_STARTED.load(Ordering::Acquire)
+        || IN_FLIGHT.swap(true, Ordering::AcqRel)
+    {
         return;
     }
     std::thread::spawn(|| {
@@ -54,16 +61,16 @@ pub fn request_vas_identity_registration() {
 #[cfg(target_os = "android")]
 #[tokio::main(flavor = "current_thread")]
 async fn register_vas_identity() {
-    use hbb_common::anyhow::Context;
-
-    // VAS uses the OpsLinX portal identity index, even when native remote
-    // control is disabled. Register it through the authenticated cluster proxy.
+    // The OSS rendezvous server only accepts RegisterPk over UDP. This registers
+    // a public key, not a support session. The HTTPS inbox separately verifies
+    // that this client can sign a challenge with the corresponding private key.
     let register = async {
-        let mut connection = hbb_common::websocket::WsFramedStream::new_verified(
-            "wss://linx.g3nx.net/ws/id",
-            CONNECT_TIMEOUT,
-        )
-        .await?;
+        let host = check_port(&Config::get_rendezvous_server(), RENDEZVOUS_PORT);
+        let (socket, addr) = new_direct_udp_for(&host).await?;
+        socket.connect(addr).await?;
+        if ANDROID_SUPPORT_STARTED.load(Ordering::Acquire) {
+            return Ok(());
+        }
         let mut request = Message::new();
         request.set_register_pk(RegisterPk {
             id: Config::get_id(),
@@ -72,9 +79,10 @@ async fn register_vas_identity() {
             no_register_device: Config::no_register_device(),
             ..Default::default()
         });
-        connection.send(&request).await?;
-        let response = connection.next().await.context("Registration connection closed")??;
-        match Message::parse_from_bytes(&response)?.union {
+        socket.send(&request.write_to_bytes()?).await?;
+        let mut response = [0; 1024];
+        let size = socket.recv(&mut response).await?;
+        match Message::parse_from_bytes(&response[..size])?.union {
             Some(rendezvous_message::Union::RegisterPkResponse(response))
                 if response.result.enum_value() == Ok(register_pk_response::Result::OK) =>
             {

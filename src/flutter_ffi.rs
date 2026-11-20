@@ -2249,12 +2249,14 @@ pub fn main_stop_service() {
     {
         config::Config::set_option("stop-service".into(), "Y".into());
         crate::rendezvous_mediator::RendezvousMediator::restart();
+        crate::rendezvous_mediator::ANDROID_SUPPORT_STARTED.store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
 pub fn main_start_service() {
     #[cfg(target_os = "android")]
     {
+        crate::rendezvous_mediator::ANDROID_SUPPORT_STARTED.store(true, std::sync::atomic::Ordering::Release);
         config::Config::set_option("stop-service".into(), "".into());
         crate::rendezvous_mediator::reset_needs_deploy_notification();
         crate::rendezvous_mediator::RendezvousMediator::restart();

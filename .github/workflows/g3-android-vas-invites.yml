@@ -1,4 +1,4 @@
-name: OpsLinX Android 20098 VAS invitations
+name: OpsLinX Android 20099 VAS invitations
 on:
   push:
     branches: [g3-opstalx-android]
@@ -26,7 +26,7 @@ env:
   NDK_VERSION: 'r28c'
 jobs:
   android:
-    name: Build OpsLinX Android ARM64 20098
+    name: Build OpsLinX Android ARM64 20099
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
@@ -169,10 +169,10 @@ jobs:
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20098 --dart-define=G3_ANDROID_CLIENT=true \
+            --build-name=3.6.2 --build-number=20099 --dart-define=G3_ANDROID_CLIENT=true \
             --dart-define=G3_OPSTALX=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20098 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20098'
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20099 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20099'
           python - <<'PY'
           from zipfile import ZipFile
 
@@ -187,7 +187,7 @@ jobs:
       - name: Upload test APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: opslinx-android-vas-20098-arm64
+          name: opslinx-android-vas-20099-arm64
           path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 7
