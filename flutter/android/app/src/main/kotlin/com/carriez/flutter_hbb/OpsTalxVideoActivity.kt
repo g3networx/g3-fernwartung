@@ -16,6 +16,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import androidx.annotation.OptIn
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewStartUpConfig
+import java.util.concurrent.Executors
 
 class OpsTalxVideoActivity : Activity() {
     companion object {
@@ -24,6 +29,7 @@ class OpsTalxVideoActivity : Activity() {
         private const val RETURN_TO_APP = "https://talx.opslinx.de/vas/return-to-app"
         private val room = Regex("(?:[0-9]{10}|[0-9a-f]{32})")
         private val grant = Regex("grant=[A-Za-z0-9_-]{1,1000}\\.[A-Za-z0-9_-]{86}")
+        private val webViewStartup = Executors.newSingleThreadExecutor()
 
         private fun hasTrustedOrigin(uri: Uri): Boolean =
             uri.scheme == "https" && uri.encodedAuthority == "talx.opslinx.de"
@@ -45,6 +51,7 @@ class OpsTalxVideoActivity : Activity() {
     private var webView: WebView? = null
     private var pendingCamera: PermissionRequest? = null
 
+    @OptIn(markerClass = [WebViewCompat.ExperimentalAsyncStartUp::class])
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val url = intent.getStringExtra(ROOM_URL)
@@ -52,6 +59,25 @@ class OpsTalxVideoActivity : Activity() {
             finish()
             return
         }
+        val loading = ProgressBar(this)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(Button(this@OpsTalxVideoActivity).apply {
+                setText(R.string.g3_video_help_close)
+                setOnClickListener { finish() }
+            }, LinearLayout.LayoutParams(-2, -2))
+            addView(loading, LinearLayout.LayoutParams(-2, -2))
+        }
+        setContentView(layout)
+        WebViewCompat.startUpWebView(WebViewStartUpConfig.Builder(webViewStartup).build()) {
+            if (!isFinishing && !isDestroyed) {
+                layout.removeView(loading)
+                openRoom(layout, url)
+            }
+        }
+    }
+
+    private fun openRoom(layout: LinearLayout, url: String) {
         val view = WebView(this)
         webView = view
         view.settings.apply {
@@ -110,15 +136,7 @@ class OpsTalxVideoActivity : Activity() {
                 if (pendingCamera === request) pendingCamera = null
             }
         }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(Button(this@OpsTalxVideoActivity).apply {
-                setText(R.string.g3_video_help_close)
-                setOnClickListener { finish() }
-            }, LinearLayout.LayoutParams(-2, -2))
-            addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
-        }
-        setContentView(layout)
+        layout.addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
         view.loadUrl(url)
     }
 
