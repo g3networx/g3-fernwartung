@@ -1,8 +1,28 @@
 (async () => {
   'use strict';
-  const code = new URL(location.href).searchParams.get('room')?.toLowerCase();
-  if (!/^[a-f0-9]{32}$/.test(code || '')) return;
-  const jwt = new URLSearchParams(location.hash.slice(1)).get('jwt');
+  const joinValue = new URL(location.href).searchParams.get('room')?.toLowerCase().replace(/[\s-]/g,'');
+  if (!joinValue) return;
+  let code = joinValue;
+  const digits = /^[0-9]{10}$/;
+  const grant = new URLSearchParams(location.hash.slice(1));
+  const jwt = grant.get('jwt');
+  let shortCode = jwt ? grant.get('code') : joinValue;
+  if (digits.test(joinValue) && !jwt) {
+    try {
+      const response = await fetch('/vas/redeem', {method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({code:joinValue})});
+      if (!response.ok) throw Error();
+      ({room:code} = await response.json());
+    } catch (_) {
+      document.getElementById('joinError').textContent = 'Der Raumcode ist ungültig oder abgelaufen.';
+      return;
+    }
+  }
+  if (!/^[a-f0-9]{32}$/.test(code || '')) {
+    document.getElementById('joinError').textContent = 'Bitte den Raumcode prüfen.';
+    return;
+  }
+  if (!digits.test(shortCode || '')) shortCode = undefined;
   const twoCoreSupporter = Boolean(jwt) && navigator.hardwareConcurrency <= 2;
   const lightSupporterVideo = Boolean(jwt)
     && (navigator.hardwareConcurrency <= 4 || navigator.deviceMemory <= 4);
@@ -14,7 +34,8 @@
   get('join').hidden = true;
   get('controls').hidden = false;
   const status = text => { get('status').textContent = text; };
-  status('Raumcode: ' + code);
+  const displayedCode = shortCode ? shortCode.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3') : code;
+  status('Raumcode: ' + displayedCode);
   let codecPreferenceOrder;
   if (jwt) {
     const video = {contentType:'video/H264',width:640,height:360,bitrate:600000,framerate:20};
@@ -190,8 +211,8 @@
     status('Video-Hilfe beendet');render();get('lightNotice').hidden=true;
   });
   get('invite').onclick=async()=>{
-    try{await navigator.clipboard.writeText(location.origin+'/vas/?room='+code);status('Einladung kopiert. Raumcode: '+code);}
-    catch(_){status('Raumcode: '+code);}
+    try{await navigator.clipboard.writeText(location.origin+'/vas/?room='+code);status('Einladung kopiert. Raumcode: '+displayedCode);}
+    catch(_){status('Raumcode: '+displayedCode);}
   };
   get('freeze').onclick=()=>{
     if(!host||!channel)return;

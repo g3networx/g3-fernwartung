@@ -9,9 +9,9 @@
       body: JSON.stringify({grant})
     });
     if (!r.ok) throw Error();
-    const {url} = await r.json();
+    const {url, code} = await r.json();
     if (!/^\/vas\/\?room=[a-f0-9]{32}#jwt=[A-Za-z0-9_.-]+$/.test(url)) throw Error();
-    location.replace(url);
+    location.replace(/^[0-9]{10}$/.test(code || '') ? url + '&code=' + code : url);
   } catch (_) {
     document.getElementById('state').textContent='Die OpsLinX-Freigabe ist ungültig oder abgelaufen. Bitte die Video-Hilfe aus OpsLinX erneut öffnen.';
   }
