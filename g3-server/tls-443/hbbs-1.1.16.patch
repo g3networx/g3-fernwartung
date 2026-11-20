@@ -1,0 +1,845 @@
+diff --git a/src/peer.rs b/src/peer.rs
+index 4ca87cf..d498320 100644
+--- a/src/peer.rs
++++ b/src/peer.rs
+@@ -4,7 +4,7 @@ use hbb_common::{
+     bytes::Bytes,
+     log,
+     rendezvous_proto::*,
+-    tokio::sync::{Mutex, RwLock},
++    tokio::sync::{mpsc, Mutex, RwLock},
+     ResultType,
+ };
+ use serde_derive::{Deserialize, Serialize};
+@@ -39,6 +39,7 @@ pub(crate) struct Peer {
+     pub(crate) info: PeerInfo,
+     // pub(crate) disabled: bool,
+     pub(crate) reg_pk: (u32, Instant), // how often register_pk
++    pub(crate) registration_stream: Option<mpsc::Sender<RendezvousMessage>>,
+ }
+ 
+ impl Default for Peer {
+@@ -53,6 +54,7 @@ impl Default for Peer {
+             // user: None,
+             // disabled: false,
+             reg_pk: (0, get_expired_time()),
++            registration_stream: None,
+         }
+     }
+ }
+@@ -99,36 +101,31 @@ impl PeerMap {
+         pk: Bytes,
+         ip: String,
+     ) -> register_pk_response::Result {
+-        log::info!("update_pk {} {:?} {:?} {:?}", id, addr, uuid, pk);
+-        let (info_str, guid) = {
+-            let mut w = peer.write().await;
+-            w.socket_addr = addr;
+-            w.uuid = uuid.clone();
+-            w.pk = pk.clone();
+-            w.last_reg_time = Instant::now();
+-            w.info.ip = ip;
+-            (
+-                serde_json::to_string(&w.info).unwrap_or_default(),
+-                w.guid.clone(),
+-            )
+-        };
+-        if guid.is_empty() {
++        let info = PeerInfo { ip };
++        let info_str = serde_json::to_string(&info).unwrap_or_default();
++        let guid = peer.read().await.guid.clone();
++        let guid = if guid.is_empty() {
+             match self.db.insert_peer(&id, &uuid, &pk, &info_str).await {
+                 Err(err) => {
+                     log::error!("db.insert_peer failed: {}", err);
+                     return register_pk_response::Result::SERVER_ERROR;
+                 }
+-                Ok(guid) => {
+-                    peer.write().await.guid = guid;
+-                }
++                Ok(guid) => guid,
+             }
+         } else {
+             if let Err(err) = self.db.update_pk(&guid, &id, &pk, &info_str).await {
+                 log::error!("db.update_pk failed: {}", err);
+                 return register_pk_response::Result::SERVER_ERROR;
+             }
+-            log::info!("pk updated instead of insert");
+-        }
++            guid
++        };
++        let mut peer = peer.write().await;
++        peer.guid = guid;
++        peer.socket_addr = addr;
++        peer.uuid = uuid;
++        peer.pk = pk;
++        peer.last_reg_time = Instant::now();
++        peer.info = info;
+         register_pk_response::Result::OK
+     }
+ 
+diff --git a/src/relay_server.rs b/src/relay_server.rs
+index 0ec190a..0e7d1de 100644
+--- a/src/relay_server.rs
++++ b/src/relay_server.rs
+@@ -26,12 +26,18 @@ use std::{
+     io::Error,
+     net::SocketAddr,
+     sync::atomic::{AtomicUsize, Ordering},
++    sync::Arc,
+ };
+ 
+ type Usage = (usize, usize, usize, usize);
+ 
++struct PendingPeer {
++    stream: Box<dyn StreamTrait>,
++    generation: Arc<()>,
++}
++
+ lazy_static::lazy_static! {
+-    static ref PEERS: Mutex<HashMap<String, Box<dyn StreamTrait>>> = Default::default();
++    static ref PEERS: Mutex<HashMap<String, PendingPeer>> = Default::default();
+     static ref USAGE: RwLock<HashMap<String, Usage>> = Default::default();
+     static ref BLACKLIST: RwLock<HashSet<String>> = Default::default();
+     static ref BLOCKLIST: RwLock<HashSet<String>> = Default::default();
+@@ -432,8 +438,10 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
+                     return;
+                 }
+                 if !rf.uuid.is_empty() {
+-                    let mut peer = PEERS.lock().await.remove(&rf.uuid);
+-                    if let Some(peer) = peer.as_mut() {
++                    let mut peers = PEERS.lock().await;
++                    if let Some(waiting) = peers.remove(&rf.uuid) {
++                        drop(peers);
++                        let mut peer = waiting.stream;
+                         log::info!("Relayrequest {} from {} got paired", rf.uuid, addr);
+                         let id = format!("{}:{}", addr.ip(), addr.port());
+                         USAGE.write().await.insert(id.clone(), Default::default());
+@@ -442,7 +450,7 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
+                             stream.set_raw();
+                             log::info!("Both are raw");
+                         }
+-                        if let Err(err) = relay(addr, &mut stream, peer, limiter, id.clone()).await
++                        if let Err(err) = relay(addr, &mut stream, &mut peer, limiter, id.clone()).await
+                         {
+                             log::info!("Relay of {} closed: {}", addr, err);
+                         } else {
+@@ -450,10 +458,20 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
+                         }
+                         USAGE.write().await.remove(&id);
+                     } else {
++                        let generation = Arc::new(());
++                        peers.insert(rf.uuid.clone(), PendingPeer {
++                            stream: Box::new(stream),
++                            generation: generation.clone(),
++                        });
++                        drop(peers);
+                         log::info!("New relay request {} from {}", rf.uuid, addr);
+-                        PEERS.lock().await.insert(rf.uuid.clone(), Box::new(stream));
+                         sleep(30.).await;
+-                        PEERS.lock().await.remove(&rf.uuid);
++                        let mut peers = PEERS.lock().await;
++                        if peers.get(&rf.uuid)
++                            .map_or(false, |pending| Arc::ptr_eq(&pending.generation, &generation))
++                        {
++                            peers.remove(&rf.uuid);
++                        }
+                     }
+                 }
+             }
+diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
+index dff45eb..28ad260 100644
+--- a/src/rendezvous_server.rs
++++ b/src/rendezvous_server.rs
+@@ -1,7 +1,7 @@
+ use crate::common::*;
+ use crate::peer::*;
+ use hbb_common::{
+-    allow_err, bail,
++    allow_err, anyhow::anyhow, bail,
+     bytes::{Bytes, BytesMut},
+     bytes_codec::BytesCodec,
+     config,
+@@ -13,7 +13,7 @@ use hbb_common::{
+     log,
+     protobuf::{Message as _, MessageField},
+     rendezvous_proto::{
+-        register_pk_response::Result::{TOO_FREQUENT, UUID_MISMATCH},
++        register_pk_response::Result::TOO_FREQUENT,
+         *,
+     },
+     tcp::{listen_any, FramedStream},
+@@ -48,6 +48,10 @@ enum Data {
+ }
+ 
+ const REG_TIMEOUT: i64 = 30_000;
++const TLS_REGISTRATION_PATH: &str = "/ws/register";
++const TLS_REGISTRATION_PROOF: &[u8] = b"opslinx-device-registration-v1\0";
++const TLS_REGISTRATION_TIMEOUT: u64 = 8_000;
++const MAX_REGISTRATION_FRAME: usize = 2_048;
+ type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
+ type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
+ enum Sink {
+@@ -88,6 +92,22 @@ pub struct RendezvousServer {
+     relay_servers0: Arc<RelayServers>,
+     rendezvous_servers: Arc<Vec<String>>,
+     inner: Arc<Inner>,
++    key_registration: Arc<Mutex<()>>,
++    tls_registration: bool,
++}
++
++enum PeerRoute {
++    Udp(SocketAddr),
++    WebSocket(mpsc::Sender<RendezvousMessage>),
++}
++
++impl PeerRoute {
++    fn for_peer(peer: &Peer) -> Self {
++        match &peer.registration_stream {
++            Some(stream) => Self::WebSocket(stream.clone()),
++            None => Self::Udp(peer.socket_addr),
++        }
++    }
+ }
+ 
+ enum LoopFailure {
+@@ -142,6 +162,8 @@ impl RendezvousServer {
+                 mask,
+                 local_ip,
+             }),
++            key_registration: Arc::new(Mutex::new(())),
++            tls_registration: std::env::var("OPSLINX_TLS_REGISTRATION").as_deref() == Ok("1"),
+         };
+         log::info!("mask: {:?}", rs.inner.mask);
+         log::info!("local-ip: {:?}", rs.inner.local_ip);
+@@ -343,86 +365,8 @@ impl RendezvousServer {
+                     if rk.uuid.is_empty() || rk.pk.is_empty() {
+                         return Ok(());
+                     }
+-                    let id = rk.id;
+-                    let ip = addr.ip().to_string();
+-                    if id.len() < 6 {
+-                        return send_rk_res(socket, addr, UUID_MISMATCH).await;
+-                    } else if !self.check_ip_blocker(&ip, &id).await {
+-                        return send_rk_res(socket, addr, TOO_FREQUENT).await;
+-                    }
+-                    let peer = self.pm.get_or(&id).await;
+-                    let (changed, ip_changed) = {
+-                        let peer = peer.read().await;
+-                        if peer.uuid.is_empty() {
+-                            (true, false)
+-                        } else {
+-                            if peer.uuid == rk.uuid {
+-                                if peer.info.ip != ip && peer.pk != rk.pk {
+-                                    log::warn!(
+-                                        "Peer {} ip/pk mismatch: {}/{:?} vs {}/{:?}",
+-                                        id,
+-                                        ip,
+-                                        rk.pk,
+-                                        peer.info.ip,
+-                                        peer.pk,
+-                                    );
+-                                    drop(peer);
+-                                    return send_rk_res(socket, addr, UUID_MISMATCH).await;
+-                                }
+-                            } else {
+-                                log::warn!(
+-                                    "Peer {} uuid mismatch: {:?} vs {:?}",
+-                                    id,
+-                                    rk.uuid,
+-                                    peer.uuid
+-                                );
+-                                drop(peer);
+-                                return send_rk_res(socket, addr, UUID_MISMATCH).await;
+-                            }
+-                            let ip_changed = peer.info.ip != ip;
+-                            (
+-                                peer.uuid != rk.uuid || peer.pk != rk.pk || ip_changed,
+-                                ip_changed,
+-                            )
+-                        }
+-                    };
+-                    let mut req_pk = peer.read().await.reg_pk;
+-                    if req_pk.1.elapsed().as_secs() > 6 {
+-                        req_pk.0 = 0;
+-                    } else if req_pk.0 > 2 {
+-                        return send_rk_res(socket, addr, TOO_FREQUENT).await;
+-                    }
+-                    req_pk.0 += 1;
+-                    req_pk.1 = Instant::now();
+-                    peer.write().await.reg_pk = req_pk;
+-                    if ip_changed {
+-                        let mut lock = IP_CHANGES.lock().await;
+-                        if let Some((tm, ips)) = lock.get_mut(&id) {
+-                            if tm.elapsed().as_secs() > IP_CHANGE_DUR {
+-                                *tm = Instant::now();
+-                                ips.clear();
+-                                ips.insert(ip.clone(), 1);
+-                            } else if let Some(v) = ips.get_mut(&ip) {
+-                                *v += 1;
+-                            } else {
+-                                ips.insert(ip.clone(), 1);
+-                            }
+-                        } else {
+-                            lock.insert(
+-                                id.clone(),
+-                                (Instant::now(), HashMap::from([(ip.clone(), 1)])),
+-                            );
+-                        }
+-                    }
+-                    if changed {
+-                        self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
+-                    }
+-                    let mut msg_out = RendezvousMessage::new();
+-                    msg_out.set_register_pk_response(RegisterPkResponse {
+-                        result: register_pk_response::Result::OK.into(),
+-                        ..Default::default()
+-                    });
+-                    socket.send(&msg_out, addr).await?
++                    let result = self.register_pk(rk, addr, false).await;
++                    send_rk_res(socket, addr, result).await?;
+                 }
+                 Some(rendezvous_message::Union::PunchHoleRequest(ph)) => {
+                     // UDP PunchHoleRequest is intentionally unsupported.
+@@ -471,6 +415,81 @@ impl RendezvousServer {
+         Ok(())
+     }
+ 
++    async fn register_pk(
++        &mut self,
++        rk: RegisterPk,
++        addr: SocketAddr,
++        tls: bool,
++    ) -> register_pk_response::Result {
++        use register_pk_response::Result::{OK, UUID_MISMATCH};
++        if tls
++            && (rk.uuid.is_empty()
++                || rk.uuid.len() > 128
++                || rk.pk.len() != sign::PUBLICKEYBYTES
++                || rk.id.len() > 32
++                || !rk.id.bytes().all(|byte| byte.is_ascii_digit()))
++        {
++            return UUID_MISMATCH;
++        }
++        let registration = self.key_registration.clone();
++        let _guard = registration.lock().await;
++        let id = rk.id;
++        let ip = addr.ip().to_string();
++        if id.len() < 6 {
++            return UUID_MISMATCH;
++        } else if !self.check_ip_blocker(&ip, &id).await {
++            return TOO_FREQUENT;
++        }
++        let peer = self.pm.get_or(&id).await;
++        let (changed, ip_changed) = {
++            let peer = peer.read().await;
++            if peer.uuid.is_empty() {
++                (true, false)
++            } else {
++                if peer.uuid != rk.uuid
++                    || (peer.pk != rk.pk
++                        && (tls || peer.registration_stream.is_some() || peer.info.ip != ip))
++                {
++                    return UUID_MISMATCH;
++                }
++                let ip_changed = peer.info.ip != ip;
++                (peer.pk != rk.pk || ip_changed, ip_changed)
++            }
++        };
++        let mut req_pk = peer.read().await.reg_pk;
++        if req_pk.1.elapsed().as_secs() > 6 {
++            req_pk.0 = 0;
++        } else if req_pk.0 > 2 {
++            return TOO_FREQUENT;
++        }
++        req_pk.0 += 1;
++        req_pk.1 = Instant::now();
++        peer.write().await.reg_pk = req_pk;
++        if ip_changed {
++            let mut lock = IP_CHANGES.lock().await;
++            if let Some((tm, ips)) = lock.get_mut(&id) {
++                if tm.elapsed().as_secs() > IP_CHANGE_DUR {
++                    *tm = Instant::now();
++                    ips.clear();
++                    ips.insert(ip.clone(), 1);
++                } else if let Some(v) = ips.get_mut(&ip) {
++                    *v += 1;
++                } else {
++                    ips.insert(ip.clone(), 1);
++                }
++            } else {
++                lock.insert(
++                    id.clone(),
++                    (Instant::now(), HashMap::from([(ip.clone(), 1)])),
++                );
++            }
++        }
++        if changed {
++            return self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
++        }
++        OK
++    }
++
+     #[inline]
+     async fn handle_tcp(
+         &mut self,
+@@ -499,8 +518,8 @@ impl RendezvousServer {
+                         let mut msg_out = RendezvousMessage::new();
+                         rf.socket_addr = AddrMangle::encode(addr).into();
+                         msg_out.set_request_relay(rf);
+-                        let peer_addr = peer.read().await.socket_addr;
+-                        self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
++                        let route = PeerRoute::for_peer(&*peer.read().await);
++                        allow_err!(self.send_to_peer(route, msg_out));
+                     }
+                     return true;
+                 }
+@@ -677,7 +696,7 @@ impl RendezvousServer {
+         ph: PunchHoleRequest,
+         key: &str,
+         ws: bool,
+-    ) -> ResultType<(RendezvousMessage, Option<SocketAddr>)> {
++    ) -> ResultType<(RendezvousMessage, Option<PeerRoute>)> {
+         let mut ph = ph;
+         if !key.is_empty() && ph.licence_key != key {
+             log::warn!("Authentication failed from {} for peer {} - invalid key", addr, ph.id);
+@@ -695,9 +714,9 @@ impl RendezvousServer {
+         // because punch hole won't work if in the same intranet,
+         // all routers will drop such self-connections.
+         if let Some(peer) = self.pm.get(&id).await {
+-            let (elapsed, peer_addr) = {
++            let (elapsed, peer_addr, route) = {
+                 let r = peer.read().await;
+-                (r.last_reg_time.elapsed().as_millis() as i64, r.socket_addr)
++                (r.last_reg_time.elapsed().as_millis() as i64, r.socket_addr, PeerRoute::for_peer(&r))
+             };
+             if elapsed >= REG_TIMEOUT {
+                 let mut msg_out = RendezvousMessage::new();
+@@ -728,14 +747,17 @@ impl RendezvousServer {
+             let peer_is_lan = self.is_lan(peer_addr);
+             let is_lan = self.is_lan(addr);
+             let mut relay_server = self.get_relay_server(addr.ip(), peer_addr.ip());
+-            if ALWAYS_USE_RELAY.load(Ordering::SeqCst) || (peer_is_lan ^ is_lan) {
++            let tls_peer = matches!(&route, PeerRoute::WebSocket(_));
++            if tls_peer {
++                ph.nat_type = NatType::SYMMETRIC.into();
++            } else if ALWAYS_USE_RELAY.load(Ordering::SeqCst) || (peer_is_lan ^ is_lan) {
+                 if peer_is_lan {
+                     // https://github.com/rustdesk/rustdesk-server/issues/24
+                     relay_server = self.inner.local_ip.clone()
+                 }
+                 ph.nat_type = NatType::SYMMETRIC.into(); // will force relay
+             }
+-            let same_intranet: bool = !ws
++            let same_intranet: bool = !ws && !tls_peer
+                 && (peer_is_lan && is_lan || {
+                     match (peer_addr, addr) {
+                         (SocketAddr::V4(a), SocketAddr::V4(b)) => a.ip() == b.ip(),
+@@ -770,7 +792,7 @@ impl RendezvousServer {
+                     ..Default::default()
+                 });
+             }
+-            Ok((msg_out, Some(peer_addr)))
++            Ok((msg_out, Some(route)))
+         } else {
+             let mut msg_out = RendezvousMessage::new();
+             msg_out.set_punch_hole_response(PunchHoleResponse {
+@@ -845,6 +867,14 @@ impl RendezvousServer {
+         Ok(())
+     }
+ 
++    fn send_to_peer(&self, route: PeerRoute, message: RendezvousMessage) -> ResultType<()> {
++        match route {
++            PeerRoute::Udp(addr) => self.tx.send(Data::Msg(message.into(), addr))?,
++            PeerRoute::WebSocket(stream) => stream.try_send(message)?,
++        }
++        Ok(())
++    }
++
+     #[inline]
+     async fn handle_tcp_punch_hole_request(
+         &mut self,
+@@ -854,8 +884,8 @@ impl RendezvousServer {
+         ws: bool,
+     ) -> ResultType<()> {
+         let (msg, to_addr) = self.handle_punch_hole_request(addr, ph, key, ws).await?;
+-        if let Some(addr) = to_addr {
+-            self.tx.send(Data::Msg(msg.into(), addr))?;
++        if let Some(route) = to_addr {
++            self.send_to_peer(route, msg)?;
+         } else {
+             self.send_to_tcp_sync(msg, addr).await?;
+         }
+@@ -870,13 +900,7 @@ impl RendezvousServer {
+         key: &str,
+     ) -> ResultType<()> {
+         let (msg, to_addr) = self.handle_punch_hole_request(addr, ph, key, false).await?;
+-        self.tx.send(Data::Msg(
+-            msg.into(),
+-            match to_addr {
+-                Some(addr) => addr,
+-                None => addr,
+-            },
+-        ))?;
++        self.send_to_peer(to_addr.unwrap_or(PeerRoute::Udp(addr)), msg)?;
+         Ok(())
+     }
+ 
+@@ -1150,13 +1174,28 @@ impl RendezvousServer {
+     ) -> ResultType<()> {
+         let mut sink;
+         if ws {
+-            use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
++            use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
++            let from_proxy = try_into_v4(addr).ip().is_loopback();
++            let mut registration = false;
+             let callback = |req: &Request, response: Response| {
+                 let headers = req.headers();
+                 let real_ip = headers
+                     .get("X-Real-IP")
+                     .or_else(|| headers.get("X-Forwarded-For"))
+                     .and_then(|header_value| header_value.to_str().ok());
++                if req.uri().path() == TLS_REGISTRATION_PATH {
++                    let ip = headers.get("X-Real-IP")
++                        .and_then(|value| value.to_str().ok())
++                        .and_then(|value| value.parse::<IpAddr>().ok());
++                    if let Some(ip) = ip.filter(|_| self.tls_registration && from_proxy) {
++                        registration = true;
++                        addr.set_ip(ip);
++                        return Ok(response);
++                    }
++                    let mut rejection = ErrorResponse::new(None);
++                    *rejection.status_mut() = http::StatusCode::NOT_FOUND;
++                    return Err(rejection);
++                }
+                 if let Some(ip) = real_ip {
+                     if ip.contains('.') {
+                         addr = format!("{ip}:0").parse().unwrap_or(addr);
+@@ -1167,6 +1206,9 @@ impl RendezvousServer {
+                 Ok(response)
+             };
+             let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
++            if registration {
++                return self.handle_registration_stream(ws_stream, addr).await;
++            }
+             let (a, mut b) = ws_stream.split();
+             sink = Some(Sink::Ws(a));
+             while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
+@@ -1192,6 +1234,94 @@ impl RendezvousServer {
+         Ok(())
+     }
+ 
++    async fn handle_registration_stream(
++        &mut self,
++        mut stream: tokio_tungstenite::WebSocketStream<TcpStream>,
++        addr: SocketAddr,
++    ) -> ResultType<()> {
++        use register_pk_response::Result::OK;
++        use tungstenite::Message::Binary;
++
++        let nonce = sodiumoxide::randombytes::randombytes(32);
++        timeout(TLS_REGISTRATION_TIMEOUT, stream.send(Binary(nonce.clone()))).await??;
++        let Some(Ok(Binary(frame))) = timeout(TLS_REGISTRATION_TIMEOUT, stream.next()).await? else {
++            bail!("Missing device registration proof");
++        };
++        if frame.len() <= sign::SIGNATUREBYTES || frame.len() > MAX_REGISTRATION_FRAME {
++            bail!("Invalid device registration frame length");
++        }
++        let (signature, encoded) = frame.split_at(sign::SIGNATUREBYTES);
++        let signature = sign::Signature::from_bytes(signature)
++            .map_err(|_| anyhow!("Invalid device registration signature"))?;
++        let mut message = RendezvousMessage::parse_from_bytes(encoded)?;
++        if !message.has_register_pk() {
++            bail!("Expected device registration message");
++        }
++        let request = message.take_register_pk();
++        let public_key = sign::PublicKey::from_slice(&request.pk)
++            .ok_or_else(|| anyhow!("Invalid device verification key"))?;
++        let signed = [TLS_REGISTRATION_PROOF, &nonce, encoded].concat();
++        if !sign::verify_detached(&signature, &signed, &public_key) {
++            bail!("Invalid device registration proof");
++        }
++        let id = request.id.clone();
++        let result = self.register_pk(request, addr, true).await;
++        let mut response = RendezvousMessage::new();
++        response.set_register_pk_response(RegisterPkResponse {
++            result: result.into(),
++            ..Default::default()
++        });
++        timeout(TLS_REGISTRATION_TIMEOUT, stream.send(Binary(response.write_to_bytes()?))).await??;
++        if result != OK {
++            return Ok(());
++        }
++
++        let peer = self.pm.get_in_memory(&id).await
++            .ok_or_else(|| anyhow!("Registered device is missing from the peer map"))?;
++        let (tx, mut rx) = mpsc::channel::<RendezvousMessage>(16);
++        {
++            let mut peer = peer.write().await;
++            peer.socket_addr = addr;
++            peer.last_reg_time = Instant::now();
++            peer.registration_stream = Some(tx.clone());
++        }
++        let (mut writer, mut reader) = stream.split();
++        let idle_timeout = Duration::from_millis(REG_TIMEOUT as u64);
++        let exchange = async {
++            let mut idle_deadline = tokio::time::Instant::now() + idle_timeout;
++            loop {
++                tokio::select! {
++                    message = tokio::time::timeout_at(idle_deadline, reader.next()) => {
++                        match message {
++                            Ok(Some(Ok(Binary(bytes)))) if bytes.is_empty() => {
++                                {
++                                    let mut peer = peer.write().await;
++                                    if !peer.registration_stream.as_ref().map_or(false, |route| route.same_channel(&tx)) {
++                                        break;
++                                    }
++                                    peer.last_reg_time = Instant::now();
++                                }
++                                idle_deadline = tokio::time::Instant::now() + idle_timeout;
++                                timeout(TLS_REGISTRATION_TIMEOUT, writer.send(Binary(Vec::new()))).await??;
++                            }
++                            _ => break,
++                        }
++                    }
++                    Some(message) = rx.recv() => {
++                        timeout(TLS_REGISTRATION_TIMEOUT, writer.send(Binary(message.write_to_bytes()?))).await??;
++                    }
++                }
++            }
++            Ok(())
++        }.await;
++        let mut peer = peer.write().await;
++        if peer.registration_stream.as_ref().map_or(false, |route| route.same_channel(&tx)) {
++            peer.registration_stream = None;
++            peer.last_reg_time = get_expired_time();
++        }
++        exchange
++    }
++
+     #[inline]
+     async fn get_pk(&mut self, version: &str, id: String) -> Bytes {
+         if version.is_empty() || self.inner.sk.is_none() {
+diff --git a/test-tls-registration.py b/test-tls-registration.py
+new file mode 100644
+index 0000000..003769b
+--- /dev/null
++++ b/test-tls-registration.py
+@@ -0,0 +1,217 @@
++"""Run the registration protocol against an isolated hbbs and a TLS proxy."""
++from contextlib import closing, ExitStack
++from pathlib import Path
++import os
++import re
++import select
++import socket
++import socketserver
++import sqlite3
++import ssl
++import subprocess
++import sys
++from tempfile import TemporaryDirectory
++from threading import Thread
++import time
++from uuid import uuid4
++
++import websocket
++
++
++PROOF_DOMAIN = b"opslinx-device-registration-v1\0"
++ID = b"1456789123"
++UUID = bytes(range(16))
++
++
++def varint(value):
++    result = bytearray()
++    while value > 127:
++        result.append((value & 127) | 128)
++        value >>= 7
++    result.append(value)
++    return bytes(result)
++
++
++def field(number, data):
++    return varint(number * 8 + 2) + varint(len(data)) + data
++
++
++def keypair(folder, name):
++    key = folder / (name + ".pem")
++    subprocess.run(["openssl", "genpkey", "-algorithm", "Ed25519", "-out", key], check=True)
++    der = subprocess.check_output(["openssl", "pkey", "-in", key, "-pubout", "-outform", "DER"])
++    return key, der[-32:]
++
++
++def signed_registration(folder, key, public, nonce):
++    message = field(15, field(1, ID) + field(2, UUID) + field(3, public))
++    challenge = folder / "challenge"
++    challenge.write_bytes(PROOF_DOMAIN + nonce + message)
++    signature = subprocess.check_output(
++        ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", key, "-in", challenge]
++    )
++    return signature + message
++
++
++class Proxy(socketserver.BaseRequestHandler):
++    def handle(self):
++        try:
++            with self.server.tls.wrap_socket(self.request, server_side=True) as client:
++                client.settimeout(5)
++                headers = b""
++                while b"\r\n\r\n" not in headers and len(headers) < 8192:
++                    chunk = client.recv(2048)
++                    if not chunk:
++                        return
++                    headers += chunk
++                head, separator, body = headers.partition(b"\r\n\r\n")
++                lines = head.split(b"\r\n")
++                location = lines[0].split()[1] if lines and len(lines[0].split()) >= 2 else None
++                if not separator or location not in (b"/ws/register", b"/ws/id", b"/ws/relay"):
++                    return
++                lines = [line for line in lines if not re.match(br"x-real-ip:", line, re.I)]
++                lines.append(b"X-Real-IP: 192.0.2.1")
++                backend_port = 23519 if location == b"/ws/relay" else 23518
++                with socket.create_connection(("127.0.0.1", backend_port), timeout=5) as backend:
++                    backend.sendall(b"\r\n".join(lines) + separator + body)
++                    while True:
++                        readable = [client] if client.pending() else select.select([client, backend], [], [], 10)[0]
++                        if not readable:
++                            return
++                        for source in readable:
++                            data = source.recv(16384)
++                            if not data:
++                                return
++                            target = backend if source is client else client
++                            target.sendall(data)
++        except OSError:
++            return
++
++
++def main():
++    hbbs = Path(sys.argv[1]).resolve()
++    port = int(sys.argv[2])
++    with TemporaryDirectory(prefix="opslinx-tls-lab-") as tmp:
++        folder = Path(tmp)
++        cert = folder / "server.crt"
++        cert_key = folder / "server.key"
++        subprocess.run(
++            ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
++             "-nodes", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
++             "-out", cert, "-keyout", cert_key, "-days", "1"],
++            check=True, capture_output=True,
++        )
++        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
++        tls.load_cert_chain(cert, cert_key)
++        with socketserver.ThreadingTCPServer(("127.0.0.1", port), Proxy) as proxy:
++            proxy.daemon_threads = True
++            proxy.tls = tls
++            Thread(target=proxy.serve_forever, daemon=True).start()
++            env = dict(os.environ, OPSLINX_TLS_REGISTRATION="1", TEST_HBBS="no")
++            with (folder / "hbbs.log").open("w+") as log:
++                with ExitStack() as stack:
++                    services = [
++                        stack.enter_context(subprocess.Popen(
++                            [program, "-p", str(listen_port)], env=env, cwd=folder, stdout=log, stderr=log
++                        ))
++                        for program, listen_port in ((hbbs, 23516), (hbbs.with_name("hbbr"), 23517))
++                    ]
++                    try:
++                        verify(folder, cert, port)
++                    except Exception:
++                        log.seek(0)
++                        print(log.read())
++                        raise
++                    finally:
++                        for service in services:
++                            service.terminate()
++                        proxy.shutdown()
++
++
++def verify(folder, cert, port):
++    base = f"wss://localhost:{port}"
++    trust = {"ca_certs": str(cert), "check_hostname": True, "cert_reqs": ssl.CERT_REQUIRED}
++
++    def connect(path):
++        return closing(websocket.create_connection(base + path, sslopt=trust, timeout=5))
++
++    for retry in range(40):
++        try:
++            with socket.create_connection(("127.0.0.1", 23518), timeout=1):
++                break
++        except OSError:
++            if retry == 39:
++                raise
++            time.sleep(0.2)
++
++    try:
++        websocket.create_connection(base + "/ws/register", timeout=5)
++        raise AssertionError("Untrusted certificate was accepted")
++    except ssl.SSLCertVerificationError:
++        pass
++
++    try:
++        websocket.create_connection("ws://localhost:23518/ws/register", timeout=5)
++        raise AssertionError("The registration handler accepted a request without the TLS proxy header")
++    except websocket.WebSocketBadStatusException as failure:
++        assert failure.status_code == 404
++
++    licence_key = (folder / "id_ed25519.pub").read_bytes().strip()
++    key, public = keypair(folder, "device")
++    with connect("/ws/register") as device:
++        nonce = device.recv()
++        assert isinstance(nonce, bytes) and len(nonce) == 32
++        frame = signed_registration(folder, key, public, nonce)
++        device.send_binary(frame)
++        assert device.recv() == field(16, b""), "Fresh key rejected"
++        device.send_binary(b"")
++        assert device.recv() == b"", "Heartbeat through TLS failed"
++        with connect("/ws/id") as controller:
++            controller.send_binary(field(8, field(1, ID) + field(3, licence_key)))
++            request = device.recv()
++            assert request[:1] == b"J", "Incoming session request did not reach the TLS device"
++
++        with connect("/ws/register") as replay:
++            assert replay.recv() != nonce
++            replay.send_binary(frame)
++            try:
++                reply = replay.recv()
++            except websocket.WebSocketConnectionClosedException:
++                reply = ""
++            assert not reply, "A signature from a previous connection was accepted"
++
++        with connect("/ws/register") as collision:
++            other, other_public = keypair(folder, "different-device")
++            collision.send_binary(signed_registration(folder, other, other_public, collision.recv()))
++            assert collision.recv() == field(16, b"\x08\x02"), "A different key took over the device"
++
++    with connect("/ws/register") as reconnected:
++        reconnected.send_binary(signed_registration(folder, key, public, reconnected.recv()))
++        assert reconnected.recv() == field(16, b""), "Device could not reconnect with the same ID"
++    with sqlite3.connect((folder / "db_v2.sqlite3").as_uri() + "?mode=ro", uri=True) as database:
++        _, confirmed_key = database.execute("SELECT id,pk FROM peer WHERE id=?", (ID.decode(),)).fetchone()
++        assert confirmed_key == public, "Persistent key binding differs"
++
++    for _ in range(6):
++        relay_request = field(18, field(2, str(uuid4()).encode()))
++        with connect("/ws/relay") as client, connect("/ws/relay") as peer:
++            client.send_binary(relay_request)
++            peer.send_binary(relay_request)
++            client.send_binary(b"lab forward")
++            assert peer.recv() == b"lab forward"
++            peer.send_binary(b"lab reply")
++            assert client.recv() == b"lab reply"
++
++    print(f"TLS port {port}: trusted certificate, fresh ID, heartbeat, incoming request, replay rejection, reconnect and bidirectional relay verified.")
++
++    _, legacy_key = keypair(folder, "old-client")
++    registration = field(15, field(1, b"1456789765") + field(2, UUID) + field(3, legacy_key))
++    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as legacy:
++        legacy.settimeout(4)
++        legacy.sendto(registration, ("127.0.0.1", 23516))
++        assert legacy.recvfrom(128)[0] == field(16, b""), "Existing UDP registration failed"
++    print("Existing clients can still register over UDP.")
++
++
++if __name__ == "__main__":
++    main()
