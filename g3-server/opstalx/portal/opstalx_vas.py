@@ -1,14 +1,17 @@
 """Issue short-lived OpsTalX launch grants from OpsLinX customer identities."""
-from base64 import urlsafe_b64encode
+from base64 import b64decode, urlsafe_b64encode
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import time
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from flask import abort, g, jsonify, redirect, render_template, request
+from itsdangerous import BadData, URLSafeTimedSerializer
 
 
 def b64(data):
@@ -16,6 +19,41 @@ def b64(data):
 
 
 def install(app, m, native_identity, native_json):
+    @app.post("/client-vas-inbox")
+    def opstalx_inbox():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            abort(400)
+        device = data.get("id")
+        if not isinstance(device, str) or not re.fullmatch(r"[A-Za-z0-9_-]{6,40}", device):
+            abort(400)
+        key = app.config.get("OPSTALX_SIGNING_KEY")
+        if key is None:
+            abort(503)
+        m.limited("vas-inbox:" + str(request.remote_addr), 240)
+        challenges = URLSafeTimedSerializer(app.secret_key, salt="opslinx-vas-inbox-v1")
+        if set(data) == {"id"}:
+            nonce = secrets.token_urlsafe(32)
+            return jsonify(challenge=challenges.dumps([device, nonce]), nonce=nonce)
+        challenge, signature = data.get("challenge"), data.get("signature")
+        if not isinstance(challenge, str) or len(challenge) > 256 or not isinstance(signature, str) or len(signature) != 88:
+            abort(400)
+        try:
+            bound_device, nonce = challenges.loads(challenge, max_age=30)
+            if bound_device != device:
+                abort(403)
+            peer = json.loads((m.DATA / "peer-public-keys.json").read_text(encoding="utf-8"))[device]
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(peer)).verify(
+                b64decode(signature, validate=True), f"g3-bootstrap-v1:{device}:{nonce}".encode()
+            )
+        except (BadData, InvalidSignature, KeyError, OSError, TypeError, ValueError):
+            abort(403)
+        payload = b64(json.dumps({
+            "aud": "talx.opslinx.de", "iss": "opslinx-vas-inbox",
+            "sub": device, "iat": int(time.time()), "exp": int(time.time()) + 300,
+        }, separators=(",", ":")).encode())
+        return jsonify(token=payload + "." + b64(key.sign(payload.encode())), expires_in=300)
+
     def allowed_customers():
         configured = app.config.get("OPSTALX_CUSTOMER_IDS", ())
         return [

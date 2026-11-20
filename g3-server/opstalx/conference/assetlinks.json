@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "net.g3nx.opslinx.lab",
+      "sha256_cert_fingerprints": [
+        "3C:69:FA:62:37:53:DC:13:A8:AB:41:BF:0C:D5:6F:01:8E:EA:2D:8F:0A:96:1C:B8:66:7E:91:B8:FC:C6:EE"
+      ]
+    }
+  }
+]

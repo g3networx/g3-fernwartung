@@ -9,8 +9,6 @@ guard = stage / 'app.py'
 addressbook = stage / 'native_addressbook.py'
 
 target = {
-    guard: ("'native_ab_connect','native_ab_logout'",
-            "'native_ab_connect','native_ab_vas_start','native_ab_logout'"),
     addressbook: (
         ' install_edit(app,m,identity,native_json)',
         ' install_edit(app,m,identity,native_json)\n'
@@ -20,6 +18,15 @@ target = {
     )
 }
 edits = {}
+guard_source = guard.read_text(encoding='utf-8')
+if "'native_ab_vas_start','opstalx_inbox'" not in guard_source:
+    anchor = "'native_ab_vas_start'" if "'native_ab_vas_start'" in guard_source else "'native_ab_connect'"
+    replacement = "'native_ab_vas_start','opstalx_inbox'"
+    if anchor == "'native_ab_connect'":
+        replacement = anchor + "," + replacement
+    if guard_source.count(anchor) != 1:
+        raise SystemExit(f'Unsupported portal revision in {guard.name}')
+    edits[guard] = guard_source.replace(anchor, replacement)
 for path, (before, after) in target.items():
     source = path.read_text(encoding='utf-8')
     if after in source:

@@ -35,7 +35,10 @@
   get('controls').hidden = false;
   const status = text => { get('status').textContent = text; };
   const displayedCode = shortCode ? shortCode.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3') : code;
-  status('Raumcode: ' + displayedCode);
+  if (jwt) {
+    get('sendInvitation').hidden = false;
+    get('fallbackCode').textContent = 'Raumcode: ' + displayedCode;
+  }
   let codecPreferenceOrder;
   if (jwt) {
     const video = {contentType:'video/H264',width:640,height:360,bitrate:600000,framerate:20};
@@ -221,7 +224,6 @@
     get('rearCamera').disabled=switchingCamera;
     get('frontCamera').disabled=switchingCamera;
     get('freeze').disabled=!channel;
-    get('invite').hidden=!host;
     get('annotation').hidden=!scene;
     get('resume').hidden=!scene||!host;
     get('noteForm').hidden=!scene||!host;
@@ -280,13 +282,44 @@
     get('lightNotice').hidden=true;
     self=undefined;host=false;channel=false;scene=undefined;incoming=undefined;author=undefined;
     status('Video-Hilfe beendet');render();get('lightNotice').hidden=true;
+    get('sendInvitation').hidden=true;
   });
   if (navigator.userAgent.includes(' OpsLinXAndroidVAS/1')) {
     api.once('readyToClose', () => location.replace('/vas/return-to-app'));
   }
   get('invite').onclick=async()=>{
-    try{await navigator.clipboard.writeText(location.origin+'/vas/?room='+code);status('Einladung kopiert. Raumcode: '+displayedCode);}
-    catch(_){status('Raumcode: '+displayedCode);}
+    const link=location.origin+'/vas/join/'+(shortCode || code);
+    try{await navigator.clipboard.writeText(link);get('inviteStatus').textContent='Handy-Link kopiert.';}
+    catch(_){get('inviteStatus').textContent=link;}
+  };
+  get('deviceInvitation').onsubmit=async event=>{
+    event.preventDefault();
+    if (!jwt || get('sendInvitation').hidden) return;
+    const device=get('inviteDevice').value.replace(/[\s\u200b\u2060\ufeff]/g,'');
+    const result=get('inviteStatus'),button=get('sendInvite');
+    if(!/^[A-Za-z0-9_-]{6,40}$/.test(device)){
+      result.textContent='Bitte die Geräte-ID vom Kundenhandy eingeben.';
+      return;
+    }
+    button.disabled=true;
+    try {
+      const response=await fetch('/vas/invite',{method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt},
+        body:JSON.stringify({id:device}),signal:AbortSignal.timeout(8000)});
+      const reply=await response.json();
+      const reasons={
+        offline:'Auf dem Handy bitte g3 OpsLinX öffnen und erneut senden.',
+        busy:'Auf dem Handy wartet bereits eine andere Video-Hilfe.',
+        rate:'Bitte kurz warten, bevor du eine weitere Einladung sendest.',
+      };
+      result.textContent=response.ok && reply.queued
+        ? 'Einladung gesendet. Der Kunde kann in der App beitreten.'
+        : reasons[reply.error] || 'Die Einladung konnte nicht gesendet werden.';
+    } catch (_) {
+      result.textContent='Die Einladung konnte nicht gesendet werden.';
+    } finally {
+      button.disabled=false;
+    }
   };
   get('freeze').onclick=()=>{
     if(!host||!channel)return;
