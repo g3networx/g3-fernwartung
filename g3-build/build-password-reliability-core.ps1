@@ -17,16 +17,16 @@ rustc --edition 2021 --test outputs/windows-logon-tests.rs -o outputs/windows-lo
 Check
 & ./outputs/windows-logon-tests.exe|Tee-Object outputs/windows-logon-tests.txt
 Check
-cargo build --locked --features hwcodec,vram,flutter --lib --release
+cargo build --locked --features hwcodec,vram,flutter,opslinx-tls-registration --lib --release
 Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_api_policy::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_passwords::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap::;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_registry_password::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_otp_handoff::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_password_probe_persistence_tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_self_connection::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_device_management::outbound_policy_tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_api_policy::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_passwords::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_bootstrap::;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_registry_password::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_otp_handoff::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_password_probe_persistence_tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_self_connection::tests;Check
+cargo test --locked --release --lib --features hwcodec,vram,flutter,opslinx-tls-registration g3_device_management::outbound_policy_tests;Check
 cargo build --locked --release --package dylib_virtual_display
 Check
 $hash=(Get-FileHash target/release/librustdesk.dll).Hash.ToLowerInvariant()

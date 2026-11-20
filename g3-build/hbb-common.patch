@@ -13,7 +13,7 @@ index 6fe1004..6f78e83 100644
      pub static ref NEW_STORED_PEER_CONFIG: Mutex<HashSet<String>> = Default::default();
      pub static ref DEFAULT_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
 -    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-+    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("custom-rendezvous-server".to_owned(), "linx.g3nx.net".to_owned()), ("relay-server".to_owned(), "linx.g3nx.net:443".to_owned()), ("key".to_owned(), "E88bk6TcFVGTjHPfEhU4naFPZRN7tSv3pjFrPO8MrG4=".to_owned()), ("api-server".to_owned(), "".to_owned())]); if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned()); settings.insert("verification-method".to_owned(),"use-temporary-password".to_owned());} settings});
++    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("custom-rendezvous-server".to_owned(), "linx.g3nx.net".to_owned()), ("relay-server".to_owned(), "linx.g3nx.net:443".to_owned()), ("key".to_owned(), "E88bk6TcFVGTjHPfEhU4naFPZRN7tSv3pjFrPO8MrG4=".to_owned()), ("api-server".to_owned(), "".to_owned())]); if option_env!("OPSLINX_TLS_REGISTRATION") == Some("1") { settings.insert("allow-websocket".to_owned(), "Y".to_owned()); } if is_g3_adhoc(){ settings.insert("approve-mode".to_owned(),"click".to_owned()); settings.insert("verification-method".to_owned(),"use-temporary-password".to_owned());} settings});
      pub static ref DEFAULT_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
      pub static ref OVERWRITE_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
      pub static ref DEFAULT_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
@@ -109,3 +109,69 @@ diff --git a/src/tcp.rs b/src/tcp.rs
 
  impl Encrypt {
      pub fn new(key: Key) -> Self {
+diff --git a/src/websocket.rs b/src/websocket.rs
+--- a/src/websocket.rs
++++ b/src/websocket.rs
+@@ -317,6 +317,18 @@
+         Ok(ws)
+     }
+ 
++    pub async fn new_verified(url: &str, ms_timeout: u64) -> ResultType<Self> {
++        if !url.starts_with("wss://") {
++            bail!("A verified WebSocket requires TLS");
++        }
++        let proxy = Config::get_socks();
++        let (stream, addr) = Self::try_connect(
++            url, None, proxy.as_ref(), ms_timeout, TlsType::Rustls, false,
++            Some(false), Some(false),
++        ).await?;
++        Ok(Self { stream, addr, encrypt: None, send_timeout: ms_timeout })
++    }
++
+     #[inline]
+     pub fn set_raw(&mut self) {
+         self.encrypt = None;
+@@ -467,7 +479,23 @@
+  * @param endpoint The endpoint to convert
+  * @return The converted WebSocket endpoint
+  */
++pub fn opslinx_tls_host(host: &str) -> bool {
++    option_env!("OPSLINX_TLS_REGISTRATION") == Some("1")
++        && (matches!(host, "linx.g3nx.net" | "rust.g3nx.net" | "opslinx02.g3nx.net" | "opslinx03.g3nx.net")
++            || option_env!("OPSLINX_TLS_LAB_HOST") == Some(host))
++}
++
+ pub fn check_ws(endpoint: &str) -> String {
++    if let Some((host, port)) = split_host_port(endpoint) {
++        if opslinx_tls_host(&host) {
++            if port == RENDEZVOUS_PORT || port == RENDEZVOUS_PORT - 1 {
++                return format!("wss://{host}/ws/id");
++            }
++            if port == RELAY_PORT || port == 443 {
++                return format!("wss://{host}/ws/relay");
++            }
++        }
++    }
+     if !use_ws() {
+         return endpoint.to_string();
+     }
+diff --git a/src/socket_client.rs b/src/socket_client.rs
+--- a/src/socket_client.rs
++++ b/src/socket_client.rs
+@@ -139,6 +139,16 @@
+     }
+     let target_str = check_ws(&target.to_string());
+     if is_ws_endpoint(&target_str) {
++        if target_str.starts_with("wss://")
++            && url::Url::parse(&target_str)
++                .ok()
++                .and_then(|url| url.host_str().map(websocket::opslinx_tls_host))
++                .unwrap_or(false)
++        {
++            return Ok(Stream::WebSocket(
++                websocket::WsFramedStream::new_verified(&target_str, ms_timeout).await?,
++            ));
++        }
+         return Ok(Stream::WebSocket(
+             websocket::WsFramedStream::new(target_str, None, ms_timeout).await?,
+         ));

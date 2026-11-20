@@ -1,10 +1,10 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3.6.2 Windows packages (20122, compact address book rows)
+name: g3 OpsLinX Windows lab packages (20123, TLS registration)
 on:
   push:
-    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab]
-    paths: [.github/workflows/g3-local-addressbook-build.yml]
+    branches: [g3-opslinx-windows-tls-registration-lab]
+    paths: [.github/workflows/g3-local-addressbook-build.yml, Cargo.toml, g3-build/hbb-common.patch, src/rendezvous_mediator.rs]
   workflow_dispatch:
 permissions:
   contents: read
@@ -63,6 +63,8 @@ jobs:
         shell: pwsh
         run: python g3-build/package-local-addressbook.py prepare
       - name: Compile HA native core and verify Windows account handling
+        env:
+          OPSLINX_TLS_REGISTRATION: "1"
         shell: pwsh
         run: ./g3-build/build-local-addressbook-core.ps1
       - name: Build g3.6.2 Flutter frontend and run focused tests
