@@ -148,7 +148,7 @@ index 0ec190a..0e7d1de 100644
                  }
              }
 diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
-index dff45eb..28ad260 100644
+index dff45eb..7efb8a4 100644
 --- a/src/rendezvous_server.rs
 +++ b/src/rendezvous_server.rs
 @@ -1,7 +1,7 @@
@@ -485,7 +485,7 @@ index dff45eb..28ad260 100644
          Ok(())
      }
  
-@@ -1150,13 +1174,28 @@ impl RendezvousServer {
+@@ -1150,15 +1174,35 @@ impl RendezvousServer {
      ) -> ResultType<()> {
          let mut sink;
          if ws {
@@ -513,9 +513,17 @@ index dff45eb..28ad260 100644
 +                    return Err(rejection);
 +                }
                  if let Some(ip) = real_ip {
-                     if ip.contains('.') {
+-                    if ip.contains('.') {
++                    if self.tls_registration && from_proxy {
++                        if let Ok(ip) = ip.parse::<IpAddr>() {
++                            // Preserve the proxy socket's unique port for replies.
++                            addr.set_ip(ip);
++                        }
++                    } else if ip.contains('.') {
                          addr = format!("{ip}:0").parse().unwrap_or(addr);
-@@ -1167,6 +1206,9 @@ impl RendezvousServer {
+                     } else {
+                         addr = format!("[{ip}]:0").parse().unwrap_or(addr);
+@@ -1167,6 +1211,9 @@ impl RendezvousServer {
                  Ok(response)
              };
              let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
@@ -525,7 +533,7 @@ index dff45eb..28ad260 100644
              let (a, mut b) = ws_stream.split();
              sink = Some(Sink::Ws(a));
              while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
-@@ -1192,6 +1234,94 @@ impl RendezvousServer {
+@@ -1192,6 +1239,94 @@ impl RendezvousServer {
          Ok(())
      }
  
@@ -622,10 +630,10 @@ index dff45eb..28ad260 100644
          if version.is_empty() || self.inner.sk.is_none() {
 diff --git a/test-tls-registration.py b/test-tls-registration.py
 new file mode 100644
-index 0000000..003769b
+index 0000000..16dcf68
 --- /dev/null
 +++ b/test-tls-registration.py
-@@ -0,0 +1,217 @@
+@@ -0,0 +1,252 @@
 +"""Run the registration protocol against an isolated hbbs and a TLS proxy."""
 +from contextlib import closing, ExitStack
 +from pathlib import Path
@@ -745,24 +753,41 @@ index 0000000..003769b
 +                        for program, listen_port in ((hbbs, 23516), (hbbs.with_name("hbbr"), 23517))
 +                    ]
 +                    try:
-+                        verify(folder, cert, port)
++                        key, public = verify(folder, cert, port)
++                        standby = folder / "standby"
++                        standby.mkdir()
++                        with sqlite3.connect(folder / "db_v2.sqlite3") as source:
++                            with sqlite3.connect(standby / "db_v2.sqlite3") as replica:
++                                source.backup(replica)
++                        services[0].terminate()
++                        services[0].wait(timeout=10)
++                        services.append(stack.enter_context(subprocess.Popen(
++                            [hbbs, "-p", "23516"], env=env, cwd=standby, stdout=log, stderr=log
++                        )))
++                        wait_rendezvous()
++                        with tls_connection(cert, port, "/ws/register") as migrated:
++                            migrated.send_binary(signed_registration(folder, key, public, migrated.recv()))
++                            assert migrated.recv() == field(16, b""), "ID could not reconnect after promotion"
++                            migrated.send_binary(b"")
++                            assert migrated.recv() == b""
++                        print("Existing ID reconnected over TLS after promotion of a copied peer database.")
 +                    except Exception:
 +                        log.seek(0)
 +                        print(log.read())
 +                        raise
 +                    finally:
 +                        for service in services:
-+                            service.terminate()
++                            if service.poll() is None:
++                                service.terminate()
 +                        proxy.shutdown()
 +
 +
-+def verify(folder, cert, port):
-+    base = f"wss://localhost:{port}"
++def tls_connection(cert, port, path):
 +    trust = {"ca_certs": str(cert), "check_hostname": True, "cert_reqs": ssl.CERT_REQUIRED}
++    return closing(websocket.create_connection(f"wss://localhost:{port}{path}", sslopt=trust, timeout=5))
 +
-+    def connect(path):
-+        return closing(websocket.create_connection(base + path, sslopt=trust, timeout=5))
 +
++def wait_rendezvous():
 +    for retry in range(40):
 +        try:
 +            with socket.create_connection(("127.0.0.1", 23518), timeout=1):
@@ -772,8 +797,15 @@ index 0000000..003769b
 +                raise
 +            time.sleep(0.2)
 +
++
++def verify(folder, cert, port):
++    wait_rendezvous()
++
++    def connect(path):
++        return tls_connection(cert, port, path)
++
 +    try:
-+        websocket.create_connection(base + "/ws/register", timeout=5)
++        websocket.create_connection(f"wss://localhost:{port}/ws/register", timeout=5)
 +        raise AssertionError("Untrusted certificate was accepted")
 +    except ssl.SSLCertVerificationError:
 +        pass
@@ -794,10 +826,20 @@ index 0000000..003769b
 +        assert device.recv() == field(16, b""), "Fresh key rejected"
 +        device.send_binary(b"")
 +        assert device.recv() == b"", "Heartbeat through TLS failed"
-+        with connect("/ws/id") as controller:
-+            controller.send_binary(field(8, field(1, ID) + field(3, licence_key)))
-+            request = device.recv()
-+            assert request[:1] == b"J", "Incoming session request did not reach the TLS device"
++        with ExitStack() as controllers:
++            requests = []
++            for marker in (b"first-controller", b"second-controller"):
++                controller = controllers.enter_context(connect("/ws/id"))
++                controller.send_binary(field(8, field(1, ID) + field(3, licence_key)))
++                request = device.recv()
++                assert request[:1] == b"J", "Incoming session request did not reach the TLS device"
++                assert request[1] < 128 and request[2] == 10 and request[3] < 128
++                address = request[4:4 + request[3]]
++                requests.append((controller, address, marker))
++            for controller, address, marker in requests:
++                with connect("/ws/id") as reply:
++                    reply.send_binary(field(19, field(1, address) + field(2, marker)))
++                assert marker in controller.recv(), "Reply went to the wrong controller behind NAT"
 +
 +        with connect("/ws/register") as replay:
 +            assert replay.recv() != nonce
@@ -839,6 +881,7 @@ index 0000000..003769b
 +        legacy.sendto(registration, ("127.0.0.1", 23516))
 +        assert legacy.recvfrom(128)[0] == field(16, b""), "Existing UDP registration failed"
 +    print("Existing clients can still register over UDP.")
++    return key, public
 +
 +
 +if __name__ == "__main__":
