@@ -53,13 +53,23 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          required=(autoconf automake bison clang cmake curl flex gperf libclang-dev libtool nasm ninja-build openjdk-17-jdk-headless pkg-config unzip zip)
+          export JAVA_HOME="${JAVA_HOME_17_X64:?The runner needs JDK 17}"
+          "$JAVA_HOME/bin/java" -version
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
           missing=()
-          for dependency in "${required[@]}"; do
-            if ! dpkg-query --show --showformat='${db:Status-Status}' "$dependency" 2>/dev/null | grep -qx installed; then
-              missing+=("$dependency")
+          for command in autoconf automake bison clang cmake curl flex gperf libtoolize nasm ninja pkg-config unzip zip; do
+            if ! command -v "$command" >/dev/null; then
+              case "$command" in
+                ninja) missing+=(ninja-build) ;;
+                libtoolize) missing+=(libtool) ;;
+                *) missing+=("$command") ;;
+              esac
             fi
           done
+          if ! ldconfig -p | grep -E 'libclang(-[0-9]+)?\.so' >/dev/null; then
+            missing+=(libclang1)
+          fi
           if (( ${#missing[@]} )); then
             apt_options=(-o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=1)
             sudo apt-get "${apt_options[@]}" update
@@ -151,10 +161,7 @@ jobs:
 
       - name: Build test APK
         working-directory: flutter
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
-          export PATH="$JAVA_HOME/bin:$PATH"
           sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
