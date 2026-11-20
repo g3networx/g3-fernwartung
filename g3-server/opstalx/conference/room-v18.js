@@ -213,6 +213,49 @@
       await new Promise(resolve=>setTimeout(resolve,180));
     });
   };
+  const frame=get('frame'),ink=get('ink'),textBox=get('textBox');
+  const tools=[...get('annotationTools').querySelectorAll('[data-tool]')];
+  const clamp=(value,max=1)=>Math.max(0,Math.min(max,value));
+  const maxStrokes=64,maxPoints=160;
+  let tool='arrow',drawingScene,draft,textDrag;
+  const newStroke=kind=>document.createElementNS('http://www.w3.org/2000/svg',
+    kind==='ellipse'?'ellipse':'polyline');
+  function paintStroke(path,kind,points){
+    if(kind==='ellipse'){
+      const [[x0,y0],[x1,y1]]=points;
+      path.setAttribute('cx',(x0+x1)/2);
+      path.setAttribute('cy',(y0+y1)/2);
+      path.setAttribute('rx',Math.abs(x1-x0)/2);
+      path.setAttribute('ry',Math.abs(y1-y0)/2);
+    }else{
+      path.setAttribute('points',points.map(point=>point.join(',')).join(' '));
+    }
+  }
+  function markPosition(event){
+    const box=get('snapshot').getBoundingClientRect();
+    return [clamp((event.clientX-box.left)/box.width),clamp((event.clientY-box.top)/box.height)];
+  }
+  function renderTextBox(){
+    const note=scene?.textBox;
+    textBox.hidden=!note?.text;
+    get('moveTextBox').hidden=!host;
+    if(!note?.text)return;
+    const left=note.x*100,top=note.y*100;
+    textBox.style.left='clamp(0px,calc('+left+'% - min(37.5%,140px)),calc(100% - min(75%,280px)))';
+    textBox.style.top=top+'%';
+    textBox.style.transform='translateY(-'+top+'%)';
+    get('textBoxContent').textContent=note.text;
+  }
+  function resetAnnotations(){
+    draft=undefined;textDrag=undefined;ink.replaceChildren();
+    delete scene.mark;delete scene.textBox;
+    get('note').value='';get('textBoxInput').value='';
+    render();
+  }
+  function sendTextBox(){
+    send({type:'text-box',id:scene.id,note:scene.textBox});
+    renderTextBox();
+  }
   const render = () => {
     get('freeze').hidden=!host;
     get('cameraLight').hidden=!host;
@@ -225,8 +268,15 @@
     get('freeze').disabled=!channel;
     get('annotation').hidden=!scene;
     get('resume').hidden=!scene||!host;
-    get('noteForm').hidden=!scene||!host;
+    get('annotationTools').hidden=!scene||!host;
+    get('noteForm').hidden=!scene||!host||tool!=='arrow';
+    get('textBoxForm').hidden=!scene||!host||tool!=='text';
     get('marker').hidden=!scene?.mark;
+    frame.toggleAttribute('data-drawing',Boolean(scene&&host&&tool!=='arrow'));
+    if(drawingScene!==scene?.id){
+      drawingScene=scene?.id;draft=undefined;textDrag=undefined;ink.replaceChildren();
+    }
+    renderTextBox();
     if (!scene) { get('snapshot').removeAttribute('src'); return; }
     const src='data:image/jpeg;base64,'+scene.image;
     if(get('snapshot').getAttribute('src')!==src) get('snapshot').src=src;
@@ -329,22 +379,105 @@
       videos.find(v=>v.id==='largeVideo'&&v.srcObject?.getVideoTracks?.().some(t=>t!==local));
     if(!remote){status('Das Kamerabild des Gastes ist noch nicht verfügbar.');return;}
     const canvas=document.createElement('canvas');
-    const scale=Math.min(1,480/Math.max(remote.videoWidth,remote.videoHeight));
-    canvas.width=Math.round(remote.videoWidth*scale);canvas.height=Math.round(remote.videoHeight*scale);
-    canvas.getContext('2d').drawImage(remote,0,0,canvas.width,canvas.height);
-    const image=canvas.toDataURL('image/jpeg',.62).split(',')[1];
+    let image;
+    for(const limit of [720,480]){
+      const scale=Math.min(1,limit/Math.max(remote.videoWidth,remote.videoHeight));
+      canvas.width=Math.round(remote.videoWidth*scale);canvas.height=Math.round(remote.videoHeight*scale);
+      canvas.getContext('2d').drawImage(remote,0,0,canvas.width,canvas.height);
+      image=canvas.toDataURL('image/jpeg',.62).split(',')[1];
+      if(image&&image.length<=90000)break;
+    }
     if(!image||image.length>90000){status('Standbild konnte nicht geteilt werden.');return;}
     scene={id:crypto.randomUUID(),image};
     const parts=Math.ceil(image.length/5000);
     for(let i=0;i<parts;i++) send({type:'image',id:scene.id,i,parts,data:image.slice(i*5000,(i+1)*5000)});
     render();
   };
-  get('frame').onclick=e=>{
+  for(const button of tools) button.onclick=()=>{
+    tool=button.dataset.tool;
+    for(const option of tools)option.setAttribute('aria-pressed',String(option===button));
+    render();
+  };
+  get('resetAnnotations').onclick=()=>{
     if(!host||!scene)return;
-    const box=get('snapshot').getBoundingClientRect();
-    const clamp=n=>Math.max(0,Math.min(1,n));
-    scene.mark={x:clamp((e.clientX-box.left)/box.width),y:clamp((e.clientY-box.top)/box.height),text:get('note').value.trim()};
-    send({type:'mark',id:scene.id,mark:scene.mark});render();
+    send({type:'reset-marks',id:scene.id});
+    resetAnnotations();
+  };
+  frame.onclick=event=>{
+    if(!host||!scene||textBox.contains(event.target))return;
+    const [x,y]=markPosition(event);
+    if(tool==='text'){
+      const text=get('textBoxInput').value.trim();
+      if(!text){get('textBoxInput').focus();return;}
+      scene.textBox={x,y,text};
+      sendTextBox();
+    }else if(tool==='arrow'){
+      scene.mark={x,y,text:get('note').value.trim()};
+      send({type:'mark',id:scene.id,mark:scene.mark});render();
+    }
+  };
+  get('snapshot').draggable=false;
+  frame.onpointerdown=event=>{
+    if(!host||!scene||draft||!event.isPrimary||event.button!==0||
+        (tool!=='ellipse'&&tool!=='freehand')||textBox.contains(event.target)||
+        ink.childElementCount>=maxStrokes)return;
+    frame.setPointerCapture(event.pointerId);
+    const point=markPosition(event).map(value=>Math.round(value*1000));
+    draft={pointer:event.pointerId,kind:tool,points:[point,point],path:newStroke(tool)};
+    ink.append(draft.path);
+    paintStroke(draft.path,draft.kind,draft.points);
+  };
+  frame.onpointermove=event=>{
+    if(draft?.pointer!==event.pointerId)return;
+    const point=markPosition(event).map(value=>Math.round(value*1000));
+    const {kind,path}=draft;
+    if(kind==='ellipse'){
+      draft.points[1]=point;
+    }else{
+      const [x,y]=draft.points.at(-1);
+      if(Math.abs(point[0]-x)+Math.abs(point[1]-y)<4)return;
+      if(draft.points.length>=maxPoints)draft.points=draft.points.filter((_,i)=>i%2===0);
+      draft.points.push(point);
+    }
+    paintStroke(path,kind,draft.points);
+  };
+  frame.onpointerup=event=>{
+    if(draft?.pointer!==event.pointerId)return;
+    frame.onpointermove(event);
+    const {kind,points,path}=draft;
+    draft=undefined;
+    if(points.every(([x,y])=>x===points[0][0]&&y===points[0][1])){path.remove();return;}
+    send({type:'stroke',id:scene.id,kind,points});
+  };
+  frame.onpointercancel=frame.onlostpointercapture=event=>{
+    if(draft?.pointer===event.pointerId){draft.path.remove();draft=undefined;}
+  };
+  get('textBoxForm').onsubmit=event=>{
+    event.preventDefault();
+    if(!host||!scene)return;
+    const text=get('textBoxInput').value.trim();
+    if(!text)return;
+    scene.textBox={x:.5,y:.5,...scene.textBox,text};
+    sendTextBox();
+  };
+  const moveTextBox=get('moveTextBox');
+  moveTextBox.onpointerdown=event=>{
+    if(!host||!scene?.textBox||!event.isPrimary||event.button!==0)return;
+    event.stopPropagation();
+    moveTextBox.setPointerCapture(event.pointerId);
+    textDrag={pointer:event.pointerId,start:markPosition(event),note:{...scene.textBox}};
+  };
+  moveTextBox.onpointermove=event=>{
+    if(textDrag?.pointer!==event.pointerId)return;
+    const [x,y]=markPosition(event),[startX,startY]=textDrag.start;
+    scene.textBox.x=clamp(textDrag.note.x+x-startX);
+    scene.textBox.y=clamp(textDrag.note.y+y-startY);
+    renderTextBox();
+  };
+  moveTextBox.onpointerup=moveTextBox.onpointercancel=moveTextBox.onlostpointercapture=event=>{
+    if(textDrag?.pointer!==event.pointerId)return;
+    textDrag=undefined;
+    sendTextBox();
   };
   get('noteForm').onsubmit=e=>{
     e.preventDefault();
@@ -419,6 +552,20 @@
     if(scene?.id!==m.id)return;
     const p=m.mark;
     if(m.type==='mark'&&p&&Number.isFinite(p.x)&&p.x>=0&&p.x<=1&&Number.isFinite(p.y)&&p.y>=0&&p.y<=1&&typeof p.text==='string'&&p.text.length<=160){scene.mark=p;render();}
+    if(m.type==='stroke'&&(m.kind==='ellipse'||m.kind==='freehand')&&Array.isArray(m.points)&&
+        m.points.length>=2&&m.points.length<=(m.kind==='ellipse'?2:maxPoints)&&
+        m.points.every(point=>Array.isArray(point)&&point.length===2&&
+          point.every(value=>Number.isInteger(value)&&value>=0&&value<=1000))&&ink.childElementCount<maxStrokes){
+      const path=newStroke(m.kind);
+      paintStroke(path,m.kind,m.points);
+      ink.append(path);
+    }
+    const note=m.note;
+    if(m.type==='text-box'&&note&&Number.isFinite(note.x)&&note.x>=0&&note.x<=1&&
+        Number.isFinite(note.y)&&note.y>=0&&note.y<=1&&typeof note.text==='string'&&note.text.length<=600){
+      scene.textBox={x:note.x,y:note.y,text:note.text};renderTextBox();
+    }
+    if(m.type==='reset-marks')resetAnnotations();
     if(m.type==='clear'){scene=undefined;render();}
   }
   render();

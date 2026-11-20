@@ -1,5 +1,5 @@
 <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpsTalX · Video-Hilfe</title><link rel="icon" href="/opstalx/icon-192.png"><link rel="stylesheet" href="/opstalx/vas/style.css?v=3"><script src="/external_api.js" defer></script><script src="/opstalx/vas/room-v17.js" defer></script></head>
+<title>OpsTalX · Video-Hilfe</title><link rel="icon" href="/opstalx/icon-192.png"><link rel="stylesheet" href="/opstalx/vas/style.css?v=4"><script src="/external_api.js" defer></script><script src="/opstalx/vas/room-v18.js" defer></script></head>
 <body><header><img src="/opstalx/wordmark.png" alt="OpsTalX" width="112"><strong>OpsLinX VAS</strong><a href="https://www.opslinx.de/">www.opslinx.de</a></header><main>
 <form id="join" action="/vas/"><label>Raumcode <input name="room" required maxlength="32" autocomplete="off" placeholder="123 456 7890"></label><button>Beitreten</button><a href="https://linx.g3nx.net/opstalx/vas">Im OpsLinX-Portal starten</a><p id="joinError" role="status"></p></form>
 <section id="sendInvitation" hidden aria-label="Handy zur Video-Hilfe einladen">
@@ -7,4 +7,18 @@
 <details><summary>Raumcode oder Link als Ersatz</summary><p id="fallbackCode"></p><button id="invite" type="button">Handy-Link kopieren</button></details>
 </section>
 <div id="controls" hidden><span id="status" role="status"></span><button id="cameraLight" hidden>Kameralicht einschalten</button><span id="guestCameras" hidden><button id="rearCamera" type="button">Rückkamera</button><button id="frontCamera" type="button">Frontkamera</button><span id="guestCameraStatus" role="status"></span></span><span id="lightNotice" hidden>Mit dem Beitritt erlaubst du dem Support, dein Kameralicht zu steuern, sofern dein Gerät es unterstützt.</span><button id="freeze" hidden>Standbild teilen</button><button id="resume" hidden>Standbild schließen</button></div>
-<div id="surface"><div id="call"></div><section id="annotation" hidden aria-label="Gemeinsames Standbild"><div id="frame"><img id="snapshot" alt="Gemeinsames Standbild"><div id="marker" hidden><span aria-label="Pfeil">&#8598;</span><span id="caption"></span></div></div><form id="noteForm" hidden><label>Texthinweis <input id="note" maxlength="160" autocomplete="off"></label><button>Hinweis senden</button></form></section></div></main></body></html>
+<div id="surface"><div id="call"></div><section id="annotation" hidden aria-label="Gemeinsames Standbild">
+<div id="annotationTools" hidden role="group" aria-label="Standbild-Werkzeuge">
+<button type="button" data-tool="arrow" aria-pressed="true">Pfeil</button>
+<button type="button" data-tool="freehand" aria-pressed="false">Freihandstift</button>
+<button type="button" data-tool="ellipse" aria-pressed="false">Einkreisen</button>
+<button type="button" data-tool="text" aria-pressed="false">Textfeld</button>
+<button type="button" id="resetAnnotations">Zurücksetzen</button>
+</div>
+<form id="noteForm" hidden><label>Texthinweis <input id="note" maxlength="160" autocomplete="off"></label><button>Hinweis senden</button></form>
+<form id="textBoxForm" hidden><label>Textfeld <textarea id="textBoxInput" maxlength="600" rows="2"></textarea></label><button>Text übernehmen</button></form>
+<div id="picture"><div id="frame"><img id="snapshot" alt="Gemeinsames Standbild">
+<svg id="ink" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+<div id="textBox" hidden><span id="moveTextBox" hidden>Textfeld verschieben</span><div id="textBoxContent"></div></div>
+<div id="marker" hidden><span aria-label="Pfeil">&#8598;</span><span id="caption"></span></div>
+</div></div></section></div></main></body></html>
