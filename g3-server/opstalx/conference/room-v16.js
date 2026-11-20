@@ -281,6 +281,9 @@
     self=undefined;host=false;channel=false;scene=undefined;incoming=undefined;author=undefined;
     status('Video-Hilfe beendet');render();get('lightNotice').hidden=true;
   });
+  if (navigator.userAgent.includes(' OpsLinXAndroidVAS/1')) {
+    api.once('readyToClose', () => location.replace('/vas/return-to-app'));
+  }
   get('invite').onclick=async()=>{
     try{await navigator.clipboard.writeText(location.origin+'/vas/?room='+code);status('Einladung kopiert. Raumcode: '+displayedCode);}
     catch(_){status('Raumcode: '+displayedCode);}
