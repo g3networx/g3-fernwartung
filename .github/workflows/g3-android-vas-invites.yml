@@ -95,6 +95,13 @@ jobs:
             git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
           fi
 
+      - name: Verify VAS Flutter code before native compilation
+        working-directory: flutter
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/g3_vas_inbox.dart lib/mobile/pages/home_page.dart lib/mobile/pages/opstalx_lab_page.dart
+          flutter test test/g3_vas_inbox_test.dart
+
       - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
@@ -156,7 +163,7 @@ jobs:
           sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8/' android/gradle.properties
           echo 'org.gradle.workers.max=2' >> android/gradle.properties
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
-          flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart test/g3_vas_inbox_test.dart
+          flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
             --build-name=3.6.2 --build-number=20097 --dart-define=G3_ANDROID_CLIENT=true \
             --dart-define=G3_OPSTALX=true \

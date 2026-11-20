@@ -157,7 +157,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _syncVasInbox() => _vasInbox?.setForeground(
-      _foreground, gFFI.serverModel.serverId.id);
+      _foreground, gFFI.serverModel.serverId.text.replaceAll(RegExp(r'\s'), ''));
 
   void _receiveVasLink(Uri? uri) {
     if (mounted) _vasInbox?.receiveLink(uri);
