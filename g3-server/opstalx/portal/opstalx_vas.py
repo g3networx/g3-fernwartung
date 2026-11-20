@@ -48,9 +48,10 @@ def install(app, m, native_identity, native_json):
             )
         except (BadData, InvalidSignature, KeyError, OSError, TypeError, ValueError):
             abort(403)
+        now = int(time.time())
         payload = b64(json.dumps({
             "aud": "talx.opslinx.de", "iss": "opslinx-vas-inbox",
-            "sub": device, "iat": int(time.time()), "exp": int(time.time()) + 300,
+            "sub": device, "iat": now, "exp": now + 300,
         }, separators=(",", ":")).encode())
         return jsonify(token=payload + "." + b64(key.sign(payload.encode())), expires_in=300)
 

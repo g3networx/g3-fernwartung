@@ -36,7 +36,6 @@
   const status = text => { get('status').textContent = text; };
   const displayedCode = shortCode ? shortCode.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3') : code;
   if (jwt) {
-    get('sendInvitation').hidden = false;
     get('fallbackCode').textContent = 'Raumcode: ' + displayedCode;
   }
   let codecPreferenceOrder;
@@ -423,6 +422,7 @@
     if(m.type==='clear'){scene=undefined;render();}
   }
   render();
+  get('sendInvitation').hidden = !jwt;
   api.on('endpointTextMessageReceived', e => {
     queue=queue.then(()=>receive(e.data || e)).catch(()=>{});
   });
