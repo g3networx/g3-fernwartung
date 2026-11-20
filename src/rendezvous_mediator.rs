@@ -55,6 +55,9 @@ pub fn request_vas_identity_registration() {
 #[tokio::main(flavor = "current_thread")]
 async fn register_vas_identity() {
     let host = check_port(Config::get_rendezvous_server(), RENDEZVOUS_PORT);
+    if use_ws() && !hbb_common::websocket::check_ws(&host).starts_with("wss://") {
+        return;
+    }
     let register = async {
         // Register the public identity without starting the Android receiver.
         let mut connection = connect_tcp(host, CONNECT_TIMEOUT).await?;

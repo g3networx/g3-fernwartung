@@ -2,8 +2,19 @@ name: OpsLinX Android 20097 VAS invitations
 on:
   push:
     branches: [g3-opstalx-android]
-    paths: [.github/workflows/g3-android-vas-invites.yml]
+    paths:
+      - .github/workflows/g3-android-vas-invites.yml
+      - src/rendezvous_mediator.rs
+      - src/flutter_ffi.rs
+      - flutter/lib/g3_vas_inbox.dart
+      - flutter/lib/mobile/pages/home_page.dart
+      - flutter/lib/mobile/pages/opstalx_lab_page.dart
+      - flutter/android/app/src/main/AndroidManifest.xml
+      - flutter/test/g3_vas_inbox_test.dart
   workflow_dispatch:
+concurrency:
+  group: android-vas-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 env:
