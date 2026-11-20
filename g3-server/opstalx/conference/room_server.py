@@ -145,9 +145,6 @@ def receive_invite(target, value):
             receivers[target] = (now+20,)
             current = invitations.get(target)
             return 200, {'invitation': current[1] if current and current[0] > now else None}
-        if value == {'state': 'away'}:
-            receivers.pop(target, None)
-            return 200, {}
         current = invitations.get(target)
         decision = value.get('decision')
         if decision not in ('join', 'decline') or not isinstance(value.get('invitation'), str):

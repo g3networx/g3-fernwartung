@@ -103,7 +103,8 @@ class VASInvitation(unittest.TestCase):
                     invitation = post('/vas/inbox', {}, token)[1]['invitation']
                     self.assertEqual((200, {}), post('/vas/inbox', {'decision':'decline','invitation':invitation}, token))
                     self.assertEqual({'invitation':None}, post('/vas/inbox', {}, token)[1])
-                    self.assertEqual(200, post('/vas/inbox', {'state':'away'}, token)[0])
+                    with room.invite_lock:
+                        room.receivers[room.inbox_device(token)] = (time.monotonic()-1,)
                     self.assertEqual((409, {'error':'offline'}), send())
                 finally:
                     service.shutdown()
