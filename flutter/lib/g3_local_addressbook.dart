@@ -608,6 +608,9 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                               : (details) =>
                                   showEntryMenu(entry, details.globalPosition),
                           child: ListTile(
+                              visualDensity: Platform.isWindows
+                                  ? const VisualDensity(vertical: -2)
+                                  : null,
                               title: Text(entry.name),
                               subtitle: Text(
                                   [

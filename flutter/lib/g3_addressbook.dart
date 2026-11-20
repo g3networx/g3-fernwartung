@@ -430,6 +430,9 @@ class _G3AddressBookState extends State<G3AddressBook> {
                       d, book['can_edit'] == true, details.globalPosition),
               child: ListTile(
                 dense: true,
+                visualDensity: Platform.isWindows
+                    ? const VisualDensity(vertical: -2)
+                    : null,
                 selected: selected?['id'] == d['id'],
                 leading: statusIcon(d),
                 title:
