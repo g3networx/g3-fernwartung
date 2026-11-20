@@ -1,7 +1,7 @@
-name: OpsLinX Android 20099 VAS invitations
+name: OpsLinX Android 20100 VAS invitations
 on:
   push:
-    branches: [g3-opstalx-android]
+    branches: [g3-opslinx-tls-registration-lab]
     paths:
       - .github/workflows/g3-android-vas-invites.yml
       - src/rendezvous_mediator.rs
@@ -26,7 +26,7 @@ env:
   NDK_VERSION: 'r28c'
 jobs:
   android:
-    name: Build OpsLinX Android ARM64 20099
+    name: Build OpsLinX Android ARM64 20100
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
@@ -149,6 +149,7 @@ jobs:
       - name: Build rustdesk lib
         env:
           G3_OPSLINX_ANDROID: '1'
+          OPSLINX_TLS_REGISTRATION: '1'
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -156,7 +157,7 @@ jobs:
           cargo install cargo-ndk --version ${{ env.CARGO_NDK_VERSION }} --locked
           android_sysroot="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android21 --sysroot=$android_sysroot"
-          ./flutter/ndk_arm64.sh
+          cargo ndk --platform 21 --target aarch64-linux-android build --locked --release --features flutter,hwcodec,opslinx-tls-registration
           mkdir -p flutter/android/app/src/main/jniLibs/arm64-v8a
           cp target/aarch64-linux-android/release/liblibrustdesk.so flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
           cp "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" flutter/android/app/src/main/jniLibs/arm64-v8a/
@@ -169,10 +170,10 @@ jobs:
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
           flutter test test/image_painter_test.dart test/g3_android_update_transport_test.dart
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --build-name=3.6.2 --build-number=20099 --dart-define=G3_ANDROID_CLIENT=true \
+            --build-name=3.6.2 --build-number=20100 --dart-define=G3_ANDROID_CLIENT=true \
             --dart-define=G3_OPSTALX=true \
-            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20099 \
-            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20099'
+            --dart-define=G3_CLIENT_VERSION=1.5.3-g3.62.20100 \
+            '--dart-define=G3_CLIENT_DISPLAY_VERSION=g3.6.2 Build 20100'
           python - <<'PY'
           from zipfile import ZipFile
 
@@ -187,7 +188,7 @@ jobs:
       - name: Upload test APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: opslinx-android-vas-20099-arm64
+          name: opslinx-android-vas-20100-arm64
           path: flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 7

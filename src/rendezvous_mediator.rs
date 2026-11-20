@@ -61,6 +61,14 @@ pub fn request_vas_identity_registration() {
 #[cfg(target_os = "android")]
 #[tokio::main(flavor = "current_thread")]
 async fn register_vas_identity() {
+    #[cfg(feature = "opslinx-tls-registration")]
+    if let Some(host) = tls_registration_host(&Config::get_rendezvous_server()) {
+        if let Err(error) = register_over_tls(&host).await {
+            log::debug!("VAS TLS device registration deferred: {error}");
+        }
+        return;
+    }
+
     // The OSS rendezvous server only accepts RegisterPk over UDP. This registers
     // a public key, not a support session. The HTTPS inbox separately verifies
     // that this client can sign a challenge with the corresponding private key.
@@ -99,6 +107,66 @@ async fn register_vas_identity() {
         Ok(Err(error)) => log::debug!("VAS device registration deferred: {error}"),
         Err(_) => log::debug!("VAS device registration timed out"),
     }
+}
+
+fn uses_tls_registration(host: &str) -> bool {
+    #[cfg(feature = "opslinx-tls-registration")]
+    {
+        tls_registration_host(host).is_some()
+    }
+    #[cfg(not(feature = "opslinx-tls-registration"))]
+    {
+        let _ = host;
+        false
+    }
+}
+
+#[cfg(feature = "opslinx-tls-registration")]
+fn tls_registration_host(host: &str) -> Option<String> {
+    let (host, _) = socket_client::split_host_port(check_port(host, RENDEZVOUS_PORT))?;
+    hbb_common::websocket::opslinx_tls_host(&host).then_some(host)
+}
+
+#[cfg(feature = "opslinx-tls-registration")]
+async fn register_over_tls(host: &str) -> ResultType<Stream> {
+    use hbb_common::{anyhow::Context, sodiumoxide::crypto::sign, websocket::WsFramedStream};
+
+    let url = format!("wss://{host}/ws/register");
+    let registration = async {
+        let mut connection = WsFramedStream::new_verified(&url, CONNECT_TIMEOUT).await?;
+        let nonce = connection.next().await.context("No TLS registration challenge")??;
+        if nonce.len() != 32 {
+            bail!("Invalid TLS registration challenge");
+        }
+        let (private, public) = Config::get_key_pair();
+        let private = sign::SecretKey::from_slice(&private).context("Invalid local signing key")?;
+        let mut request = Message::new();
+        request.set_register_pk(RegisterPk {
+            id: Config::get_id(),
+            uuid: hbb_common::get_uuid().into(),
+            pk: public.into(),
+            no_register_device: Config::no_register_device(),
+            ..Default::default()
+        });
+        let data = request.write_to_bytes()?;
+        let signed = [b"opslinx-device-registration-v1\0".as_slice(), nonce.as_ref(), &data].concat();
+        let signature = sign::sign_detached(&signed, &private);
+        let frame = [signature.as_ref(), &data].concat();
+        connection.send_bytes(bytes::Bytes::from(frame)).await?;
+        let response = connection.next().await.context("No TLS registration acknowledgement")??;
+        match Message::parse_from_bytes(&response)?.union {
+            Some(rendezvous_message::Union::RegisterPkResponse(response))
+                if response.result.enum_value() == Ok(register_pk_response::Result::OK) =>
+            {
+                Ok(Stream::WebSocket(connection))
+            }
+            Some(rendezvous_message::Union::RegisterPkResponse(response)) => {
+                bail!("TLS device registration rejected: {:?}", response.result)
+            }
+            _ => bail!("Unexpected TLS registration acknowledgement"),
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(12), registration).await?
 }
 
 fn connection_meta(
@@ -748,6 +816,10 @@ impl RendezvousMediator {
 
     pub async fn start(server: ServerPtr, host: String) -> ResultType<()> {
         log::info!("start rendezvous mediator of {}", host);
+        #[cfg(feature = "opslinx-tls-registration")]
+        if let Some(domain) = tls_registration_host(&host) {
+            return Self::start_tls(server, host, &domain).await;
+        }
         //If the investment agent type is http or https, then tcp forwarding is enabled.
         if (cfg!(debug_assertions) && option_env!("TEST_TCP").is_some())
             || Config::is_proxy()
@@ -757,6 +829,46 @@ impl RendezvousMediator {
             Self::start_tcp(server, host).await
         } else {
             Self::start_udp(server, host).await
+        }
+    }
+
+    #[cfg(feature = "opslinx-tls-registration")]
+    async fn start_tls(server: ServerPtr, host: String, domain: &str) -> ResultType<()> {
+        use hbb_common::anyhow::Context;
+
+        let started = Instant::now();
+        let mut connection = register_over_tls(domain).await?;
+        let mut mediator = Self {
+            addr: connection.local_addr().into_target_addr()?,
+            host_prefix: Self::get_host_prefix(&host),
+            host: check_port(&host, RENDEZVOUS_PORT),
+            keep_alive: crate::DEFAULT_KEEP_ALIVE,
+        };
+        Config::set_key_confirmed(true);
+        Config::set_host_key_confirmed(&mediator.host_prefix, true);
+        Config::update_latency(&mediator.host, started.elapsed().as_micros() as i64);
+        let mut heartbeat = interval(Duration::from_secs(8));
+        let mut last_received = Instant::now();
+        loop {
+            select! {
+                result = connection.next() => {
+                    let bytes = result.context("TLS rendezvous disconnected")??;
+                    last_received = Instant::now();
+                    if !bytes.is_empty() {
+                        let message = Message::parse_from_bytes(&bytes)?;
+                        mediator.handle_resp(message.union, Sink::Stream(&mut connection), &server, &mut || {}).await?;
+                    }
+                }
+                _ = heartbeat.tick() => {
+                    if SHOULD_EXIT.load(Ordering::SeqCst) {
+                        return Ok(());
+                    }
+                    if last_received.elapsed() >= Duration::from_secs(25) {
+                        bail!("TLS rendezvous heartbeat timed out");
+                    }
+                    connection.send_bytes(bytes::Bytes::new()).await?;
+                }
+            }
         }
     }
 
@@ -867,7 +979,7 @@ impl RendezvousMediator {
         let peer_addr_v6 = hbb_common::AddrMangle::decode(&fla.socket_addr_v6);
         let relay_server = self.get_relay_server(fla.relay_server.clone());
         remember_reported_relay(&relay_server, Instant::now());
-        let relay = use_ws() || Config::is_proxy();
+        let relay = use_ws() || Config::is_proxy() || uses_tls_registration(&self.host);
         let mut socket_addr_v6 = Default::default();
         let meta = connection_meta(
             fla.control_permissions.clone().into_option(),
@@ -1155,7 +1267,7 @@ impl RendezvousMediator {
             return Ok(());
         }
         let peer_addr_v6 = hbb_common::AddrMangle::decode(&ph.socket_addr_v6);
-        let local_proxy = use_ws() || Config::is_proxy();
+        let local_proxy = use_ws() || Config::is_proxy() || uses_tls_registration(&self.host);
         let relay = local_proxy || ph.force_relay;
         let mut socket_addr_v6 = Default::default();
         let meta = connection_meta(
