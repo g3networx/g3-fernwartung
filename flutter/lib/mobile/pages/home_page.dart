@@ -53,7 +53,7 @@ class G3MobileAddressBookPage extends StatelessWidget implements PageShape {
               RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(uri.authority)) {
             await connect(context, uri.authority);
           } else {
-            throw const FormatException('UngÃ¼ltige Verbindungsfreigabe');
+            throw const FormatException('Ungültige Verbindungsfreigabe');
           }
         }),
       );
@@ -206,7 +206,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     child: TextButton.icon(
                       onPressed: _showAndroidSettings,
                       icon: const Icon(Icons.system_update),
-                      label: const Text('Update verfÃ¼gbar'),
+                      label: const Text('Update verfügbar'),
                     ),
                   ),
             actions: [
