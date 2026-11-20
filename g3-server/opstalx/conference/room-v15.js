@@ -55,6 +55,10 @@
     interfaceConfigOverwrite:twoCoreSupporter ? {DISABLE_VIDEO_BACKGROUND:true} : undefined,
     configOverwrite:{
       disableDeepLinking:true,
+      startSilent:true,
+      startWithAudioMuted:true,
+      disableAudioLevels:true,
+      subject:'Video-Hilfe',
       startWithVideoMuted:Boolean(jwt),
       ...(codecPreferenceOrder && {
         videoQuality:{codecPreferenceOrder},
@@ -112,12 +116,19 @@
   let queue=Promise.resolve();
   let lightTrack, lightOn=false, lightPeer, lightRequest;
   let lightController;
+  let switchingCamera=false;
+  const mobileGuest=!jwt && (/Android|iPhone|iPad/i.test(navigator.userAgent)
+    || navigator.maxTouchPoints>1);
   const localVideoTrack=()=>{
-    const frame=api.getIFrame().contentDocument;
-    return [...(frame?.querySelectorAll('video') || [])]
+    const iframe=api.getIFrame();
+    const tracks=iframe.contentWindow?.APP?.store?.getState()['features/base/tracks'];
+    const nativeTracks=Array.isArray(tracks) ? tracks
+      .filter(track=>track.local && track.mediaType==='video' && track.videoType!=='desktop')
+      .map(track=>track.jitsiTrack?.getTrack?.()) : [];
+    return [...nativeTracks, ...[...(iframe.contentDocument?.querySelectorAll('video') || [])]
       .filter(video=>!/^remoteVideo_/i.test(video.id))
-      .flatMap(video=>video.srcObject?.getVideoTracks?.() || [])
-      .find(track=>track.readyState==='live' && track.getCapabilities?.().torch);
+      .flatMap(video=>video.srcObject?.getVideoTracks?.() || [])]
+      .find(track=>track?.readyState==='live');
   };
   function resetLight(){
     const track=lightTrack;
@@ -130,6 +141,51 @@
   const sendTo=(peer,data)=>api.executeCommand(
     'sendEndpointTextMessage',peer,JSON.stringify({ar:1,...data})
   );
+  async function selectCamera(facingMode){
+    if (!self || switchingCamera) return;
+    const report=get('guestCameraStatus');
+    const activeLabel=facingMode==='environment'?'Rückkamera aktiv.':'Frontkamera aktiv.';
+    const before=localVideoTrack();
+    if (before?.getSettings?.().facingMode===facingMode) {
+      report.textContent=activeLabel;
+      return;
+    }
+    switchingCamera=true;
+    render();
+    const controller=lightController;
+    resetLight();
+    if (controller) sendTo(controller,{type:'torch-reset',id:crypto.randomUUID()});
+    report.textContent='Kamera wird gewechselt …';
+    try{
+      const {videoInput}=await api.getAvailableDevices();
+      const cameraLabel=facingMode==='environment'
+        ? /back|rear|environment|rück|hinter/i
+        : /front|user|vorder/i;
+      const camera=videoInput?.find(device=>cameraLabel.test(device.label));
+      if(camera){
+        await api.setVideoInputDevice(camera.label,camera.deviceId);
+      }else{
+        api.executeCommand('toggleCamera',facingMode);
+      }
+      for(let attempt=0;attempt<24 && self;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,250));
+        const track=localVideoTrack();
+        const active=track?.getSettings?.();
+        if(active?.facingMode===facingMode || (camera && active?.deviceId===camera.deviceId)){
+          report.textContent=activeLabel;
+          return;
+        }
+      }
+      report.textContent='Kamerawechsel fehlgeschlagen. Bitte Kamera und Berechtigung prüfen.';
+    }catch(_){
+      report.textContent='Kamerawechsel fehlgeschlagen. Bitte Kamera und Berechtigung prüfen.';
+    }finally{
+      switchingCamera=false;
+      render();
+    }
+  }
+  get('rearCamera').onclick=()=>selectCamera('environment');
+  get('frontCamera').onclick=()=>selectCamera('user');
   addEventListener('pagehide',resetLight);
   get('cameraLight').onclick=async()=>{
     if(!host||!channel||lightRequest)return;
@@ -161,6 +217,9 @@
     get('cameraLight').disabled=!channel || Boolean(lightRequest);
     get('cameraLight').textContent=lightOn?'Kameralicht ausschalten':'Kameralicht einschalten';
     get('lightNotice').hidden=Boolean(jwt)||Boolean(self);
+    get('guestCameras').hidden=!(mobileGuest && self);
+    get('rearCamera').disabled=switchingCamera;
+    get('frontCamera').disabled=switchingCamera;
     get('freeze').disabled=!channel;
     get('invite').hidden=!host;
     get('annotation').hidden=!scene;
@@ -177,6 +236,17 @@
       get('caption').textContent=text;
     }
   };
+  async function syncModerator(){
+    if(!jwt||!self)return;
+    try{
+      const {rooms}=await api.getRoomsInfo();
+      const participant=rooms.find(room=>room.isMainRoom)?.participants.find(person=>person.id===self);
+      if(participant){
+        host=participant.role==='moderator';
+        render();
+      }
+    }catch(_){}
+  }
   api.on('videoConferenceJoined',e=>{
     self=e.id;
     if (twoCoreSupporter) {
@@ -185,13 +255,14 @@
       startBackgroundBudget();
     }
     render();
+    void syncModerator();
   });
   api.on('participantRoleChanged',e=>{
     if (e.id===self || (jwt && !self && e.role==='moderator')) {
       host=Boolean(jwt && e.role==='moderator'); render();
     }
   });
-  api.on('dataChannelOpened',()=>{channel=true;render();});
+  api.on('dataChannelOpened',()=>{channel=true;render();void syncModerator();});
   api.on('participantLeft',e=>{
     if (e.id===lightController) resetLight();
     if (e.id===lightPeer) {
@@ -216,8 +287,11 @@
   };
   get('freeze').onclick=()=>{
     if(!host||!channel)return;
-    const remote=Array.from(api.getIFrame().contentDocument.querySelectorAll('video'))
-      .find(v=>/^remoteVideo_/i.test(v.id)&&v.videoWidth&&v.readyState>=2);
+    const frame=api.getIFrame().contentDocument;
+    const videos=[...frame.querySelectorAll('video')].filter(v=>v.videoWidth&&v.readyState>=2);
+    const local=localVideoTrack();
+    const remote=videos.find(v=>/^remoteVideo_/i.test(v.id)) ||
+      videos.find(v=>v.id==='largeVideo'&&v.srcObject?.getVideoTracks?.().some(t=>t!==local));
     if(!remote){status('Das Kamerabild des Gastes ist noch nicht verfügbar.');return;}
     const canvas=document.createElement('canvas');
     const scale=Math.min(1,480/Math.max(remote.videoWidth,remote.videoHeight));
@@ -254,6 +328,9 @@
     try{m=JSON.parse(text);}catch(_){return;}
     if(m?.ar!==1||typeof m.id!=='string'||!/^[a-f0-9-]{36}$/.test(m.id))return;
     if(host){
+      if(m.type==='torch-reset' && id===lightPeer){
+        clearTimeout(lightRequest?.timeout);lightRequest=undefined;lightOn=false;render();
+      }
       if(m.type==='torch-status'&&id===lightPeer&&m.id===lightRequest?.id){
         clearTimeout(lightRequest.timeout);lightRequest=undefined;
         lightOn=m.on===true;
@@ -272,14 +349,17 @@
       if(!m.on){resetLight();}
       else if(!self || jwt){result='consent';}
       else {
-        const track=localVideoTrack();
-        if(!track){result='unsupported';}
+        const track=switchingCamera?undefined:localVideoTrack();
+        const torch=track?.getCapabilities?.().torch;
+        if(!track || !(torch===true || (Array.isArray(torch) && torch.includes(true)))){result='unsupported';}
         else try {
           lightTrack=track;lightController=id;
           await track.applyConstraints({advanced:[{torch:true}]});
           if(!self || lightController!==id){
             await track.applyConstraints({advanced:[{torch:false}]});
             result='consent';
+          }else if(track.getSettings?.().torch===false){
+            resetLight();result='failed';
           }else{
             on=true;
           }
