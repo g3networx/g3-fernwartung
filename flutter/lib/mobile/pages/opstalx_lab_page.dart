@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../common.dart' show androidVersion;
 import '../../g3_addressbook_api.dart';
 import '../../g3_addressbook_credentials.dart';
+import '../../g3_vas_inbox.dart';
 
-const _host = 'talx.opslinx.de';
-const _channel = MethodChannel('mChannel');
+const _host = g3VasHost;
 
 class OpsTalxLabPage extends StatefulWidget {
   const OpsTalxLabPage({super.key});
@@ -27,8 +26,7 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
 
   Future<void> _open(Uri uri) async {
     try {
-      if (await _channel.invokeMethod<bool>('g3_open_video_help', uri.toString()) ==
-          true) return;
+      if (await g3OpenVideoHelp(uri)) return;
     } catch (_) {
       // The embedded view is provided by the Android activity.
     }
@@ -40,14 +38,15 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
   void _join() {
     final input = _code.text.trim();
     final link = Uri.tryParse(input);
-    final value = link != null &&
+    final appLink = link == null ? null : g3RoomFromHandyLink(link);
+    final value = appLink ?? (link != null &&
             link.scheme == 'https' &&
             link.host == _host &&
             link.userInfo.isEmpty &&
             !link.hasPort &&
             link.path == '/vas/'
         ? link.queryParameters['room'] ?? ''
-        : input.replaceFirst(RegExp(r'^raumcode\s*:?\s*', caseSensitive: false), '');
+        : input.replaceFirst(RegExp(r'^raumcode\s*:?\s*', caseSensitive: false), ''));
     final code = value.toLowerCase().replaceAll(RegExp(r'[\s\u200b\u2060\ufeff‐‑–—-]'), '');
     if (!RegExp(r'^(?:[0-9]{10}|[0-9a-f]{32})$').hasMatch(code)) {
       setState(() => _error = 'Bitte den zehnstelligen Raumcode oder den Einladungslink eingeben.');

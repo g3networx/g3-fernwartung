@@ -6,6 +6,7 @@ import 'package:flutter_hbb/mobile/pages/server_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
 import 'package:flutter_hbb/web/settings_page.dart';
 import 'package:get/get.dart';
+import 'package:uni_links/uni_links.dart';
 import '../../common.dart';
 import '../../common/widgets/chat_page.dart';
 import '../../consts.dart';
@@ -14,6 +15,7 @@ import '../../g3_addressbook_credentials.dart';
 import '../../g3_android_settings.dart';
 import '../../g3_android_update_transport.dart';
 import '../../g3_handoff_uri.dart';
+import '../../g3_vas_inbox.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
 import 'connection_page.dart';
@@ -98,6 +100,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   G3AndroidUpdate? _androidUpdate;
   final _timeSinceUpdateCheck = Stopwatch();
   bool _checkingAndroidUpdate = false;
+  G3VasInbox? _vasInbox;
+  StreamSubscription<Uri?>? _vasLinks;
+  bool _foreground = false;
   bool get isChatPageCurrentTab => isAndroid
       ? _selectedIndex == _chatPageTabIndex
       : false; // change this when ios have chat page
@@ -115,6 +120,16 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedIndex = _defaultTabIndex;
     if (_g3AndroidClient) {
       WidgetsBinding.instance.addObserver(this);
+      _foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (const bool.fromEnvironment('G3_OPSTALX')) {
+        _vasInbox = G3VasInbox(
+            (message) => bind.mainGetOptionSync(key: 'g3-bootstrap-sign:$message'),
+            () { bind.mainGetOptionSync(key: 'g3-vas-register-identity'); });
+        gFFI.serverModel.serverId.addListener(_syncVasInbox);
+        _syncVasInbox();
+        _vasLinks = uriLinkStream.listen(_receiveVasLink, onError: (Object _) {});
+        unawaited(_readInitialVasLink());
+      }
       unawaited(gFFI.serverModel.fetchID());
       unawaited(_checkAndroidUpdate());
     }
@@ -122,7 +137,9 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    _foreground = state == AppLifecycleState.resumed;
+    _syncVasInbox();
+    if (_foreground) {
       unawaited(gFFI.serverModel.fetchID());
       unawaited(_checkAndroidUpdate());
     }
@@ -130,8 +147,72 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (_vasInbox != null) {
+      gFFI.serverModel.serverId.removeListener(_syncVasInbox);
+      _vasLinks?.cancel();
+      _vasInbox?.dispose();
+    }
     if (_g3AndroidClient) WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _syncVasInbox() => _vasInbox?.setForeground(
+      _foreground, gFFI.serverModel.serverId.id);
+
+  void _receiveVasLink(Uri? uri) {
+    if (mounted) _vasInbox?.receiveLink(uri);
+  }
+
+  Future<void> _readInitialVasLink() async {
+    try {
+      _receiveVasLink(await getInitialUri());
+    } on Exception {
+      // Invalid links cannot start video help.
+    }
+  }
+
+  Future<void> _respondToVas(bool join) async {
+    try {
+      final room = await _vasInbox?.respond(join);
+      if (!mounted || !_foreground || !join) return;
+      if (room != null &&
+          await g3OpenVideoHelp(Uri.https(g3VasHost, '/vas/', {'room': room}))) {
+        return;
+      }
+    } on Exception {
+      if (!mounted || !_foreground) return;
+    }
+    if (mounted && _foreground && join) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Die Einladung konnte nicht geöffnet werden.')));
+    }
+  }
+
+  Widget _androidPages() {
+    final pages = IndexedStack(index: _selectedIndex, children: _pages);
+    final inbox = _vasInbox;
+    if (inbox == null) return pages;
+    return Column(children: [
+      ListenableBuilder(
+        listenable: inbox,
+        builder: (context, _) => inbox.hasInvitation
+            ? MaterialBanner(
+                content: const Text('Einladung zur Video-Hilfe'),
+                actions: [
+                  TextButton(
+                    onPressed: inbox.busy ? null : () => _respondToVas(false),
+                    child: const Text('Ablehnen'),
+                  ),
+                  FilledButton(
+                    onPressed: inbox.busy ? null : () => _respondToVas(true),
+                    child: const Text('Beitreten'),
+                  ),
+                ],
+              )
+            : const SizedBox.shrink(),
+      ),
+      Expanded(child: pages),
+    ]);
   }
 
   Future<void> _checkAndroidUpdate() async {
@@ -248,7 +329,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
             }),
           ),
           body: _g3AndroidClient
-              ? IndexedStack(index: _selectedIndex, children: _pages)
+              ? _androidPages()
               : _pages.elementAt(_selectedIndex),
         ));
   }

@@ -39,6 +39,42 @@ use crate::{
 
 type Message = RendezvousMessage;
 
+#[cfg(target_os = "android")]
+pub fn request_vas_identity_registration() {
+    static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(|| {
+        register_vas_identity();
+        IN_FLIGHT.store(false, Ordering::Release);
+    });
+}
+
+#[cfg(target_os = "android")]
+#[tokio::main(flavor = "current_thread")]
+async fn register_vas_identity() {
+    let host = check_port(Config::get_rendezvous_server(), RENDEZVOUS_PORT);
+    let register = async {
+        // Register the public identity without starting the Android receiver.
+        let mut connection = connect_tcp(host, CONNECT_TIMEOUT).await?;
+        let key = crate::get_key(true).await;
+        crate::secure_tcp_required(&mut connection, &key).await?;
+        let mut request = Message::new();
+        request.set_register_pk(RegisterPk {
+            id: Config::get_id(),
+            uuid: hbb_common::get_uuid().into(),
+            pk: Config::get_key_pair().1.into(),
+            no_register_device: Config::no_register_device(),
+            ..Default::default()
+        });
+        connection.send(&request).await?;
+        let _ = connection.next().await;
+        ResultType::<()>::Ok(())
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(8), register).await;
+}
+
 fn connection_meta(
     control_permissions: Option<ControlPermissions>,
     controlled_context: Option<ControlledContext>,

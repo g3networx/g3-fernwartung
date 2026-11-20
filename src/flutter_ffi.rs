@@ -1017,6 +1017,11 @@ static G3_PASSWORD_ACTION_STATUS:std::sync::atomic::AtomicU8=std::sync::atomic::
 static G3_PASSWORD_SEED_STATUS:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
 
 pub fn main_get_option_sync(key: String) -> SyncReturn<String> {
+    #[cfg(target_os = "android")]
+    if key == "g3-vas-register-identity" {
+        crate::rendezvous_mediator::request_vas_identity_registration();
+        return SyncReturn(String::new());
+    }
     if key=="g3-local-password-action-status" {return SyncReturn(if G3_PASSWORD_ACTION_STATUS.load(Ordering::SeqCst)==1 {"confirmed"}else{"rejected"}.into());}
     if key=="g3-service-password-provision-status" {return SyncReturn(if G3_PASSWORD_SEED_STATUS.load(Ordering::SeqCst)==1 {"confirmed"}else{"rejected"}.into());}
     if let Some(message) = key.strip_prefix("g3-bootstrap-sign:") {
