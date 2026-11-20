@@ -148,7 +148,7 @@ index 0ec190a..0e7d1de 100644
                  }
              }
 diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
-index dff45eb..7efb8a4 100644
+index dff45eb..f1f268e 100644
 --- a/src/rendezvous_server.rs
 +++ b/src/rendezvous_server.rs
 @@ -1,7 +1,7 @@
@@ -180,12 +180,13 @@ index dff45eb..7efb8a4 100644
  type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
  type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
  enum Sink {
-@@ -88,6 +92,22 @@ pub struct RendezvousServer {
+@@ -88,6 +92,23 @@ pub struct RendezvousServer {
      relay_servers0: Arc<RelayServers>,
      rendezvous_servers: Arc<Vec<String>>,
      inner: Arc<Inner>,
 +    key_registration: Arc<Mutex<()>>,
 +    tls_registration: bool,
++    tls_proxy_addr: Option<IpAddr>,
 +}
 +
 +enum PeerRoute {
@@ -203,16 +204,20 @@ index dff45eb..7efb8a4 100644
  }
  
  enum LoopFailure {
-@@ -142,6 +162,8 @@ impl RendezvousServer {
+@@ -142,6 +163,12 @@ impl RendezvousServer {
                  mask,
                  local_ip,
              }),
 +            key_registration: Arc::new(Mutex::new(())),
 +            tls_registration: std::env::var("OPSLINX_TLS_REGISTRATION").as_deref() == Ok("1"),
++            tls_proxy_addr: std::env::var("OPSLINX_TLS_PROXY_ADDR")
++                .ok()
++                .map(|value| value.parse::<IpAddr>())
++                .transpose()?,
          };
          log::info!("mask: {:?}", rs.inner.mask);
          log::info!("local-ip: {:?}", rs.inner.local_ip);
-@@ -343,86 +365,8 @@ impl RendezvousServer {
+@@ -343,86 +370,8 @@ impl RendezvousServer {
                      if rk.uuid.is_empty() || rk.pk.is_empty() {
                          return Ok(());
                      }
@@ -301,7 +306,7 @@ index dff45eb..7efb8a4 100644
                  }
                  Some(rendezvous_message::Union::PunchHoleRequest(ph)) => {
                      // UDP PunchHoleRequest is intentionally unsupported.
-@@ -471,6 +415,81 @@ impl RendezvousServer {
+@@ -471,6 +420,81 @@ impl RendezvousServer {
          Ok(())
      }
  
@@ -383,7 +388,7 @@ index dff45eb..7efb8a4 100644
      #[inline]
      async fn handle_tcp(
          &mut self,
-@@ -499,8 +518,8 @@ impl RendezvousServer {
+@@ -499,8 +523,8 @@ impl RendezvousServer {
                          let mut msg_out = RendezvousMessage::new();
                          rf.socket_addr = AddrMangle::encode(addr).into();
                          msg_out.set_request_relay(rf);
@@ -394,7 +399,7 @@ index dff45eb..7efb8a4 100644
                      }
                      return true;
                  }
-@@ -677,7 +696,7 @@ impl RendezvousServer {
+@@ -677,7 +701,7 @@ impl RendezvousServer {
          ph: PunchHoleRequest,
          key: &str,
          ws: bool,
@@ -403,7 +408,7 @@ index dff45eb..7efb8a4 100644
          let mut ph = ph;
          if !key.is_empty() && ph.licence_key != key {
              log::warn!("Authentication failed from {} for peer {} - invalid key", addr, ph.id);
-@@ -695,9 +714,9 @@ impl RendezvousServer {
+@@ -695,9 +719,9 @@ impl RendezvousServer {
          // because punch hole won't work if in the same intranet,
          // all routers will drop such self-connections.
          if let Some(peer) = self.pm.get(&id).await {
@@ -415,7 +420,7 @@ index dff45eb..7efb8a4 100644
              };
              if elapsed >= REG_TIMEOUT {
                  let mut msg_out = RendezvousMessage::new();
-@@ -728,14 +747,17 @@ impl RendezvousServer {
+@@ -728,14 +752,17 @@ impl RendezvousServer {
              let peer_is_lan = self.is_lan(peer_addr);
              let is_lan = self.is_lan(addr);
              let mut relay_server = self.get_relay_server(addr.ip(), peer_addr.ip());
@@ -435,7 +440,7 @@ index dff45eb..7efb8a4 100644
                  && (peer_is_lan && is_lan || {
                      match (peer_addr, addr) {
                          (SocketAddr::V4(a), SocketAddr::V4(b)) => a.ip() == b.ip(),
-@@ -770,7 +792,7 @@ impl RendezvousServer {
+@@ -770,7 +797,7 @@ impl RendezvousServer {
                      ..Default::default()
                  });
              }
@@ -444,7 +449,7 @@ index dff45eb..7efb8a4 100644
          } else {
              let mut msg_out = RendezvousMessage::new();
              msg_out.set_punch_hole_response(PunchHoleResponse {
-@@ -845,6 +867,14 @@ impl RendezvousServer {
+@@ -845,6 +872,14 @@ impl RendezvousServer {
          Ok(())
      }
  
@@ -459,7 +464,7 @@ index dff45eb..7efb8a4 100644
      #[inline]
      async fn handle_tcp_punch_hole_request(
          &mut self,
-@@ -854,8 +884,8 @@ impl RendezvousServer {
+@@ -854,8 +889,8 @@ impl RendezvousServer {
          ws: bool,
      ) -> ResultType<()> {
          let (msg, to_addr) = self.handle_punch_hole_request(addr, ph, key, ws).await?;
@@ -470,7 +475,7 @@ index dff45eb..7efb8a4 100644
          } else {
              self.send_to_tcp_sync(msg, addr).await?;
          }
-@@ -870,13 +900,7 @@ impl RendezvousServer {
+@@ -870,13 +905,7 @@ impl RendezvousServer {
          key: &str,
      ) -> ResultType<()> {
          let (msg, to_addr) = self.handle_punch_hole_request(addr, ph, key, false).await?;
@@ -485,13 +490,14 @@ index dff45eb..7efb8a4 100644
          Ok(())
      }
  
-@@ -1150,15 +1174,35 @@ impl RendezvousServer {
+@@ -1150,15 +1179,36 @@ impl RendezvousServer {
      ) -> ResultType<()> {
          let mut sink;
          if ws {
 -            use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 +            use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
-+            let from_proxy = try_into_v4(addr).ip().is_loopback();
++            let source = try_into_v4(addr).ip();
++            let from_proxy = source.is_loopback() || self.tls_proxy_addr == Some(source);
 +            let mut registration = false;
              let callback = |req: &Request, response: Response| {
                  let headers = req.headers();
@@ -523,7 +529,7 @@ index dff45eb..7efb8a4 100644
                          addr = format!("{ip}:0").parse().unwrap_or(addr);
                      } else {
                          addr = format!("[{ip}]:0").parse().unwrap_or(addr);
-@@ -1167,6 +1211,9 @@ impl RendezvousServer {
+@@ -1167,6 +1217,9 @@ impl RendezvousServer {
                  Ok(response)
              };
              let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
@@ -533,7 +539,7 @@ index dff45eb..7efb8a4 100644
              let (a, mut b) = ws_stream.split();
              sink = Some(Sink::Ws(a));
              while let Ok(Some(Ok(msg))) = timeout(30_000, b.next()).await {
-@@ -1192,6 +1239,94 @@ impl RendezvousServer {
+@@ -1192,6 +1245,94 @@ impl RendezvousServer {
          Ok(())
      }
  
