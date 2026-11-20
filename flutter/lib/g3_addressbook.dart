@@ -431,7 +431,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
               child: ListTile(
                 dense: true,
                 visualDensity: Platform.isWindows
-                    ? const VisualDensity(vertical: -2)
+                    ? Theme.of(context).visualDensity.copyWith(vertical: -4)
                     : null,
                 selected: selected?['id'] == d['id'],
                 leading: statusIcon(d),
