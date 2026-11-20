@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 import '../../common.dart' show androidVersion;
 import '../../g3_addressbook_api.dart';
 import '../../g3_addressbook_credentials.dart';
 
 const _host = 'talx.opslinx.de';
+const _channel = MethodChannel('mChannel');
 
 class OpsTalxLabPage extends StatefulWidget {
   const OpsTalxLabPage({super.key});
@@ -26,19 +27,30 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
 
   Future<void> _open(Uri uri) async {
     try {
-      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+      if (await _channel.invokeMethod<bool>('g3_open_video_help', uri.toString()) ==
+          true) return;
     } catch (_) {
-      // An Android browser is required for camera and microphone access.
+      // The embedded view is provided by the Android activity.
     }
     if (mounted) {
-      setState(() => _error = 'Kein Browser zum Öffnen von OpsTalX verfügbar.');
+      setState(() => _error = 'Die Video-Hilfe konnte nicht geöffnet werden.');
     }
   }
 
   void _join() {
-    final code = _code.text.toLowerCase().replaceAll(RegExp(r'[\s-]'), '');
+    final input = _code.text.trim();
+    final link = Uri.tryParse(input);
+    final value = link != null &&
+            link.scheme == 'https' &&
+            link.host == _host &&
+            link.userInfo.isEmpty &&
+            !link.hasPort &&
+            link.path == '/vas/'
+        ? link.queryParameters['room'] ?? ''
+        : input.replaceFirst(RegExp(r'^raumcode\s*:?\s*', caseSensitive: false), '');
+    final code = value.toLowerCase().replaceAll(RegExp(r'[\s\u200b\u2060\ufeff‐‑–—-]'), '');
     if (!RegExp(r'^(?:[0-9]{10}|[0-9a-f]{32})$').hasMatch(code)) {
-      setState(() => _error = 'Bitte den vollständigen Raumcode eingeben.');
+      setState(() => _error = 'Bitte den zehnstelligen Raumcode oder den Einladungslink eingeben.');
       return;
     }
     setState(() => _error = null);

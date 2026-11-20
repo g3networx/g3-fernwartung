@@ -334,6 +334,16 @@ class MainActivity : FlutterActivity() {
             if (documentPicker.handle(call, result)) return@setMethodCallHandler
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                "g3_open_video_help" -> {
+                    val url = call.arguments as? String
+                    if (url != null && OpsTalxVideoActivity.canOpen(url)) {
+                        startActivity(Intent(this, OpsTalxVideoActivity::class.java)
+                            .putExtra(OpsTalxVideoActivity.ROOM_URL, url))
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
                 "g3_install_android_update" -> installOpsLinxUpdate(
                     call.argument<String>("updateId"), call.argument<ByteArray>("certumProof"), result
                 )
