@@ -55,7 +55,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
 
   Future<void> restore() async {
     try {
-      api.token = await credentials.read();
+      api.token ??= await credentials.read();
       if (api.token != null) await load();
     } catch (_) {
       if (mounted) {
@@ -69,7 +69,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
   void dispose() {
     generation++;
     refresh?.cancel();
-    api.close();
+    if (widget.api == null) api.close();
     search.dispose();
     super.dispose();
   }

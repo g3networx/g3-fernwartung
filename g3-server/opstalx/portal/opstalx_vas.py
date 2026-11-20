@@ -68,7 +68,10 @@ def install(app, m, native_identity, native_json):
             )
             return response
         if request.method == "POST":
-            return redirect(launch(request.form.get("customer_id", type=int)), code=303)
+            return render_template(
+                "opstalx_vas_launch.html",
+                launch_url=launch(request.form.get("customer_id", type=int)),
+            )
         return render_template("opstalx_vas.html", customers=allowed_customers())
 
     @app.after_request

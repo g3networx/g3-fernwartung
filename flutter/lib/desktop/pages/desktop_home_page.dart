@@ -1,6 +1,7 @@
 import 'package:flutter_hbb/desktop/widgets/opstalx_video_window.dart';
 import 'package:flutter_hbb/g3_update.dart';
 import 'package:flutter_hbb/g3_enrollment.dart';
+import 'package:flutter_hbb/g3_addressbook_api.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
@@ -40,6 +41,7 @@ const borderColor = Color(0xFF2F65BA);
 class _DesktopHomePageState extends State<DesktopHomePage>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final _leftPaneScrollController = ScrollController();
+  final _addressBookApi = G3AddressBookApi();
 
   @override
   bool get wantKeepAlive => true;
@@ -130,7 +132,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             ],
             if (isWindows && opsTalxWindowsEnabled && !isIncomingOnly && !g3IsAdhoc()) ...[
               _g3Action(context, Icons.video_call_outlined, 'Video-Hilfe',
-                  () => openOpsTalxVideoWindow(context)),
+                  () => openOpsTalxVideoWindow(context, addressBookApi: _addressBookApi)),
               const SizedBox(height: 8),
             ],
             if (_g3AvailableVersion != null) Padding(
@@ -236,7 +238,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   buildRightPane(BuildContext context) {
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
-      child: ConnectionPage(),
+      child: ConnectionPage(addressBookApi: _addressBookApi),
     );
   }
 
@@ -843,6 +845,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     }
 
     rustDeskWinManager.setMethodHandler((call, fromWindowId) async {
+      if (call.method == kOpsTalxRoomRequest && isWindows && opsTalxWindowsEnabled) {
+        final customer = call.arguments;
+        if (customer != null && customer is! int) return null;
+        return requestOpsTalxRoom(_addressBookApi, customer as int?);
+      }
       if (!isChattyMethod(call.method)) {
         debugPrint(
             "[Main] call ${call.method} with args ${call.arguments} from window $fromWindowId");
@@ -938,6 +945,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   @override
   void dispose() {
+    _addressBookApi.close();
     _uniLinksSubscription?.cancel();
     Get.delete<RxBool>(tag: 'stop-service');
     _updateTimer?.cancel();

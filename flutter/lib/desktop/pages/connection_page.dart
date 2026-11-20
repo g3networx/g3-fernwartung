@@ -17,6 +17,7 @@ import 'package:flutter_hbb/models/peer_model.dart';
 
 import '../../common.dart';
 import '../../g3_addressbook.dart';
+import '../../g3_addressbook_api.dart';
 import '../../g3_local_addressbook.dart';
 import '../../g3_system_info.dart';
 import '../../common/formatter/id_formatter.dart';
@@ -194,7 +195,8 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
 
 /// Connection page for connecting to a remote peer.
 class ConnectionPage extends StatefulWidget {
-  const ConnectionPage({Key? key}) : super(key: key);
+  final G3AddressBookApi? addressBookApi;
+  const ConnectionPage({Key? key, this.addressBookApi}) : super(key: key);
 
   @override
   State<ConnectionPage> createState() => _ConnectionPageState();
@@ -329,7 +331,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                         isTerminal: true);
                   }, onLocalConnect: (id, files, password) async {
                     await connect(context, id, password: password.isEmpty ? null : password, isFileTransfer: files);
-                  }, remote: G3AddressBook(onConnect: (value) async {
+                  }, remote: G3AddressBook(api: widget.addressBookApi, onConnect: (value) async {
                     final uri = Uri.parse(value);
                     if (uri.host == 'g3-session' && RegExp(r'^/[A-Za-z0-9_-]{54}$').hasMatch(uri.path)) {
                       await redeemG3Session(uri.path.substring(1));
