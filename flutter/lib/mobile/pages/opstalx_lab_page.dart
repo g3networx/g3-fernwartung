@@ -36,8 +36,8 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
   }
 
   void _join() {
-    final code = _code.text.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(code)) {
+    final code = _code.text.toLowerCase().replaceAll(RegExp(r'[\s-]'), '');
+    if (!RegExp(r'^(?:[0-9]{10}|[0-9a-f]{32})$').hasMatch(code)) {
       setState(() => _error = 'Bitte den vollständigen Raumcode eingeben.');
       return;
     }
@@ -121,6 +121,7 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
               controller: _code,
               decoration: InputDecoration(
                 labelText: 'Raumcode',
+                hintText: '123 456 7890',
                 errorText: _error,
               ),
               autocorrect: false,
