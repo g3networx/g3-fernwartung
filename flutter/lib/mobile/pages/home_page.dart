@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hbb/mobile/pages/server_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
 import 'package:flutter_hbb/web/settings_page.dart';
@@ -114,13 +115,17 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedIndex = _defaultTabIndex;
     if (_g3AndroidClient) {
       WidgetsBinding.instance.addObserver(this);
+      unawaited(gFFI.serverModel.fetchID());
       unawaited(_checkAndroidUpdate());
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_checkAndroidUpdate());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(gFFI.serverModel.fetchID());
+      unawaited(_checkAndroidUpdate());
+    }
   }
 
   @override
@@ -198,7 +203,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // backgroundColor: MyTheme.grayBg,
           appBar: AppBar(
             centerTitle: true,
-            title: _g3AndroidClient ? const Text('g3 OpsLinX') : appTitle(),
+            title: _g3AndroidClient ? _g3AndroidTitle(context) : appTitle(),
             bottom: _androidUpdate == null
                 ? null
                 : PreferredSize(
@@ -247,6 +252,34 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : _pages.elementAt(_selectedIndex),
         ));
   }
+
+  Widget _g3AndroidTitle(BuildContext context) => ValueListenableBuilder(
+      valueListenable: gFFI.serverModel.serverId,
+      builder: (context, value, _) {
+        final id = value.text.replaceAll(RegExp(r'\s'), '');
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('g3 OpsLinX'),
+            if (RegExp(r'^[A-Za-z0-9_-]{6,40}$').hasMatch(id))
+              Tooltip(
+                message: 'Geräte-ID kopieren',
+                child: InkWell(
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: id));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Geräte-ID kopiert')),
+                      );
+                    }
+                  },
+                  child: Text('ID ${value.text}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ),
+          ],
+        );
+      });
 
   Widget appTitle() {
     final currentUser = gFFI.chatModel.currentUser;
