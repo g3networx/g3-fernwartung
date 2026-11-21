@@ -29,6 +29,13 @@ internal static class ManagedOpsLinXUpdate
     public sealed class Release
     {
         public string release_version { get; set; }
+        public Bundle windows_bundle { get; set; }
+        public Bundle host_bundle { get; set; }
+    }
+
+    public sealed class Bundle
+    {
+        public string file { get; set; }
     }
 
     internal static int Run()
@@ -197,6 +204,22 @@ internal static class ManagedOpsLinXUpdate
             || target.Build > UInt16.MaxValue) return Failed;
         var current = InstalledPackageVersion(app);
         if (current == null) return Failed;
+        var bundle = host ? release.host_bundle : release.windows_bundle;
+        if (bundle != null && current <= target)
+        {
+            string name = bundle.file ?? "";
+            string prefix = host ? "Host" : "Vollclient";
+            if (!Regex.IsMatch(name, @"\AOpsLinX-" + prefix + "-" + Regex.Escape(version.Groups[2].Value)
+                + @"-OpsTalX-[0-9]+\.[0-9]+\.[0-9]+-Sammelinstaller\.exe\z")) return Failed;
+            string path = Path.Combine(directory, name);
+            try
+            {
+                Download(origin, "client/releases/" + release.release_version + "/" + (host ? "host_bundle" : "windows_bundle"),
+                    path, 150 * 1024 * 1024);
+                return RunInstaller(path, "--quiet", directory);
+            }
+            finally { File.Delete(path); }
+        }
         if (current >= target)
         {
             using (var service = new ServiceController(app))
@@ -212,19 +235,24 @@ internal static class ManagedOpsLinXUpdate
         {
             Download(origin, route, launcher, 4 * 1024 * 1024);
             Download(origin, route + "_msi", msi, 150 * 1024 * 1024);
-            var info = new ProcessStartInfo(launcher, "--g3-install-worker \"" + msi + "\"") {
-                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = directory
-            };
-            using (var installer = Process.Start(info))
-            {
-                installer.WaitForExit();
-                return installer.ExitCode;
-            }
+            return RunInstaller(launcher, "--g3-install-worker \"" + msi + "\"", directory);
         }
         finally
         {
             File.Delete(launcher);
             File.Delete(msi);
+        }
+    }
+
+    private static int RunInstaller(string path, string arguments, string directory)
+    {
+        var info = new ProcessStartInfo(path, arguments) {
+            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = directory
+        };
+        using (var installer = Process.Start(info))
+        {
+            installer.WaitForExit();
+            return installer.ExitCode;
         }
     }
 
