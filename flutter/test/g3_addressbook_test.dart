@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -96,6 +97,39 @@ void main() {
     expect((await api.poll('device', 'verifier'))?['token'], 'fixture');
     api.close();
   });
+
+  testWidgets('Mobile device action hands only the selected ID to OpsTalX',
+      (tester) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    MethodCall? launch;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      launch = call;
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final api = StandbyAddressBookApi(tree);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: G3AddressBook(
+                api: api,
+                credentials: FixtureCredentials(),
+                mobile: true,
+                onConnect: (_) async => fail('Desktop action called')))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '123456789');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEST-SERVER'));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Videokonferenz'));
+    await tester.pumpAndSettle();
+    expect(launch?.arguments['url'], 'opstalx://conference?device=123456789');
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, skip: !Platform.isWindows && !Platform.isAndroid);
 
   testWidgets('resumes after standby and retries without clearing the tree',
       (tester) async {
