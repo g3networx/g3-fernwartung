@@ -33,6 +33,7 @@ extern bool gIsConnectionManager;
 // Flutter's Linux embedder doesn't deliver X11 button 8/9 events to Dart.
 // We intercept them via GDK and forward through a dedicated platform channel.
 
+static constexpr char kProductName[] = "g3 OpsLinX";
 static const char* kSideButtonChannelName = "org.rustdesk.rustdesk/side_buttons";
 
 static gboolean on_side_button_event(GtkWidget* widget, GdkEventButton* event, gpointer user_data) {
@@ -111,6 +112,7 @@ static void my_application_activate(GApplication* application) {
 
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  gtk_window_set_title(window, kProductName);
   gtk_window_set_decorated(window, FALSE);
   // try setting icon for rustdesk, which uses the system cache
   GtkIconTheme* theme = gtk_icon_theme_get_default();
@@ -142,11 +144,9 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "rustdesk");
+    gtk_header_bar_set_title(header_bar, kProductName);
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "rustdesk");
   }
 
   // auto bdw = bitsdojo_window_from(window); // <--- add this line
@@ -234,6 +234,7 @@ static void my_application_class_init(MyApplicationClass* klass) {
 static void my_application_init(MyApplication* self) {}
 
 MyApplication* my_application_new() {
+  g_set_application_name(kProductName);
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID,
                                      "flags", G_APPLICATION_NON_UNIQUE,

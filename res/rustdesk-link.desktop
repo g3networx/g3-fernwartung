@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=RustDesk
+Name=g3 OpsLinX
 NoDisplay=true
 MimeType=x-scheme-handler/rustdesk;
 TryExec=rustdesk
