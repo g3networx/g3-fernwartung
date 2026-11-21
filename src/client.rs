@@ -104,6 +104,8 @@ mod audio_playback_recovery;
 mod audio_state_tests;
 pub mod file_trait;
 pub mod helper;
+#[cfg(feature = "flutter")]
+mod desktop_context_reconnect;
 pub mod io_loop;
 pub mod screenshot;
 
@@ -3054,6 +3056,8 @@ pub struct LoginConfigHandler {
     // Start time of the restart grace window. On Windows the peer may briefly
     // reconnect before the real reboot disconnect.
     restart_remote_device_at: Option<Instant>,
+    #[cfg(feature = "flutter")]
+    desktop_context_reconnect: desktop_context_reconnect::DesktopContextReconnect,
     pub force_relay: bool,
     // force_relay minus the WebSocket transport. ws forces relay for classic punching but says
     // nothing about ICE, so every WebRTC decision keys off this: policy means Relay-only ICE,
@@ -3183,6 +3187,10 @@ impl LoginConfigHandler {
         self.session_id = sid;
         self.supported_encoding = Default::default();
         self.clear_restarting_remote_device();
+        #[cfg(feature = "flutter")]
+        {
+            self.desktop_context_reconnect = Default::default();
+        }
         // Three scopes: what was decided about this PEER, what this CLIENT is set up as (proxy),
         // and what its TRANSPORT forces (ws). Only the first may be written back to the peer's
         // config — persisting the others would make a local setup a permanent peer property.
@@ -5223,6 +5231,22 @@ pub trait Interface: Send + Clone + 'static + Sized {
             // Flutter treats this as a reconnect control event. The text is kept
             // for legacy UI and existing translation reuse.
             self.msgbox("restarting", "Restarting remote device", "Connection in progress. Please wait.", "");
+            return;
+        }
+
+        #[cfg(feature = "flutter")]
+        if lch
+            .read()
+            .unwrap()
+            .desktop_context_reconnect
+            .active(std::time::Instant::now())
+        {
+            self.msgbox(
+                "restarting",
+                "Connecting...",
+                "Connection in progress. Please wait.",
+                "",
+            );
             return;
         }
 

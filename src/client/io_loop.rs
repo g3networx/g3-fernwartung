@@ -300,7 +300,9 @@ impl<T: InvokeUiSession> Remote<T> {
                             if let Some(res) = res {
                                 match res {
                                     Err(err) => {
-                                        self.handler.on_establish_connection_error(err.to_string());
+                                        if !self.retry_after_desktop_transport_close(is_secured, Some(err.kind())) {
+                                            self.handler.on_establish_connection_error(err.to_string());
+                                        }
                                         break;
                                     }
                                     Ok(ref bytes) => {
@@ -319,7 +321,7 @@ impl<T: InvokeUiSession> Remote<T> {
                                 if self.handler.is_restarting_remote_device() {
                                     log::info!("Restart remote device");
                                     self.handler.msgbox("restarting", "Restarting remote device", "Connection in progress. Please wait.", "");
-                                } else {
+                                } else if !self.retry_after_desktop_transport_close(is_secured, None) {
                                     log::info!("Reset by the peer");
                                     self.handler.msgbox("error", "Connection Error", "Reset by the peer", "");
                                 }
@@ -668,6 +670,40 @@ impl<T: InvokeUiSession> Remote<T> {
         {
             None
         }
+    }
+
+    fn retry_after_desktop_transport_close(
+        &self,
+        secured: bool,
+        error: Option<std::io::ErrorKind>,
+    ) -> bool {
+        #[cfg(feature = "flutter")]
+        {
+            let authenticated_desktop =
+                secured && self.is_connected && self.first_frame && self.handler.is_default();
+            if !super::desktop_context_reconnect::eligible(
+                &self.peer_info.platform,
+                authenticated_desktop,
+                error,
+            ) || self.handler.is_restarting_remote_device()
+            {
+                return false;
+            }
+            if self.handler.lc.write().unwrap().desktop_context_reconnect
+                .start_or_continue(std::time::Instant::now())
+            {
+                self.handler.msgbox(
+                    "restarting",
+                    "Connecting...",
+                    "Connection in progress. Please wait.",
+                    "",
+                );
+                return true;
+            }
+        }
+        #[cfg(not(feature = "flutter"))]
+        let _ = (secured, error);
+        false
     }
 
     async fn send_close_reason(&mut self, peer: &mut Stream, reason: &str) {

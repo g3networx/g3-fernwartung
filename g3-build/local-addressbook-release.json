@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.62.20130",
+  "version": "1.5.3-g3.62.20131",
   "displayVersion": "g3.6.2 Build 211126",
   "buildDate": "2026-11-21",
-  "windowsVersion": "1.62.20130",
-  "dailyInternalSequence": 2,
+  "windowsVersion": "1.62.20131",
+  "dailyInternalSequence": 3,
   "feature": "opstalx-vas"
 }
