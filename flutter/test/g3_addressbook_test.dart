@@ -9,6 +9,22 @@ import 'package:flutter_hbb/g3_addressbook_api.dart';
 import 'package:flutter_hbb/g3_addressbook_credentials.dart';
 import 'package:flutter_hbb/g3_powershell_credentials.dart';
 import 'package:flutter_hbb/g3_local_addressbook_store.dart';
+// Tests replace the implementation selected by url_launcher on the host.
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
+
+class FixtureConferenceLauncher extends UrlLauncherPlatform {
+  String? opened;
+
+  @override
+  Null get linkDelegate => null;
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    opened = url;
+    return true;
+  }
+}
 
 class FixturePowerShellCredentials extends G3PowerShellCredentials {
   @override
@@ -140,9 +156,22 @@ void main() {
     String? opened;
     String? powerShellOpened;
     String? fileExplorerOpened;
+    var conferenceRequests = 0;
+    final previousLauncher = UrlLauncherPlatform.instance;
+    final launcher = FixtureConferenceLauncher();
+    UrlLauncherPlatform.instance = launcher;
+    addTearDown(() => UrlLauncherPlatform.instance = previousLauncher);
     var connections = 0;
     final client = MockClient((request) async {
       expect(request.headers['Authorization'], 'Bearer ${'a' * 43}');
+      if (request.url.path.endsWith('/conference/start')) {
+        conferenceRequests++;
+        expect(jsonDecode(request.body), {'device_id': 7});
+        return http.Response(jsonEncode({
+          'device': '123456789',
+          'grant': 'e30.${'b' * 86}',
+        }), 200);
+      }
       if (request.url.path.endsWith('/connect')) {
         connections++;
         expect(jsonDecode(request.body)['device_id'], 7);
@@ -189,6 +218,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Geräte-ID: 123456789'), findsOneWidget);
     expect(find.text('Own › Servers'), findsOneWidget);
+    final conferenceButton = find.text('Videokonferenz');
+    if (Platform.isWindows || Platform.isAndroid) {
+      expect(conferenceButton, findsOneWidget);
+      await tester.tap(conferenceButton);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+      expect(conferenceRequests, 1);
+      expect(launcher.opened,
+          'opstalx://conference?device=123456789#grant=e30.${'b' * 86}');
+    } else {
+      expect(conferenceButton, findsNothing);
+    }
     expect(find.byIcon(Icons.terminal), findsOneWidget);
     expect(tester.getCenter(find.byTooltip('PowerShell verbinden')).dx,
         greaterThan(tester.getCenter(find.byTooltip('Desktop verbinden')).dx));

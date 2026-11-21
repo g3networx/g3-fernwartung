@@ -478,7 +478,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
         await open(device);
         break;
       case 'conference':
-        await openG3VideoConference(context, device['rustdesk_id'] as String);
+        await startConference(device);
         break;
       case 'shell':
         await open(device, powerShell: true);
@@ -492,6 +492,17 @@ class _G3AddressBookState extends State<G3AddressBook> {
       case 'copy':
         await copyToLocal(device);
         break;
+    }
+  }
+
+  Future<void> startConference(Map<String, dynamic> device) async {
+    if (busy || !canStartG3VideoConference(device['rustdesk_id'])) return;
+    setState(() => busy = true);
+    try {
+      await openG3VideoConference(context, device['rustdesk_id'] as String,
+          addressBook: api, addressBookDevice: device['id'] as int);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -521,6 +532,7 @@ class _G3AddressBookState extends State<G3AddressBook> {
               textAlign: TextAlign.center));
     }
     final book = books.where((b) => b['id'] == d['customer_id']).first;
+    final deviceId = d['rustdesk_id'];
     return SingleChildScrollView(
         padding: const EdgeInsets.all(18),
         child: Column(children: [
@@ -560,6 +572,12 @@ class _G3AddressBookState extends State<G3AddressBook> {
                           onPressed: busy ? null : () => open(d, fileExplorer: true),
                           icon: const Icon(Icons.folder_open),
                           label: const Text('Dateiexplorer'))),
+                if (canStartG3VideoConference(deviceId))
+                  FilledButton.icon(
+                    onPressed: busy ? null : () => startConference(d),
+                    icon: const Icon(Icons.video_call),
+                    label: const Text('Videokonferenz'),
+                  ),
               ]),
           if (book['can_edit'] == true)
             Wrap(spacing: 8, children: [
