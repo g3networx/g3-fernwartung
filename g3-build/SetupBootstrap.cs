@@ -60,6 +60,8 @@ internal sealed class UpdateSessionGate:IDisposable {
 internal sealed class SetupForm:Form {
 
  const string Kind="@KIND@", Hash="@HASH@", FileName="@FILE@", Version="@VERSION@", ExeHash="@EXEHASH@", GateDllHashes="@GATE_DLL_HASHES@", ProductCode="@PRODUCTCODE@";
+ static readonly string BundleName="@BUNDLE_NAME@", BundleHash="@BUNDLE_HASH@";
+ static readonly Uri UpdateOrigin=new Uri("https://linx.g3nx.net/");
 
  static string AppName {get{return Kind=="host_msi"?"g3Host":"g3Fernwartung";}}
 
@@ -69,9 +71,11 @@ internal sealed class SetupForm:Form {
 
  readonly Label status=new Label(); readonly Button start=new Button(); readonly ProgressBar progress=new ProgressBar();bool working;
  readonly Label detail=new Label(),stepLabel=new Label();readonly Timer progressTimer=new Timer();readonly Stopwatch elapsed=new Stopwatch();
+ readonly bool bundleUpdate;
  int step;DateTime workerStarted;string workerLog;static Action<int> verifiedFileProgress;
 
  public SetupForm(int pid) {
+  bundleUpdate=pid>0 && BundleName.Length!=0;
 
   Text=ProductTitle+" – "+(pid>0?"aktualisieren":"Installation");Width=760;Height=350;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;
 
@@ -123,6 +127,17 @@ internal sealed class SetupForm:Form {
  static void OpenClient(){if(File.Exists(InstalledExe))Process.Start(new ProcessStartInfo(InstalledExe){UseShellExecute=true});}
 
  async Task Install(){if(working)return;working=true;start.Enabled=false;start.Text="Installation läuft …";workerLog=null;elapsed.Restart();progressTimer.Start();try {
+
+  if(bundleUpdate){
+   ShowStep(3,"Windows-Berechtigung bestätigen. Danach wird das gemeinsame Update für OpsLinX und OpsTalX geprüft und installiert …",false);
+   var bundleInfo=new ProcessStartInfo(Application.ExecutablePath,"--g3-bundle-interactive"){UseShellExecute=true,Verb="runas"};
+   int exit;
+   using(var updater=Process.Start(bundleInfo)){await Task.Run(()=>updater.WaitForExit());exit=updater.ExitCode;}
+   if(exit==1602){working=false;Close();return;}
+   if(exit==1618)throw new InvalidOperationException("Das Update wartet auf das Ende einer Fernwartung, einer Konferenz oder eines anderen Installationsvorgangs.");
+   if(exit!=0 && exit!=3010)throw new InvalidOperationException("Das gemeinsame Update konnte nicht abgeschlossen werden (Fehler "+exit+").");
+   OpenClient();working=false;progressTimer.Stop();Close();return;
+  }
 
   RequireCompanionProtocol();
 
@@ -429,13 +444,66 @@ internal sealed class SetupForm:Form {
   }
  }
 
+ internal static int ApplyBundle(Uri origin,bool interactive){
+  if(BundleName.Length==0)return 87;
+  string folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-Bundle-Download-"+Guid.NewGuid().ToString("N"));
+  var acl=new DirectorySecurity();
+  acl.SetAccessRuleProtection(true,false);
+  acl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null));
+  foreach(var sid in new[]{WellKnownSidType.BuiltinAdministratorsSid,WellKnownSidType.LocalSystemSid})
+   acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid,null),FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
+  string path=Path.Combine(folder,BundleName);
+  try{
+   Directory.CreateDirectory(folder,acl);
+   if((File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0)return 13;
+   const int maxSize=150*1024*1024;
+   var request=(HttpWebRequest)WebRequest.Create(new Uri(origin,"client/releases/"+Version+"/"+(Kind=="host_msi"?"host_bundle":"windows_bundle")));
+   request.AllowAutoRedirect=false;
+   request.Timeout=20000;
+   request.ReadWriteTimeout=20000;
+   ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
+   string signature;
+   using(var response=(HttpWebResponse)request.GetResponse()){
+    if(response.StatusCode!=HttpStatusCode.OK || response.ContentLength<=0 || response.ContentLength>maxSize)return 13;
+    signature=response.Headers["X-OpsLinX-Signature"];
+    if(String.IsNullOrEmpty(signature) || signature.Length>5464)return 13;
+    using(var input=response.GetResponseStream())using(var output=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None)){
+     var buffer=new byte[65536];
+     int total=0,count;
+     while((count=input.Read(buffer,0,buffer.Length))>0){
+      total+=count;if(total>response.ContentLength)return 13;
+      output.Write(buffer,0,count);
+     }
+     if(total!=response.ContentLength)return 13;
+    }
+   }
+   if(Digest(path)!=BundleHash)return 13;
+   OpsLinXPackageSignature.Verify(path,BundleName,Convert.FromBase64String(signature));
+   using(var process=Process.Start(new ProcessStartInfo(path,interactive?"--interactive":"--quiet"){UseShellExecute=false,CreateNoWindow=true})){
+    process.WaitForExit();return process.ExitCode;
+   }
+  }catch(Exception error){Console.Error.WriteLine(error.Message);return 1603;}
+  finally{
+   if(Directory.Exists(folder) && (File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0){
+    File.Delete(path);Directory.Delete(folder);
+   }
+  }
+ }
+
  [STAThread]static int Main(string[] args){
   bool uninstall = args.Length == 1 && args[0] == "--g3-uninstall-worker";
   if (uninstall && !WindowsIdentity.GetCurrent().IsSystem) return 740;
   bool interactive=args.Length==2&&args[0]=="--g3-install-interactive";
   bool worker=args.Length==2&&(args[0]=="--g3-install-worker"||interactive);
-  if(worker&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
-  if(interactive&&(WindowsIdentity.GetCurrent().IsSystem||!Environment.UserInteractive||Process.GetCurrentProcess().SessionId==0))return 740;
+  bool bundleInteractive=args.Length==1&&args[0]=="--g3-bundle-interactive";
+  if((worker||bundleInteractive)&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
+  if((interactive||bundleInteractive)&&(WindowsIdentity.GetCurrent().IsSystem||!Environment.UserInteractive||Process.GetCurrentProcess().SessionId==0))return 740;
+  if(bundleInteractive)return ApplyBundle(UpdateOrigin,true);
+  // Older management workers call the verified release launcher with the standalone MSI.
+  if(worker&&!interactive&&BundleName.Length!=0&&WindowsIdentity.GetCurrent().IsSystem){
+   if(!String.Equals(Path.GetFileName(args[1]),FileName,StringComparison.OrdinalIgnoreCase)||!File.Exists(args[1])||Digest(args[1])!=Hash)return 13;
+   return ApplyBundle(UpdateOrigin,false);
+  }
   // Both locks span Windows sessions. The launcher must not block its own elevated worker.
   string mutexName=@"Global\g3NetworX.OpsLinX.Setup."+((worker||uninstall)?"Worker":"Launcher");
   using(var instance=new SetupInstance(mutexName,worker||uninstall)){

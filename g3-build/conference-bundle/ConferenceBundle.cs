@@ -18,7 +18,8 @@ internal static class ConferenceBundle
     [STAThread]
     private static int Main(string[] args)
     {
-        bool quiet = args.Length == 1 && args[0] == "--quiet";
+        bool interactive = args.Length == 1 && args[0] == "--interactive";
+        bool quiet = interactive || (args.Length == 1 && args[0] == "--quiet");
         if (args.Length != 0 && !quiet) return 87;
         try
         {
@@ -29,7 +30,7 @@ internal static class ConferenceBundle
                 try { acquired = mutex.WaitOne(0); }
                 catch (AbandonedMutexException) { acquired = true; }
                 if (!acquired) return Report(quiet, Busy, "Ein Sammelinstaller ist bereits geöffnet.");
-                try { return Run(quiet, metadata); }
+                try { return Run(quiet, interactive, metadata); }
                 finally { mutex.ReleaseMutex(); }
             }
         }
@@ -39,7 +40,7 @@ internal static class ConferenceBundle
         }
     }
 
-    private static int Run(bool quiet, StreamReader metadata)
+    private static int Run(bool quiet, bool interactive, StreamReader metadata)
     {
         string variant = metadata.ReadLine();
         if (variant != "g3Fernwartung" && variant != "g3Host") throw new InvalidDataException();
@@ -67,8 +68,8 @@ internal static class ConferenceBundle
             int linxExit = 0;
             if (updateLinx)
             {
-                // Use the existing noninteractive worker to enforce the session gate.
-                linxExit = Execute(linxSetup, "--g3-install-worker " + Quote(linxMsi));
+                // Delegate session state and any disconnect consent to the existing installer.
+                linxExit = Execute(linxSetup, (interactive ? "--g3-install-interactive " : "--g3-install-worker ") + Quote(linxMsi));
                 if (linxExit == Busy)
                     return Report(quiet, Busy, productName + " hat das Update zurückgestellt. OpsTalX wurde noch nicht aktualisiert.");
                 if (linxExit != 0 && linxExit != RestartRequired)

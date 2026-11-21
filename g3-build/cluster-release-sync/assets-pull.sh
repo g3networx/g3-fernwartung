@@ -63,7 +63,7 @@ for name in ['current.json','downloads.json']:
    assert all(new.get(k)==old.get(k) for k in ['file','size','sha256']),'Conflicting Soforthilfe package'
    assert incoming.get('adhoc_source')==existing.get('adhoc_source'),'Conflicting Soforthilfe source'
  if version(incoming['version'])==version(existing['version']):
-  for key in ['windows','windows_msi','host','host_msi','source']:
+  for key in ['windows','windows_msi','host','host_msi','windows_bundle','host_bundle','source']:
    assert incoming.get(key)==existing.get(key),'Conflicting immutable release: '+key
 local_platforms=root/'platforms.json'
 if local_platforms.exists():

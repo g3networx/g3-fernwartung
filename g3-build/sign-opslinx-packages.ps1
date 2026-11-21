@@ -1,4 +1,9 @@
-param([Parameter(Mandatory)][string]$BuildOutput)
+param(
+    [Parameter(Mandatory)][string]$BuildOutput,
+    [string]$OpsTalXMsi,
+    [version]$OpsTalXVersion,
+    [string]$ConferenceSignerThumbprint
+)
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -64,6 +69,31 @@ Sign-File $adhoc
 
 $packages = @($adhoc)
 foreach ($name in $names) { $packages += @("outputs/$name.msi", "outputs/$name.exe") }
+function Write-ReleaseManifest($Paths) {
+    $Paths | ForEach-Object {
+        $file = Get-Item -LiteralPath $_
+        [ordered]@{
+            file = $file.Name
+            size = $file.Length
+            sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            signer = $thumbprint
+            timestamped = $true
+        }
+    } | ConvertTo-Json | Set-Content -LiteralPath outputs/opslinx-signatures.json -Encoding utf8
+}
+
+if ($OpsTalXMsi) {
+    if (!$OpsTalXVersion -or !$ConferenceSignerThumbprint) { throw 'Missing OpsTalX release metadata' }
+    Write-ReleaseManifest $packages
+    $build = $version.Split('.')[-1]
+    & ./g3-build/conference-bundle/Build-ConferenceBundle.ps1 -OpsLinXRelease outputs -OpsTalXMsi $OpsTalXMsi -Output outputs -Build $build -OpsTalXVersion $OpsTalXVersion -SignTool $sdk.FullName -SignerThumbprint $ConferenceSignerThumbprint
+    python g3-build/build-setup-launchers.py --version $version --bundle-directory outputs
+    if ($LASTEXITCODE) { throw 'Bundled update launcher build failed' }
+    foreach ($name in $names) { Sign-File "outputs/$name.exe" }
+    $packages += @(Get-ChildItem -LiteralPath outputs -Filter '*-Sammelinstaller.exe' | Select-Object -ExpandProperty FullName)
+    if ($packages.Count -ne 7) { throw 'Expected two update bundles' }
+}
+
 foreach ($path in $packages) {
     $file = Get-Item -LiteralPath $path
     $digest = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
@@ -78,13 +108,4 @@ foreach ($path in $packages) {
     if ($proof.Length -gt 4096) { throw "OpsLinX signature is too large for $path" }
     [IO.File]::WriteAllBytes($file.FullName + '.p7s', $proof)
 }
-$packages | ForEach-Object {
-    $file = Get-Item -LiteralPath $_
-    [ordered]@{
-        file = $file.Name
-        size = $file.Length
-        sha256 = (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant()
-        signer = $thumbprint
-        timestamped = $true
-    }
-} | ConvertTo-Json | Set-Content -LiteralPath outputs/opslinx-signatures.json -Encoding utf8
+Write-ReleaseManifest $packages

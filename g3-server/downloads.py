@@ -3,6 +3,7 @@ import base64,json,re
 from pathlib import Path
 from flask import abort,render_template,send_file
 ROOT=Path('/opt/rustdesk-client')
+WINDOWS_BUNDLES=('windows_bundle','host_bundle')
 def install(app,m):
  def platform_release():
   try:data=json.loads((ROOT/'platforms.json').read_text(encoding='utf-8'))
@@ -31,7 +32,7 @@ def install(app,m):
   return response
  def package_response(name,kind):
   response=send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
-  if kind in ('windows','host','adhoc','windows_msi','host_msi'):
+  if kind in ('windows','host','adhoc','windows_msi','host_msi',*WINDOWS_BUNDLES):
    try:
     with (ROOT/(name+'.p7s')).open('rb') as sidecar: signature=sidecar.read(4097)
    except FileNotFoundError: signature=b''
@@ -60,7 +61,7 @@ def install(app,m):
   return render_template('releases.html',versions=sorted(versions,reverse=True))
  @app.get('/client/releases/<version>/<kind>')
  def client_release_file(version,kind):
-  if not re.fullmatch(r'\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?',version) or kind not in ('source','dependencies','license','windows_msi','host_msi','windows','host'):abort(404)
+  if not re.fullmatch(r'\d+\.\d+\.\d+-g3\.\d+(?:\.\d+)?',version) or kind not in ('source','dependencies','license','windows_msi','host_msi','windows','host',*WINDOWS_BUNDLES):abort(404)
   try:item=json.loads((ROOT/'releases'/(version+'.json')).read_text(encoding='utf-8'))[kind]
   except (OSError,ValueError,KeyError):abort(404)
   name=item['file']
@@ -83,7 +84,7 @@ def install(app,m):
   if (ROOT/'update-v2-hold').exists():abort(503)
   data=release()
   if not data or data.get('session_guard')!=1:abort(503)
-  return update_metadata(data)
+  return {**update_metadata(data),**{kind:data[kind] for kind in WINDOWS_BUNDLES if kind in data}}
  @app.get('/client')
  def client_download():
   data=public_release()
