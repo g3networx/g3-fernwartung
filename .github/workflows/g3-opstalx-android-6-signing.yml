@@ -1,0 +1,66 @@
+name: Sign OpsTalX Android 0.2.4
+on:
+  push:
+    branches: [g3-codesigning-setup]
+    paths: [.github/workflows/g3-opstalx-android-6-signing.yml]
+permissions:
+  contents: write
+env:
+  DRAFT_ID: '453641935'
+  DRAFT_TAG: 'android-shared-id-signing-77004a0c52e7'
+  TALX_ID: '775354146'
+  TALX_SHA: '8e133b3afb5bb069e6c20460dc5b4449a8f95e5510d21fbe9106fdcd28daad55'
+  SIGNER_SHA: '3c69fa623753dc13a8ab41bf0cdbe56f018eea2d8f0a961cb8667e91b8fcc6ee'
+jobs:
+  signing:
+    if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    runs-on: ubuntu-24.04
+    environment: signing
+    timeout-minutes: 10
+    steps:
+      - name: Read the pinned Android inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" | jq -e --arg tag "$DRAFT_TAG" '.draft and .tag_name == $tag' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$TALX_ID" -H 'Accept: application/octet-stream' > opstalx-input.apk
+          printf '%s  %s\n' "$TALX_SHA" opstalx-input.apk | sha256sum -c
+      - name: Validate application ID and sign the APK
+        env:
+          OPSLINX_ANDROID_SIGNING: ${{ secrets.OPSLINX_ANDROID_SIGNING }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -f "$work/key.p12" "$work/password" "$work/verification"; rmdir "$work"' EXIT
+          sdk=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$sdk"
+          badging=$("${sdk%/*}/aapt" dump badging opstalx-input.apk)
+          grep -Fq "package: name='de.opslinx.talx' versionCode='6' versionName='0.2.4'" <<< "$badging"
+          python - "$work" <<'PY'
+          import base64, json, os, pathlib, sys, zipfile
+          directory = pathlib.Path(sys.argv[1])
+          secret = json.loads(os.environ.pop('OPSLINX_ANDROID_SIGNING'))
+          (directory / 'key.p12').write_bytes(base64.b64decode(secret['pkcs12'], validate=True))
+          (directory / 'password').write_text((secret['password'] + '\n') * 2)
+          PY
+          unset OPSLINX_ANDROID_SIGNING
+          mkdir signed
+          sign() {
+            "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "signed/$2" "$1"
+            "$sdk" verify --verbose --print-certs "signed/$2" | tee "$work/verification"
+            grep -Fxq 'Number of signers: 1' "$work/verification"
+            grep -Fxq 'Verified using v2 scheme (APK Signature Scheme v2): true' "$work/verification"
+            grep -Eixq "(Signer #1|V[0-9]+\.[0-9]+ Signer:?) certificate SHA-256 digest: $SIGNER_SHA" "$work/verification"
+          }
+          sign opstalx-input.apk OpsTalX-0.2.4.apk
+      - name: Save signed APKs to the pinned draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" | jq -e --arg tag "$DRAFT_TAG" '.draft and .tag_name == $tag' >/dev/null
+          for apk in signed/*.apk; do
+            curl --fail --silent --show-error --max-time 120 -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Content-Type: application/octet-stream' --data-binary "@$apk" "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID/assets?name=${apk##*/}" >/dev/null
+          done
