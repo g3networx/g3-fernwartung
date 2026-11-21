@@ -43,7 +43,7 @@ with TemporaryDirectory(prefix='opslinx-branding-') as scratch:
     (lab / 'Dockerfile').write_text('''FROM ubuntu:22.04
 COPY client.deb /tmp/client.deb
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/client.deb \\
-    xvfb xauth dbus-x11 openbox python3-gi x11-utils xdotool libegl1-mesa libgles2-mesa
+    xvfb xauth dbus-x11 openbox python3-gi libglib2.0-bin x11-utils xdotool libegl1-mesa libgles2-mesa
 COPY check.sh /check.sh
 ''')
     (lab / 'check.sh').write_text(r'''#!/bin/bash
