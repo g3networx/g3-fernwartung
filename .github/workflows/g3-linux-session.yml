@@ -13,6 +13,12 @@ name: g3 Linux live session validation
         - x86_64
         - aarch64
         default: all
+      test_scope:
+        type: choice
+        options:
+        - session
+        - branding
+        default: session
 permissions:
   contents: read
   actions: read
@@ -30,6 +36,7 @@ jobs:
       with:
         persist-credentials: false
     - name: Download validated package
+      if: inputs.test_scope == 'session'
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         github-token: ${{ github.token }}
@@ -38,14 +45,38 @@ jobs:
         merge-multiple: true
         path: input
     - name: Authenticated live desktop session
+      if: inputs.test_scope == 'session'
       run: python3 -u g3-build/test-linux-session.py
     - name: Record actual session result
-      if: always()
+      if: always() && inputs.test_scope == 'session'
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: g3-linux-session-${{ matrix.arch }}
         path: 'session-evidence/session-result.json
 
           session-evidence/*-diagnostics.txt'
+        if-no-files-found: error
+        retention-days: 30
+    - name: Download Linux build
+      if: inputs.test_scope == 'branding'
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.validation_run }}
+        pattern: g3-linux-${{ matrix.arch }}-*
+        merge-multiple: true
+        path: input
+    - name: Check application menu and running window on native Linux
+      if: inputs.test_scope == 'branding'
+      run: python3 -u g3-build/test-linux-branding.py
+      env:
+        SOURCE_RUN: ${{ inputs.validation_run }}
+        PACKAGE_ARCH: ${{ matrix.arch }}
+    - name: Upload tested branding package
+      if: inputs.test_scope == 'branding'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: g3-linux-branding-${{ matrix.arch }}
+        path: verified/
         if-no-files-found: error
         retention-days: 30
