@@ -9,6 +9,7 @@ import 'g3_powershell_login.dart';
 import 'g3_powershell_credentials.dart';
 import 'g3_local_addressbook_copy.dart';
 import 'g3_local_addressbook_store.dart';
+import 'g3_video_conference.dart';
 
 class G3AddressBook extends StatefulWidget {
   final Future<void> Function(String uri) onConnect;
@@ -458,6 +459,8 @@ class _G3AddressBookState extends State<G3AddressBook> {
       position: RelativeRect.fromSize(position & Size.zero, overlay.size),
       items: [
         const PopupMenuItem(value: 'desktop', child: Text('Desktop verbinden')),
+        if (canStartG3VideoConference(device['rustdesk_id']))
+          const PopupMenuItem(value: 'conference', child: Text('Videokonferenz')),
         if (widget.onPowerShell != null)
           const PopupMenuItem(value: 'shell', child: Text('PowerShell')),
         if (widget.onFileExplorer != null)
@@ -473,6 +476,9 @@ class _G3AddressBookState extends State<G3AddressBook> {
     switch (action) {
       case 'desktop':
         await open(device);
+        break;
+      case 'conference':
+        await openG3VideoConference(context, device['rustdesk_id'] as String);
         break;
       case 'shell':
         await open(device, powerShell: true);

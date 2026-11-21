@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'g3_local_addressbook_store.dart';
 import 'g3_local_addressbook_crypto.dart';
 import 'g3_local_addressbook_password_dialog.dart';
+import 'g3_video_conference.dart';
 
 class G3AddressBooks extends StatefulWidget {
   final Widget remote;
@@ -471,8 +472,10 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
         await widget.onConnect(entry.id, files, password);
       });
 
-  List<PopupMenuEntry<String>> entryActions() => [
+  List<PopupMenuEntry<String>> entryActions(G3LocalEntry entry) => [
         const PopupMenuItem(value: 'desktop', child: Text('Desktop verbinden')),
+        if (canStartG3VideoConference(entry.id))
+          const PopupMenuItem(value: 'conference', child: Text('Videokonferenz')),
         if (widget.onShell != null)
           const PopupMenuItem(value: 'shell', child: Text('PowerShell')),
         const PopupMenuItem(value: 'files', child: Text('Dateiexplorer')),
@@ -485,6 +488,9 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
     switch (action) {
       case 'desktop':
         connectEntry(entry, false);
+        break;
+      case 'conference':
+        openG3VideoConference(context, entry.id);
         break;
       case 'shell':
         run(() async {
@@ -510,7 +516,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromSize(position & Size.zero, overlay.size),
-      items: entryActions(),
+      items: entryActions(entry),
     );
     runEntryAction(entry, action);
   }
@@ -638,7 +644,7 @@ class _G3LocalAddressBookState extends State<G3LocalAddressBook> {
                                         tooltip: 'Weitere Aktionen',
                                         onSelected: (action) =>
                                             runEntryAction(entry, action),
-                                        itemBuilder: (_) => entryActions()),
+                                        itemBuilder: (_) => entryActions(entry)),
                                   ])),
                         );
                       },
