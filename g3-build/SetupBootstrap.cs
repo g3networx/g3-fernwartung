@@ -457,11 +457,11 @@ internal sealed class SetupForm:Form {
    Directory.CreateDirectory(folder,acl);
    if((File.GetAttributes(folder)&FileAttributes.ReparsePoint)!=0)return 13;
    const int maxSize=150*1024*1024;
+   ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
    var request=(HttpWebRequest)WebRequest.Create(new Uri(origin,"client/releases/"+Version+"/"+(Kind=="host_msi"?"host_bundle":"windows_bundle")));
    request.AllowAutoRedirect=false;
    request.Timeout=20000;
    request.ReadWriteTimeout=20000;
-   ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
    string signature;
    using(var response=(HttpWebResponse)request.GetResponse()){
     if(response.StatusCode!=HttpStatusCode.OK || response.ContentLength<=0 || response.ContentLength>maxSize)return 13;

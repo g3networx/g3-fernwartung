@@ -30,11 +30,11 @@ def install(app,m):
   response=send_file(ROOT/item['file'],as_attachment=True,download_name=item['file'],conditional=True)
   response.headers['X-Content-Type-Options']='nosniff'
   return response
- def package_response(name,kind):
+ def package_response(name,kind,signature_name=None):
   response=send_file(ROOT/name,as_attachment=True,download_name=name,conditional=True)
   if kind in ('windows','host','adhoc','windows_msi','host_msi',*WINDOWS_BUNDLES):
    try:
-    with (ROOT/(name+'.p7s')).open('rb') as sidecar: signature=sidecar.read(4097)
+    with (ROOT/(signature_name or name+'.p7s')).open('rb') as sidecar: signature=sidecar.read(4097)
    except FileNotFoundError: signature=b''
    if 0<len(signature)<=4096:
     response.headers['X-OpsLinX-Signature']=base64.b64encode(signature).decode('ascii')
@@ -66,7 +66,9 @@ def install(app,m):
   except (OSError,ValueError,KeyError):abort(404)
   name=item['file']
   if Path(name).name!=name or not (ROOT/name).is_file():abort(404)
-  return package_response(name,kind)
+  legacy=item.get('legacy_signature',{}).get('file') if kind in ('windows','host') else None
+  if legacy and (legacy!=name+'.legacy.p7s' or not (ROOT/legacy).is_file()):abort(404)
+  return package_response(name,kind,legacy)
  def update_metadata(data):
   result={k:data[k] for k in ('version','windows','adhoc','host') if k in data}
   # Pre-g3.40 clients accept only integer g3 release identifiers.
