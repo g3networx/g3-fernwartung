@@ -99,8 +99,18 @@ internal static class ConferenceBundle
         }
         finally
         {
-            foreach (string path in new[] { linxSetup, linxMsi, talxMsi }) File.Delete(path);
-            Directory.Delete(folder);
+            // Installed programs and scanners may still be releasing file handles.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    foreach (string path in new[] { linxSetup, linxMsi, talxMsi }) File.Delete(path);
+                    Directory.Delete(folder);
+                    break;
+                }
+                catch (IOException) { if (attempt < 4) Thread.Sleep(250); }
+                catch (UnauthorizedAccessException) { break; }
+            }
         }
     }
 

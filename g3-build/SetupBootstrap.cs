@@ -484,8 +484,16 @@ internal sealed class SetupForm:Form {
    }
   }catch(Exception error){Console.Error.WriteLine(error.Message);return 1603;}
   finally{
-   if(Directory.Exists(folder) && (File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0){
-    File.Delete(path);Directory.Delete(folder);
+   // Windows security scanners can briefly hold the executable after it exits.
+   for(int attempt=0;attempt<5;attempt++){
+    try{
+     if(Directory.Exists(folder) && (File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0){
+      File.Delete(path);Directory.Delete(folder);
+     }
+     break;
+    }catch(IOException){
+     if(attempt<4)System.Threading.Thread.Sleep(250);
+    }catch(UnauthorizedAccessException){break;}
    }
   }
  }
