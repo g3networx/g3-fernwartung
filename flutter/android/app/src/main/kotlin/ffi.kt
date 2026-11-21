@@ -26,6 +26,7 @@ object FFI {
     external fun setCodecInfo(info: String)
     external fun getLocalOption(key: String): String
     external fun getBuildinOption(key: String): String
+    external fun talxInboxIdentity(appDir: String, nonce: String, register: Boolean): String
     external fun onClipboardUpdate(clips: ByteBuffer)
     external fun isServiceClipboardEnabled(): Boolean
 }

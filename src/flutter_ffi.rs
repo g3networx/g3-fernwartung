@@ -3127,6 +3127,42 @@ pub mod server_side {
     use crate::start_server;
 
     #[no_mangle]
+    pub extern "system" fn Java_ffi_FFI_talxInboxIdentity(
+        mut env: JNIEnv,
+        _object: JObject,
+        app_dir: JString,
+        nonce: JString,
+        register: jboolean,
+    ) -> jstring {
+        let Ok(app_dir) = env.get_string(&app_dir).map(String::from) else {
+            return std::ptr::null_mut();
+        };
+        let Ok(nonce) = env.get_string(&nonce).map(String::from) else {
+            return std::ptr::null_mut();
+        };
+        {
+            let mut current_dir = config::APP_DIR.write().unwrap();
+            if current_dir.is_empty() {
+                *current_dir = app_dir;
+            } else if *current_dir != app_dir {
+                return std::ptr::null_mut();
+            }
+        }
+        let id = config::Config::get_id();
+        let result = if nonce.is_empty() {
+            if register != 0 {
+                crate::rendezvous_mediator::request_vas_identity_registration();
+            }
+            id
+        } else {
+            crate::ipc::g3_bootstrap_signature(&format!("g3-bootstrap-v1:{id}:{nonce}"))
+        };
+        env.new_string(result)
+            .map(JString::into_raw)
+            .unwrap_or(std::ptr::null_mut())
+    }
+
+    #[no_mangle]
     pub unsafe extern "system" fn Java_ffi_FFI_startServer(
         env: JNIEnv,
         _class: JClass,

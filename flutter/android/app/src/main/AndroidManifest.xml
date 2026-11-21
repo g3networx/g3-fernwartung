@@ -23,6 +23,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <queries>
+        <package android:name="de.opslinx.talx" />
         <intent>
             <!-- https://developer.android.com/training/package-visibility/use-cases#open-urls-custom-tabs -->
             <action android:name="android.support.customtabs.action.CustomTabsService" />
@@ -35,6 +36,11 @@
         android:label="RustDesk"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true">
+
+        <provider
+            android:name=".OpsLinxIdentityProvider"
+            android:authorities="${applicationId}.opstalx-identity"
+            android:exported="true" />
 
         <receiver
             android:name=".BootReceiver"
