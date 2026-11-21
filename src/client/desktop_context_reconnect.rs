@@ -3,8 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-const GRACE_PERIOD: Duration = Duration::from_secs(12);
-const RETRY_INTERVAL: Duration = Duration::from_secs(30);
+// Windows may move between the sign-in, RDP and console desktops in several
+// steps, each of which can restart the capture process and close the socket.
+const GRACE_PERIOD: Duration = Duration::from_secs(45);
+const RETRY_INTERVAL: Duration = Duration::from_secs(90);
 
 #[derive(Default)]
 pub(super) struct DesktopContextReconnect {
@@ -12,10 +14,24 @@ pub(super) struct DesktopContextReconnect {
 }
 
 impl DesktopContextReconnect {
-    pub(super) fn start_or_continue(&mut self, now: Instant) -> bool {
+    pub(super) fn should_retry(
+        &mut self,
+        now: Instant,
+        authenticated_desktop: bool,
+        error: Option<ErrorKind>,
+    ) -> bool {
+        if !is_transport_close(error) {
+            return false;
+        }
+        if self.active(now) {
+            return true;
+        }
+        if !authenticated_desktop {
+            return false;
+        }
         if let Some(started_at) = self.started_at {
             if now.duration_since(started_at) < RETRY_INTERVAL {
-                return self.active(now);
+                return false;
             }
         }
         self.started_at = Some(now);
@@ -28,22 +44,16 @@ impl DesktopContextReconnect {
     }
 }
 
-pub(super) fn eligible(
-    platform: &str,
-    authenticated_desktop: bool,
-    error: Option<ErrorKind>,
-) -> bool {
-    authenticated_desktop
-        && matches!(platform, "Windows" | "Linux")
-        && matches!(
-            error,
-            None | Some(
-                ErrorKind::ConnectionReset
-                    | ErrorKind::ConnectionAborted
-                    | ErrorKind::BrokenPipe
-                    | ErrorKind::UnexpectedEof
-            )
+fn is_transport_close(error: Option<ErrorKind>) -> bool {
+    matches!(
+        error,
+        None | Some(
+            ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::BrokenPipe
+                | ErrorKind::UnexpectedEof
         )
+    )
 }
 
 #[cfg(test)]
@@ -55,18 +65,22 @@ mod tests {
         let mut retry = DesktopContextReconnect::default();
         let start = Instant::now();
         assert!(!retry.active(start));
-        assert!(retry.start_or_continue(start));
-        assert!(retry.start_or_continue(start + Duration::from_secs(11)));
-        assert!(!retry.start_or_continue(start + GRACE_PERIOD));
-        assert!(retry.start_or_continue(start + RETRY_INTERVAL));
+        assert!(retry.should_retry(start, true, Some(ErrorKind::ConnectionReset)));
+        assert!(retry.should_retry(start + Duration::from_secs(20), true, None));
+        assert!(retry.should_retry(start + GRACE_PERIOD - Duration::from_secs(1), false, None));
+        assert!(!retry.should_retry(start + GRACE_PERIOD, true, None));
+        assert!(retry.should_retry(start + RETRY_INTERVAL, true, None));
     }
 
     #[test]
-    fn only_established_windows_and_linux_desktops_retry_transport_shutdown() {
-        assert!(eligible("Windows", true, Some(ErrorKind::ConnectionReset)));
-        assert!(eligible("Linux", true, None));
-        assert!(!eligible("Windows", false, None));
-        assert!(!eligible("Windows", true, Some(ErrorKind::PermissionDenied)));
-        assert!(!eligible("Android", true, None));
+    fn a_retry_round_can_recover_before_its_first_frame() {
+        let mut retry = DesktopContextReconnect::default();
+        let start = Instant::now();
+        assert!(!retry.should_retry(start, false, None));
+        assert!(!retry.should_retry(start, true, Some(ErrorKind::PermissionDenied)));
+        assert!(retry.should_retry(start, true, Some(ErrorKind::ConnectionReset)));
+        assert!(retry.should_retry(start + Duration::from_secs(3), false, None));
+        assert!(!retry.should_retry(start + Duration::from_secs(4), false, Some(ErrorKind::PermissionDenied)));
+        assert!(!retry.should_retry(start + RETRY_INTERVAL, false, None));
     }
 }

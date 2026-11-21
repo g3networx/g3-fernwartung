@@ -679,19 +679,16 @@ impl<T: InvokeUiSession> Remote<T> {
     ) -> bool {
         #[cfg(feature = "flutter")]
         {
-            let authenticated_desktop =
-                secured && self.is_connected && self.first_frame && self.handler.is_default();
-            if !super::desktop_context_reconnect::eligible(
-                &self.peer_info.platform,
-                authenticated_desktop,
-                error,
-            ) || self.handler.is_restarting_remote_device()
-            {
+            if !secured || !self.handler.is_default() || self.handler.is_restarting_remote_device() {
                 return false;
             }
+            let authenticated_desktop = self.is_connected
+                && self.first_frame
+                && matches!(self.peer_info.platform.as_str(), "Windows" | "Linux");
             if self.handler.lc.write().unwrap().desktop_context_reconnect
-                .start_or_continue(std::time::Instant::now())
+                .should_retry(std::time::Instant::now(), authenticated_desktop, error)
             {
+                log::info!("Reconnecting desktop after transport closed: {error:?}");
                 self.handler.msgbox(
                     "restarting",
                     "Connecting...",

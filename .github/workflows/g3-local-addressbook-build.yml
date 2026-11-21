@@ -1,6 +1,6 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3 OpsLinX Windows (20131, Desktop-Kontextwechsel)
+name: g3 OpsLinX Windows (20136, Desktop-Kontextwechsel)
 on:
   push:
     branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab, g3-opslinx-conference-windows]
@@ -28,6 +28,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: 1.75.0
+      - name: Test desktop context reconnect
+        shell: pwsh
+        run: |
+          '#[path = "src/client/desktop_context_reconnect.rs"] mod desktop_context_reconnect;' |
+            rustc --edition 2021 --test - -o "$env:RUNNER_TEMP/desktop-context-reconnect.exe"
+          if($LASTEXITCODE -ne 0){throw 'Desktop context test build failed'}
+          & "$env:RUNNER_TEMP/desktop-context-reconnect.exe"
+          if($LASTEXITCODE -ne 0){throw 'Desktop context tests failed'}
       - name: Test authoritative registry crypto, ACL, priority and stale-write rejection
         shell: pwsh
         run: |
