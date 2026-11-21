@@ -65,7 +65,7 @@ def install(app, m, native_identity, native_json):
             if row["id"] in configured and m.access(row["id"], "view")
         ]
 
-    def launch(customer_id):
+    def room_grant(customer_id, audit_event):
         if type(customer_id) is not int or not any(
             entry["id"] == customer_id for entry in allowed_customers()
         ):
@@ -83,19 +83,57 @@ def install(app, m, native_identity, native_json):
         }
         payload = b64(json.dumps(claim, separators=(",", ":")).encode())
         grant = payload + "." + b64(key.sign(payload.encode()))
-        m.audit("opstalx_room_start", customer_id)
-        return "https://talx.opslinx.de/vas/launch#grant=" + grant
+        m.audit(audit_event, customer_id)
+        return grant
+
+    def launch(customer_id):
+        return "https://talx.opslinx.de/vas/launch#grant=" + room_grant(customer_id, "opstalx_room_start")
 
     @app.get("/client-addressbook/vas/customers")
     def native_ab_vas_customers():
         native_identity()
         return jsonify(customers=allowed_customers())
 
-    @app.post("/client-addressbook/vas/start")
-    def native_ab_vas_start():
+    @app.post("/client-addressbook/vas/start", defaults={"conference": False})
+    @app.post("/client-addressbook/conference/start", defaults={"conference": True})
+    def native_ab_vas_start(conference):
         data = native_json()
         native_identity()
+        if conference:
+            return native_conference_launch(data)
         return jsonify(url=launch(data.get("customer_id")))
+
+    def native_conference_launch(data):
+        if not isinstance(data, dict):
+            abort(400)
+        device_id = data.get("device_id")
+        if type(device_id) is not int or not 0 < device_id <= (2**63 - 1):
+            abort(400)
+        db = m.db()
+        device = db.execute(
+            "SELECT customer_id,rustdesk_id FROM devices WHERE id=?", (device_id,)
+        ).fetchone()
+        if device is None or not m.access(device["customer_id"], "view"):
+            abort(404)
+        native_id = device["rustdesk_id"]
+        if not re.fullmatch(r"[0-9]{6,16}", native_id or ""):
+            abort(400)
+        customer = db.execute("""
+            WITH RECURSIVE ancestry(id,parent_id) AS (
+                SELECT id,parent_id FROM customers WHERE id=?
+                UNION
+                SELECT c.id,c.parent_id FROM customers c
+                JOIN ancestry a ON c.id=a.parent_id
+            )
+            SELECT id FROM ancestry WHERE parent_id IS NULL
+        """, (device["customer_id"],)).fetchone()
+        if customer is None:
+            abort(403)
+        response = jsonify(
+            grant=room_grant(customer["id"], "opstalx_conference_start"), device=native_id,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.route("/opstalx/vas", methods=["GET", "POST"])
     def opstalx_vas():
@@ -113,12 +151,66 @@ def install(app, m, native_identity, native_json):
             )
         return render_template("opstalx_vas.html", customers=allowed_customers())
 
+    @app.route("/opstalx/directory", methods=["GET", "POST"])
+    def opstalx_directory():
+        if not g.get("user"):
+            response = redirect("/login")
+            response.set_cookie(
+                "__Host-opstalx-resume", "directory", max_age=300, secure=True,
+                httponly=True, samesite="Lax", path="/"
+            )
+            return response
+        if g.user["setup"]:
+            abort(403)
+        customers = allowed_customers()
+        search = request.form.get("q", "").strip()
+        if len(search) > 100:
+            abort(400)
+        selected = None
+        contacts = []
+        if customers:
+            selected = request.form.get("customer_id", str(customers[0]["id"]))
+            if selected not in {str(customer["id"]) for customer in customers}:
+                abort(404)
+            selected = int(selected)
+            visible = {
+                row["id"]: row["path"] for row in m.visible_customers("view")
+            }
+            rows = m.db().execute("""
+                WITH RECURSIVE scope(id) AS (
+                    SELECT id FROM customers WHERE id=?
+                    UNION
+                    SELECT c.id FROM customers c JOIN scope s ON c.parent_id=s.id
+                )
+                SELECT d.customer_id,d.name,d.rustdesk_id
+                  FROM devices d JOIN scope s ON s.id=d.customer_id
+                 ORDER BY d.name COLLATE NOCASE,d.id
+            """, (selected,))
+            query = search.casefold()
+            id_query = "".join(search.split())
+            seen = set()
+            for row in rows:
+                device = row["rustdesk_id"]
+                if row["customer_id"] not in visible or not re.fullmatch(r"[0-9]{6,16}", device or ""):
+                    continue
+                folder = visible[row["customer_id"]]
+                if query and query not in (row["name"] + " " + folder).casefold() and id_query not in device:
+                    continue
+                if device in seen:
+                    continue
+                seen.add(device)
+                contacts.append(dict(name=row["name"], folder=folder, device=device))
+                if len(contacts) == 201:
+                    break
+        return render_template("opstalx_directory.html", customers=customers, selected=selected,
+                               search=search, contacts=contacts[:200], truncated=len(contacts) > 200)
+
     @app.after_request
     def resume_vas(response):
-        if (request.endpoint in ("login", "central_callback")
-                and request.cookies.get("__Host-opstalx-resume") == "1"
+        target = {"1": "/opstalx/vas", "directory": "/opstalx/directory"}.get(request.cookies.get("__Host-opstalx-resume"))
+        if (request.endpoint in ("login", "central_callback") and target
                 and response.status_code == 302 and response.location == "/"):
-            response.location = "/opstalx/vas"
+            response.location = target
             response.delete_cookie("__Host-opstalx-resume", secure=True,
                                    httponly=True, samesite="Lax", path="/")
         return response

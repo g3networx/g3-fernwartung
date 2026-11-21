@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h1>OpsTalX Kundenadressbuch</h1>
+  {% if customers %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf() }}">
+    <label>Kunde <select name="customer_id">
+      {% for customer in customers %}
+      <option value="{{ customer.id }}"{% if customer.id == selected %} selected{% endif %}>{{ customer.name }}</option>
+      {% endfor %}
+    </select></label>
+    <label>Kontakt suchen <input name="q" type="search" value="{{ search }}" maxlength="100" placeholder="Name oder Geräte-ID"></label>
+    <button>Suchen</button>
+  </form>
+  {% if contacts %}
+  <table>
+    <thead><tr><th>Gerät</th><th>Adressbuch</th><th>Geräte-ID</th><th></th></tr></thead>
+    <tbody>
+    {% for contact in contacts %}
+      <tr>
+        <td>{{ contact.name }}</td><td>{{ contact.folder }}</td><td>{{ contact.device }}</td>
+        <td><a href="https://talx.opslinx.de/vas/contact#device={{ contact.device }}" aria-label="{{ contact.name }} übernehmen">Übernehmen</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if truncated %}<p>Die ersten 200 Treffer werden angezeigt. Grenze die Suche weiter ein.</p>{% endif %}
+  {% else %}
+  <p>Keine passenden Geräte gefunden.</p>
+  {% endif %}
+  {% else %}
+  <p>Für dieses Konto ist kein OpsTalX-Kundenadressbuch freigegeben.</p>
+  {% endif %}
+</section>
+{% endblock %}

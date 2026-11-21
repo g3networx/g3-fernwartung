@@ -36,7 +36,7 @@ for path, (before, after) in target.items():
     edits[path] = source.replace(before, after)
 for path, result in edits.items():
     compile(result, str(path), 'exec')
-for name in ('opstalx_vas.py','templates/opstalx_vas.html','templates/opstalx_vas_launch.html'):
+for name in ('opstalx_vas.py','templates/opstalx_vas.html','templates/opstalx_vas_launch.html','templates/opstalx_directory.html'):
     copy2(bundle / name, stage / name)
 for path, result in edits.items():
     path.write_text(result, encoding='utf-8')
