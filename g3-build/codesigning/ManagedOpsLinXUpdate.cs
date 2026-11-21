@@ -218,7 +218,7 @@ internal static class ManagedOpsLinXUpdate
                     path, 150 * 1024 * 1024);
                 return RunInstaller(path, "--quiet", directory);
             }
-            finally { File.Delete(path); }
+            finally { CleanBundle(path); }
         }
         if (current >= target)
         {
@@ -253,6 +253,16 @@ internal static class ManagedOpsLinXUpdate
         {
             installer.WaitForExit();
             return installer.ExitCode;
+        }
+    }
+
+    private static void CleanBundle(string path)
+    {
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            try { File.Delete(path); return; }
+            catch (IOException) { if (attempt < 4) Thread.Sleep(250); }
+            catch (UnauthorizedAccessException) { return; }
         }
     }
 
