@@ -53,7 +53,9 @@ class _OpsTalxLabPageState extends State<OpsTalxLabPage> {
       return;
     }
     setState(() => _error = null);
-    _open(Uri.https(_host, '/vas/', {'room': code}));
+    final room = Uri.https(_host, '/vas/', {'room': code});
+    final fragment = appLink != null || link?.path == '/vas/' ? link?.fragment : null;
+    _open(fragment == null ? room : room.replace(fragment: fragment));
   }
 
   Future<void> _startForCustomer() async {

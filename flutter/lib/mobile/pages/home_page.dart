@@ -175,8 +175,7 @@ class HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       final room = await _vasInbox?.respond(join);
       if (!mounted || !_foreground || !join) return;
-      if (room != null &&
-          await g3OpenVideoHelp(Uri.https(g3VasHost, '/vas/', {'room': room}))) {
+      if (room != null && await g3OpenVideoHelp(room)) {
         return;
       }
     } on Exception {

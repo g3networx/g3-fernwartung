@@ -29,6 +29,7 @@ class OpsTalxVideoActivity : Activity() {
         private const val RETURN_TO_APP = "https://talx.opslinx.de/vas/return-to-app"
         private val room = Regex("(?:[0-9]{10}|[0-9a-f]{32})")
         private val grant = Regex("grant=[A-Za-z0-9_-]{1,1000}\\.[A-Za-z0-9_-]{86}")
+        private val protectedRoom = Regex("vasKey=[A-Za-z0-9_-]{43}")
         private val webViewStartup = Executors.newSingleThreadExecutor()
 
         private fun hasTrustedOrigin(uri: Uri): Boolean =
@@ -38,7 +39,7 @@ class OpsTalxVideoActivity : Activity() {
             val uri = Uri.parse(url)
             if (!hasTrustedOrigin(uri)) return false
             return when (uri.path) {
-                "/vas/" -> uri.encodedFragment == null &&
+                "/vas/" -> (uri.encodedFragment == null || uri.encodedFragment?.let(protectedRoom::matches) == true) &&
                     uri.queryParameterNames == setOf("room") &&
                     uri.getQueryParameters("room").singleOrNull()?.let(room::matches) == true
                 "/vas/launch" -> uri.encodedQuery == null &&

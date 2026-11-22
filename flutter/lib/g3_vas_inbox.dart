@@ -5,10 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'g3_vas_sealed_invitation.dart';
+
 const g3VasHost = 'talx.opslinx.de';
 final _deviceId = RegExp(r'^[A-Za-z0-9_-]{6,40}$');
 final _room = RegExp(r'^(?:[0-9]{10}|[a-f0-9]{32})$');
 final _invitationId = RegExp(r'^[A-Za-z0-9_-]{24}$');
+final _protectedRoomKey = RegExp(r'^vasKey=[A-Za-z0-9_-]{43}$');
 
 String? g3RoomFromHandyLink(Uri uri) {
   final parts = uri.pathSegments;
@@ -17,7 +20,7 @@ String? g3RoomFromHandyLink(Uri uri) {
       uri.userInfo.isNotEmpty ||
       uri.hasPort ||
       uri.hasQuery ||
-      uri.hasFragment ||
+      (uri.hasFragment && !_protectedRoomKey.hasMatch(uri.fragment)) ||
       parts.length != 3 ||
       parts[0] != 'vas' ||
       parts[1] != 'join' ||
@@ -44,10 +47,12 @@ class G3VasInbox extends ChangeNotifier {
   http.Client? _client;
   String _id = '';
   String? _token;
+  String? _keyCertificate;
+  G3VasInviteKey? _key;
   DateTime? _refreshBy;
   String? _pending;
   String? _lastHandled;
-  String? _linkRoom;
+  Uri? _linkRoom;
   bool _busy = false;
 
   bool get hasInvitation => _pending != null || _linkRoom != null;
@@ -61,6 +66,8 @@ class G3VasInbox extends ChangeNotifier {
     _client?.close();
     _client = null;
     _token = null;
+    _keyCertificate = null;
+    _key = null;
     _pending = null;
     _busy = false;
     _id = id;
@@ -75,7 +82,8 @@ class G3VasInbox extends ChangeNotifier {
   void receiveLink(Uri? uri) {
     final room = uri == null ? null : g3RoomFromHandyLink(uri);
     if (room == null) return;
-    _linkRoom = room;
+    _linkRoom = Uri.https(g3VasHost, '/vas/', {'room': room})
+        .replace(fragment: uri!.hasFragment ? uri.fragment : null);
     notifyListeners();
   }
 
@@ -110,12 +118,17 @@ class G3VasInbox extends ChangeNotifier {
       if (_token == null || !DateTime.now().isBefore(_refreshBy!)) {
         final uri = Uri.https('linx.g3nx.net', '/client-vas-inbox');
         final id = _id;
-        final first = _json(await _post(client, uri, {'id': id}));
+        final key = _key ?? await G3VasInviteKey.create();
+        if (_client != client) return;
+        _key = key;
+        final first = _json(await _post(client, uri, {
+          'id': id, 'invite_key': key.publicKey, 'purpose': 'vas',
+        }));
         if (_client != client) return;
         final challenge = first['challenge'] as String;
         final nonce = first['nonce'] as String;
         if (challenge.isEmpty ||
-            challenge.length > 256 ||
+            challenge.length > 512 ||
             !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(nonce)) return;
         final signature = _sign('g3-bootstrap-v1:$id:$nonce');
         if (signature.isEmpty) return;
@@ -125,10 +138,12 @@ class G3VasInbox extends ChangeNotifier {
         if (proof.statusCode == 403) _registerIdentity();
         final verified = _json(proof);
         _token = verified['token'] as String;
+        _keyCertificate = verified['key_certificate'] as String;
         _refreshBy = DateTime.now().add(const Duration(minutes: 4));
       }
       final response = await _post(
-          client, Uri.https(g3VasHost, '/vas/inbox'), {},
+          client, Uri.https(g3VasHost, '/vas/inbox'),
+          {'key_certificate': _keyCertificate!},
           token: _token);
       if (_client != client || _busy) return;
       if (response.statusCode == 401) _token = null;
@@ -148,7 +163,7 @@ class G3VasInbox extends ChangeNotifier {
     }
   }
 
-  Future<String?> respond(bool join) async {
+  Future<Uri?> respond(bool join) async {
     final linked = _linkRoom;
     if (linked != null) {
       _linkRoom = null;
@@ -157,7 +172,9 @@ class G3VasInbox extends ChangeNotifier {
     }
     final client = _client;
     final id = _pending;
-    if (client == null || id == null || _busy) return null;
+    final key = _key;
+    final device = _id;
+    if (client == null || id == null || key == null || _busy) return null;
     _busy = true;
     notifyListeners();
     try {
@@ -169,7 +186,13 @@ class G3VasInbox extends ChangeNotifier {
       if (_client != client) return null;
       _lastHandled = id;
       final room = result['room'];
-      if (join && room is String && _room.hasMatch(room)) return room;
+      if (join && room is String && _room.hasMatch(room)) {
+        final secret = await key.open(device: device, code: room,
+            envelope: result['sealed'] as Map<String, dynamic>);
+        if (_client != client) return null;
+        return Uri.https(g3VasHost, '/vas/', {'room': room})
+            .replace(fragment: 'vasKey=$secret');
+      }
       return null;
     } finally {
       if (_client == client) {
