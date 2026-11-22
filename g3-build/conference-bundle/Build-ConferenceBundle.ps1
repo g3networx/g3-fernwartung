@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$OpsTalXMsi,
     [Parameter(Mandatory)][string]$Output,
     [Parameter(Mandatory)][string]$Build,
+    [ValidateRange(40,255)][int]$ReleaseTrain = 62,
     [Parameter(Mandatory)][version]$OpsTalXVersion,
     [Parameter(Mandatory)][string]$SignTool,
     [Parameter(Mandatory)][string]$SignerThumbprint
@@ -34,7 +35,7 @@ try {
         @{ Label = 'Vollclient'; Product = 'g3Fernwartung'; Prefix = 'g3-OpsLinX'; Installer = 'install' },
         @{ Label = 'Host'; Product = 'g3Host'; Prefix = 'g3-OpsLinX-Host'; Installer = 'host-install' }
     )) {
-        $stem = "$($variant.Prefix)-1.5.3-g3.62.$Build-$($variant.Installer)"
+        $stem = "$($variant.Prefix)-1.5.3-g3.$ReleaseTrain.$Build-$($variant.Installer)"
         $linxExe = Join-Path $linxRelease "$stem.exe"
         $linxMsi = Join-Path $linxRelease "$stem.msi"
         $exeHash = Get-VerifiedHash $linxExe
@@ -43,7 +44,7 @@ try {
             $msiHash -ne ($checksums | Where-Object file -eq "$stem.msi").sha256) {
             throw "OpsLinX release hashes do not match $stem"
         }
-        @($variant.Product, "1.62.$Build", "$OpsTalXVersion", $exeHash, $msiHash, $talxHash) |
+        @($variant.Product, "1.$ReleaseTrain.$Build", "$OpsTalXVersion", $exeHash, $msiHash, $talxHash) |
             Set-Content -LiteralPath $metadata -Encoding ASCII
         $file = Join-Path $outputPath "OpsLinX-$($variant.Label)-$Build-OpsTalX-$OpsTalXVersion-Sammelinstaller.exe"
         $compilerArgs = @(
