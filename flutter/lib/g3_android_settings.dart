@@ -67,7 +67,7 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
     }
   }
 
-  Future<void> _install() async {
+  Future<void> _saveUpdate() async {
     final update = _update;
     if (update == null) return;
     setState(() {
@@ -75,7 +75,6 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       _status = 'Update wird heruntergeladen und geprüft …';
     });
     Directory? staged;
-    var installing = false;
     try {
       final certumProof = await g3AndroidUpdateSignature(update);
       final cache = await getTemporaryDirectory();
@@ -109,13 +108,15 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       });
       await download.rename('${attempt.path}/update.apk');
       if (!mounted) return;
-      await _channel.invokeMethod<void>('g3_install_android_update', {
+      final saved = await _channel.invokeMethod<bool>('g3_save_android_update', {
         'updateId': attempt.uri.pathSegments.where((s) => s.isNotEmpty).last,
         'certumProof': certumProof,
       });
-      installing = true;
       if (mounted) {
-        setState(() => _status = 'Installation in Android bestätigen.');
+        final status = saved == true
+            ? 'Geprüfte APK gespeichert. Öffne die Datei im Speicherordner und bestätige das Update in Android.'
+            : 'Speichern abgebrochen.';
+        setState(() => _status = status);
       }
     } catch (error) {
       if (mounted) {
@@ -124,11 +125,11 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
                 error.code == 'update_certum_invalid');
         setState(() => _status = signatureError
             ? 'Update blockiert. Die Certum-Signatur fehlt oder ist ungültig.'
-            : 'Update konnte nicht geprüft oder geöffnet werden.');
+            : 'Update konnte nicht geprüft oder gespeichert werden.');
       }
     } finally {
       try {
-        if (!installing && staged != null) await staged.delete(recursive: true);
+        if (staged != null) await staged.delete(recursive: true);
       } finally {
         if (mounted) setState(() => _checking = false);
       }
@@ -182,10 +183,10 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
             if (_status != null) Text(_status!),
             TextButton(
               onPressed:
-                  _checking ? null : (_update == null ? _check : _install),
+                  _checking ? null : (_update == null ? _check : _saveUpdate),
               child: Text(_update == null
                   ? 'Auf Updates prüfen'
-                  : 'Update installieren'),
+                  : 'Update prüfen und speichern'),
             ),
           ],
         ),
