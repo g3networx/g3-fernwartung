@@ -30,23 +30,6 @@ tree = ET.parse(manifest)
 app = tree.getroot().find('application')
 if app is None:
     raise RuntimeError('Android application manifest is missing')
-app.set(ns + 'label', 'g3 OpsLinX')
-tree.getroot().insert(list(tree.getroot()).index(app), ET.Element('uses-permission', {
-    ns + 'name': 'android.permission.REQUEST_INSTALL_PACKAGES',
-}))
-provider = ET.SubElement(app, 'provider', {
-    ns + 'name': '.OpsLinxUpdateProvider',
-    ns + 'authorities': '${applicationId}.opslinx-updates',
-    ns + 'exported': 'false',
-    ns + 'grantUriPermissions': 'true',
-})
-ET.SubElement(provider, 'meta-data', {
-    ns + 'name': 'android.support.FILE_PROVIDER_PATHS',
-    ns + 'resource': '@xml/opslinx_update_paths',
-})
-paths = android / 'src/main/res/xml/opslinx_update_paths.xml'
-paths.parent.mkdir(parents=True, exist_ok=True)
-paths.write_text('<paths><cache-path name="update" path="opslinx-updates/" /></paths>\n', encoding='utf-8')
 for node in list(app):
     if node.get(ns + 'name') == '.BootReceiver':
         app.remove(node)
