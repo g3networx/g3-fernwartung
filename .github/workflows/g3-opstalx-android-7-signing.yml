@@ -6,10 +6,10 @@ on:
 permissions:
   contents: write
 env:
-  DRAFT_ID: '454334112'
-  DRAFT_TAG: 'android-shared-id-signing-67ab2c540b2c'
-  TALX_ID: '778531107'
-  TALX_SHA: 'c7445becbcd56ee3865cdde5a146f00f77401731935594301beade6a28ed65c0'
+  DRAFT_ID: '454335741'
+  DRAFT_TAG: 'android-shared-id-signing-d557cc56d416'
+  TALX_ID: '778537892'
+  TALX_SHA: 'b4313dc320badb970354c73edc84033d4c4d5b54355d26e8060c74347bbf5b4b'
   SIGNER_SHA: '3c69fa623753dc13a8ab41bf0cdbe56f018eea2d8f0a961cb8667e91b8fcc6ee'
 jobs:
   signing:
