@@ -24,6 +24,7 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
   let code = joinValue;
   const digits = /^[0-9]{10}$/;
   const grant = new URLSearchParams(location.hash.slice(1));
+  const androidWebView = navigator.userAgent.includes('OpsLinXAndroidVAS/');
   const jwt = grant.get('jwt');
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   const secret = jwt ? urlKey(crypto.getRandomValues(new Uint8Array(32))) : grant.get('vasKey');
@@ -58,7 +59,7 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
   const receivedNonces=new Set();
   const rawKey=atob(secret.replaceAll('-','+').replaceAll('_','/')+'=');
   const mediaKey=Array.from(rawKey,char=>char.charCodeAt(0).toString(16).padStart(2,'0')).join('');
-  let secure=false, stopEncryptionWatch, encryptionDeadline;
+  let secure=false, stopEncryptionWatch, encryptionDeadline, readyTimer, transportWatch;
   const imageChunkSize=3900;
   const get = id => document.getElementById(id);
   get('join').hidden = true;
@@ -85,6 +86,10 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
     interfaceConfigOverwrite:twoCoreSupporter ? {DISABLE_VIDEO_BACKGROUND:true} : undefined,
     configOverwrite:{
       disableDeepLinking:true,
+      ...(androidWebView && {
+        websocket:null,
+        bosh:location.origin+'/http-bind',
+      }),
       startSilent:true,
       startWithAudioMuted:true,
       disableAudioLevels:true,
@@ -92,12 +97,11 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
       startWithVideoMuted:true,
       prejoinConfig:{enabled:false},
       disableThirdPartyRequests:true,
+      testing:{enableEncodedTransformSupport:true},
       e2ee:{externallyManagedKey:true},
       toolbarButtons:['camera','hangup','settings','select-background','tileview','fullscreen'],
-      ...(codecPreferenceOrder && {
-        videoQuality:{codecPreferenceOrder},
-        p2p:{codecPreferenceOrder},
-      }),
+      p2p:{enabled:false},
+      ...(codecPreferenceOrder && {videoQuality:{codecPreferenceOrder}}),
       virtualBackground:{
         disabled:!jwt,
         ...(lightSupporterVideo && {
@@ -115,6 +119,8 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
   const stopUnprotected=()=>{
     secure=false;
     clearTimeout(encryptionDeadline);
+    clearTimeout(readyTimer);
+    clearInterval(transportWatch);
     stopEncryptionWatch?.();
     meetingFrame.inert=true;
     get('controls').hidden=true;
@@ -354,21 +360,54 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
     const app=meetingFrame.contentWindow.APP;
     const room=app?.conference?._room;
     if(!room?.isE2EESupported?.() || !app?.store){stopUnprotected();return;}
-    api.executeCommand('toggleE2EE',true);
+    const connected=()=>room.getMediaSessions().some(session=>
+      session.peerconnection.peerconnection.connectionState==='connected');
+    const requiresSettledMedia=androidWebView&&!jwt;
+    const stateReady=()=>Boolean(room.isE2EEEnabled() && app.store.getState()['features/e2ee']?.enabled
+        && (!requiresSettledMedia || connected()));
     const verifyEncryption=()=>{
-      const active=Boolean(room.isE2EEEnabled() && app.store.getState()['features/e2ee']?.enabled);
-      if(secure&&!active){stopUnprotected();return;}
-      if(!active||secure)return;
-      clearTimeout(encryptionDeadline);
-      secure=true;
-      meetingFrame.inert=false;
-      if(!jwt) void api.isVideoMuted().then(muted=>{
-        if(muted&&secure)api.executeCommand('toggleVideo');
-      }).catch(stopUnprotected);
-      render();
+      if (secure) {
+        if (!room.isE2EEEnabled()) stopUnprotected();
+        return;
+      }
+      if (!stateReady()) {
+        clearTimeout(readyTimer);
+        readyTimer=undefined;
+        return;
+      }
+      if (readyTimer) return;
+      // The WebView joins before all Jitsi conference state listeners have settled.
+      // Keep the devices muted until that transition has completed.
+      readyTimer=setTimeout(()=>{
+        readyTimer=undefined;
+        if(!stateReady())return;
+        clearTimeout(encryptionDeadline);
+        clearInterval(transportWatch);
+        secure=true;
+        meetingFrame.inert=false;
+        if(!jwt) void api.isVideoMuted().then(muted=>{
+          if(muted&&secure&&room.isE2EEEnabled())api.executeCommand('toggleVideo');
+        }).catch(()=>status('Die Kamera konnte nicht automatisch gestartet werden.'));
+        render();
+      },750);
     };
     stopEncryptionWatch=app.store.subscribe(verifyEncryption);
-    encryptionDeadline=setTimeout(()=>{if(!secure)stopUnprotected();},6000);
+    encryptionDeadline=setTimeout(()=>{if(!secure)stopUnprotected();},requiresSettledMedia?18000:8000);
+    if (requiresSettledMedia) {
+      // Older WebViews replace the peer connection when enabling encoded streams.
+      // Let Jicofo acknowledge the initial muted session before requesting the replacement.
+      const sessionStarted='conference.media_session.started';
+      const begin=()=>{
+        room.off(sessionStarted,begin);
+        if (!secure) api.executeCommand('toggleE2EE',true);
+      };
+      room.on(sessionStarted,begin);
+      const unsubscribe=stopEncryptionWatch;
+      stopEncryptionWatch=()=>{room.off(sessionStarted,begin);unsubscribe();};
+      transportWatch=setInterval(verifyEncryption,200);
+    } else {
+      api.executeCommand('toggleE2EE',true);
+    }
     verifyEncryption();
     if (twoCoreSupporter) {
       api.executeCommand('setVideoQuality',360);
