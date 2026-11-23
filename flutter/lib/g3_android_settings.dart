@@ -67,15 +67,27 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
     }
   }
 
-  Future<void> _saveUpdate() async {
+  Future<void> _prepareUpdate({required bool install}) async {
     final update = _update;
     if (update == null) return;
     setState(() {
       _checking = true;
-      _status = 'Update wird heruntergeladen und geprüft …';
+      _status = install
+          ? 'Android-Installationsfreigabe wird geprüft …'
+          : 'Update wird heruntergeladen und geprüft …';
     });
     Directory? staged;
     try {
+      if (install) {
+        final allowed = await _channel.invokeMethod<bool>('g3_request_android_install_source');
+        if (!mounted) return;
+        if (allowed != true) {
+          setState(() => _status =
+              'Android hat die Installation aus dieser Quelle nicht erlaubt.');
+          return;
+        }
+        setState(() => _status = 'Update wird heruntergeladen und geprüft …');
+      }
       final certumProof = await g3AndroidUpdateSignature(update);
       final cache = await getTemporaryDirectory();
       final dir = await Directory('${cache.path}/opslinx-updates').create();
@@ -108,14 +120,18 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
       });
       await download.rename('${attempt.path}/update.apk');
       if (!mounted) return;
-      final saved = await _channel.invokeMethod<bool>('g3_save_android_update', {
+      final completed = await _channel.invokeMethod<bool>('g3_handle_android_update', {
         'updateId': attempt.uri.pathSegments.where((s) => s.isNotEmpty).last,
         'certumProof': certumProof,
+        'install': install,
       });
       if (mounted) {
-        final status = saved == true
-            ? 'Geprüfte APK gespeichert. Öffne die Datei im Speicherordner und bestätige das Update in Android.'
-            : 'Speichern abgebrochen.';
+        final status = switch ((install, completed == true)) {
+          (true, true) => 'Installation in Android bestätigen.',
+          (true, false) => 'Installation abgebrochen.',
+          (false, true) => 'Geprüfte APK gespeichert. Öffne die Datei im Speicherordner und bestätige das Update in Android.',
+          (false, false) => 'Speichern abgebrochen.',
+        };
         setState(() => _status = status);
       }
     } catch (error) {
@@ -123,9 +139,18 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
         final signatureError = error is G3AndroidUpdateSignatureException ||
             (error is PlatformException &&
                 error.code == 'update_certum_invalid');
-        setState(() => _status = signatureError
+        final code = error is PlatformException ? error.code : null;
+        final message = signatureError
             ? 'Update blockiert. Die Certum-Signatur fehlt oder ist ungültig.'
-            : 'Update konnte nicht geprüft oder gespeichert werden.');
+            : switch (code) {
+                'installer_blocked' => 'Android hat die Installation blockiert.',
+                'install_permission_required' => 'Android-Installationsfreigabe fehlt.',
+                'permission_unavailable' => 'Android-Installationsfreigabe ist auf diesem Gerät nicht verfügbar.',
+                'installer_unavailable' => 'Android-Installer konnte nicht geöffnet werden. Wähle „APK speichern“.',
+                'installer_failed' => 'Android konnte das Update nicht installieren.',
+                _ => 'Update konnte nicht geprüft oder vorbereitet werden.',
+              };
+        setState(() => _status = message);
       }
     } finally {
       try {
@@ -182,12 +207,16 @@ class _G3AndroidSettingsState extends State<_G3AndroidSettings> {
             const Text(g3DisplayVersion),
             if (_status != null) Text(_status!),
             TextButton(
-              onPressed:
-                  _checking ? null : (_update == null ? _check : _saveUpdate),
-              child: Text(_update == null
-                  ? 'Auf Updates prüfen'
-                  : 'Update vorbereiten'),
+              onPressed: _checking
+                  ? null
+                  : (_update == null ? _check : () => _prepareUpdate(install: true)),
+              child: Text(_update == null ? 'Auf Updates prüfen' : 'Update installieren'),
             ),
+            if (_update != null)
+              TextButton(
+                onPressed: _checking ? null : () => _prepareUpdate(install: false),
+                child: const Text('APK speichern'),
+              ),
           ],
         ),
         actions: [

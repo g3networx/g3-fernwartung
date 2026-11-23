@@ -53,12 +53,15 @@ import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
     companion object {
+        private const val REQ_UPDATE_SOURCE_PERMISSION = 305
         var flutterMethodChannel: MethodChannel? = null
         private var _rdClipboardManager: RdClipboardManager? = null
         val rdClipboardManager: RdClipboardManager?
             get() = _rdClipboardManager;
     }
 
+    private val updateInstaller by lazy { OpsLinxUpdateInstaller(this) }
+    private var updateSourcePermissionResult: MethodChannel.Result? = null
     private val channelTag = "mChannel"
     private val logTag = "mMainActivity"
     private var mainService: MainService? = null
@@ -117,6 +120,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) updateInstaller.showPendingConfirmation()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN &&
             KeyEvent.isModifierKey(event.keyCode) && currentFocus == null) {
@@ -135,6 +143,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_UPDATE_SOURCE_PERMISSION) {
+            val result = updateSourcePermissionResult
+            updateSourcePermissionResult = null
+            result?.success(canInstallOpsLinxUpdate())
+            return
+        }
         if (documentPicker.onResult(requestCode, resultCode, data)) return
         if (requestCode == REQ_IMPORT_FILES) {
             val pending = pendingPicker as? PendingPicker.ImportFiles ?: return
@@ -260,6 +274,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        updateInstaller.close()
+        updateSourcePermissionResult = null
         documentPicker.close()
         Log.e(logTag, "onDestroy")
         // The process can outlive the UI whenever something keeps it alive:
@@ -318,8 +334,37 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun canInstallOpsLinxUpdate(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
+
+    private fun requestUpdateSourcePermission(result: MethodChannel.Result) {
+        if (canInstallOpsLinxUpdate()) {
+            result.success(true)
+            return
+        }
+        if (updateSourcePermissionResult != null) {
+            result.error("permission_in_progress", "Android permission window already open", null)
+            return
+        }
+        try {
+            updateSourcePermissionResult = result
+            startActivityForResult(
+                Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
+                REQ_UPDATE_SOURCE_PERMISSION
+            )
+        } catch (_: android.content.ActivityNotFoundException) {
+            updateSourcePermissionResult = null
+            result.error("permission_unavailable", "Android install settings could not be opened", null)
+        } catch (_: SecurityException) {
+            updateSourcePermissionResult = null
+            result.error("permission_unavailable", "Android install settings are managed by the device", null)
+        }
+    }
+
     @Suppress("DEPRECATION")
-    private fun saveOpsLinxUpdate(updateId: String?, proof: ByteArray?, result: MethodChannel.Result) {
+    private fun handleOpsLinxUpdate(
+        updateId: String?, proof: ByteArray?, install: Boolean, result: MethodChannel.Result
+    ) {
         thread {
             try {
                 require(updateId != null && Regex("update-[A-Za-z0-9]+").matches(updateId))
@@ -342,6 +387,14 @@ class MainActivity : FlutterActivity() {
                 require(candidate.packageName == packageName &&
                     candidateVersion > PackageInfoCompat.getLongVersionCode(installed) &&
                     installedSignatures.isNotEmpty() && candidate.signatures.orEmpty().toSet() == installedSignatures)
+                if (install) {
+                    if (!canInstallOpsLinxUpdate()) {
+                        runOnUiThread { result.error("install_permission_required", "Android install source is disabled", null) }
+                    } else {
+                        updateInstaller.installVerified(update, result)
+                    }
+                    return@thread
+                }
                 val fileName = "g3-OpsLinX-Update-$candidateVersion.apk"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val saved = runCatching { writeVerifiedUpdateToDownloads(update, fileName) }
@@ -402,8 +455,12 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
-                "g3_save_android_update" -> saveOpsLinxUpdate(
-                    call.argument<String>("updateId"), call.argument<ByteArray>("certumProof"), result
+                "g3_request_android_install_source" -> requestUpdateSourcePermission(result)
+                "g3_handle_android_update" -> handleOpsLinxUpdate(
+                    call.argument<String>("updateId"),
+                    call.argument<ByteArray>("certumProof"),
+                    call.argument<Boolean>("install") == true,
+                    result
                 )
                 "g3_addressbook_read", "g3_addressbook_write", "g3_addressbook_delete" -> {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
