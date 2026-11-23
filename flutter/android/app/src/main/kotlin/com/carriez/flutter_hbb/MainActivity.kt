@@ -10,13 +10,16 @@ package com.carriez.flutter_hbb
 import ffi.FFI
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Environment
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -29,11 +32,11 @@ import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.util.DisplayMetrics
 import androidx.annotation.RequiresApi
-import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -288,10 +291,35 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun writeVerifiedUpdateToDownloads(update: File, fileName: String) {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.android.package-archive")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val destination = requireNotNull(contentResolver.insert(
+            MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values
+        ))
+        try {
+            update.inputStream().use { input ->
+                requireNotNull(contentResolver.openOutputStream(destination, "w")).use { output ->
+                    check(input.copyTo(output) == update.length())
+                }
+            }
+            val completed = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            check(contentResolver.update(destination, completed, null, null) == 1)
+        } catch (error: Exception) {
+            runCatching { contentResolver.delete(destination, null, null) }
+            throw error
+        }
+    }
+
     @Suppress("DEPRECATION")
-    private fun prepareOpsLinxUpdate(
-        updateId: String?, proof: ByteArray?, install: Boolean, result: MethodChannel.Result
-    ) {
+    private fun saveOpsLinxUpdate(updateId: String?, proof: ByteArray?, result: MethodChannel.Result) {
         thread {
             try {
                 require(updateId != null && Regex("update-[A-Za-z0-9]+").matches(updateId))
@@ -310,25 +338,29 @@ class MainActivity : FlutterActivity() {
                     update.path, PackageManager.GET_SIGNATURES
                 ))
                 val installedSignatures = installed.signatures.orEmpty().toSet()
+                val candidateVersion = PackageInfoCompat.getLongVersionCode(candidate)
                 require(candidate.packageName == packageName &&
-                    PackageInfoCompat.getLongVersionCode(candidate) > PackageInfoCompat.getLongVersionCode(installed) &&
+                    candidateVersion > PackageInfoCompat.getLongVersionCode(installed) &&
                     installedSignatures.isNotEmpty() && candidate.signatures.orEmpty().toSet() == installedSignatures)
-                val uri = if (install) {
-                    FileProvider.getUriForFile(this, "$packageName.opslinx-updates", update)
-                } else null
-                runOnUiThread {
-                    if (uri != null) {
-                        try {
-                            startActivity(Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "application/vnd.android.package-archive")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            })
+                val fileName = "g3-OpsLinX-Update-$candidateVersion.apk"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val saved = runCatching { writeVerifiedUpdateToDownloads(update, fileName) }
+                    if (saved.isSuccess) {
+                        runOnUiThread {
+                            try {
+                                startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+                            } catch (_: android.content.ActivityNotFoundException) {
+                                // The verified file remains available in Downloads.
+                            } catch (_: SecurityException) {
+                                // Some device policies restrict the Downloads activity.
+                            }
                             result.success(true)
-                        } catch (_: Exception) {
-                            result.error("installer_unavailable", "Android installer could not be opened", null)
                         }
-                        return@runOnUiThread
+                        return@thread
                     }
+                    Log.w(logTag, "Downloads storage unavailable, using the document picker", saved.exceptionOrNull())
+                }
+                runOnUiThread {
                     if (pendingPicker != null) {
                         result.error("picker_in_progress", "Another document picker is already open", null)
                         return@runOnUiThread
@@ -339,7 +371,7 @@ class MainActivity : FlutterActivity() {
                             Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                                 addCategory(Intent.CATEGORY_OPENABLE)
                                 type = "application/vnd.android.package-archive"
-                                putExtra(Intent.EXTRA_TITLE, "g3-OpsLinX-Update.apk")
+                                putExtra(Intent.EXTRA_TITLE, fileName)
                                 putExtra(Intent.EXTRA_LOCAL_ONLY, true)
                             },
                             REQ_EXPORT_FILE
@@ -370,11 +402,8 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
-                "g3_prepare_android_update" -> prepareOpsLinxUpdate(
-                    call.argument<String>("updateId"),
-                    call.argument<ByteArray>("certumProof"),
-                    call.argument<Boolean>("install") == true,
-                    result
+                "g3_save_android_update" -> saveOpsLinxUpdate(
+                    call.argument<String>("updateId"), call.argument<ByteArray>("certumProof"), result
                 )
                 "g3_addressbook_read", "g3_addressbook_write", "g3_addressbook_delete" -> {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
