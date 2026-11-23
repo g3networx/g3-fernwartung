@@ -1,0 +1,69 @@
+name: Sign Android conference release candidates
+on:
+  push:
+    branches: [g3-codesigning-setup]
+    paths: [.github/workflows/g3-opslinx-android-20115-signing.yml]
+permissions:
+  contents: write
+env:
+  DRAFT_ID: '455705499'
+  DRAFT_TAG: 'android-shared-id-signing-f17fb5d59a0f'
+  LINX_ID: '783732668'
+  LINX_SHA: '8d8443c9d97ef4f7a082a2d70f76700e5d9770810d74ec4fc048416fe8e9ea1a'
+  SIGNER_SHA: '3c69fa623753dc13a8ab41bf0cdbe56f018eea2d8f0a961cb8667e91b8fcc6ee'
+jobs:
+  signing:
+    if: github.repository == 'g3networx/g3-fernwartung' && github.ref == 'refs/heads/g3-codesigning-setup'
+    runs-on: ubuntu-24.04
+    environment: signing
+    timeout-minutes: 10
+    steps:
+      - name: Read the pinned Android inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" | jq -e --arg tag "$DRAFT_TAG" '.draft and .tag_name == $tag' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/releases/assets/$LINX_ID" -H 'Accept: application/octet-stream' > opslinx-input.apk
+      - name: Validate application ID and sign the APK
+        env:
+          OPSLINX_ANDROID_SIGNING: ${{ secrets.OPSLINX_ANDROID_SIGNING }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -f "$work/key.p12" "$work/password" "$work/verification"; rmdir "$work"' EXIT
+          sdk=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$sdk"
+          badging=$("${sdk%/*}/aapt" dump badging opslinx-input.apk)
+          grep -Fq "package: name='net.g3nx.opslinx.lab' versionCode='22115' versionName='3.7.0'" <<< "$badging"
+          python - "$work" <<'PY'
+          import base64, json, os, pathlib, sys, zipfile
+          with zipfile.ZipFile('opslinx-input.apk') as apk:
+              libraries = [name for name in apk.namelist() if name.startswith('lib/')]
+              assert 'lib/arm64-v8a/librustdesk.so' in libraries
+              assert all(name.startswith('lib/arm64-v8a/') for name in libraries)
+          directory = pathlib.Path(sys.argv[1])
+          secret = json.loads(os.environ.pop('OPSLINX_ANDROID_SIGNING'))
+          (directory / 'key.p12').write_bytes(base64.b64decode(secret['pkcs12'], validate=True))
+          (directory / 'password').write_text((secret['password'] + '\n') * 2)
+          PY
+          unset OPSLINX_ANDROID_SIGNING
+          mkdir signed
+          sign() {
+            "$sdk" sign --ks "$work/key.p12" --ks-type PKCS12 --ks-key-alias opslinx-android --ks-pass "file:$work/password" --key-pass "file:$work/password" --out "signed/$2" "$1"
+            "$sdk" verify --verbose --print-certs "signed/$2" | tee "$work/verification"
+            grep -Fxq 'Number of signers: 1' "$work/verification"
+            grep -Fxq 'Verified using v2 scheme (APK Signature Scheme v2): true' "$work/verification"
+            grep -Eixq "(Signer #1|V[0-9]+\.[0-9]+ Signer:?) certificate SHA-256 digest: $SIGNER_SHA" "$work/verification"
+          }
+          sign opslinx-input.apk g3-OpsLinX-Android-1.5.3-g3.62.20115-arm64.apk
+      - name: Save signed APKs to the pinned draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" | jq -e --arg tag "$DRAFT_TAG" '.draft and .tag_name == $tag' >/dev/null
+          for apk in signed/*.apk; do
+            curl --fail --silent --show-error --max-time 120 -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Content-Type: application/octet-stream' --data-binary "@$apk" "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID/assets?name=${apk##*/}" >/dev/null
+          done
