@@ -1,0 +1,21 @@
+name: OpsLinX Host 20060 to 20144 lab
+on:
+  push:
+    branches: [g3-host-20060-transition-lab]
+    paths:
+      - .github/workflows/g3-host-transition-lab.yml
+      - g3-build/test-host-20060-to-20144.ps1
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  migrate:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Test migration with pinned production packages
+        shell: pwsh
+        run: ./g3-build/test-host-20060-to-20144.ps1

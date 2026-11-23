@@ -133,6 +133,22 @@ internal static class ManagedOpsLinXUpdate
     private static extern uint MsiGetProductInfo(string product, string property,
         StringBuilder value, ref uint length);
 
+    private static bool IsManagedPackageVersion(Version version)
+    {
+        return version.Major == 1
+            && (version.Minor >= 60 && version.Minor <= 62 || version.Minor == 70)
+            && version.Build >= 0 && version.Build <= UInt16.MaxValue && version.Revision == -1;
+    }
+
+    internal static bool TryManagedReleaseVersion(string release, out Version version)
+    {
+        version = null;
+        var match = Regex.Match(release ?? "", @"\A[0-9]+\.[0-9]+\.[0-9]+-g3\.([1-9][0-9])\.([0-9]{1,5})\z");
+        return match.Success
+            && Version.TryParse("1." + match.Groups[1].Value + "." + match.Groups[2].Value, out version)
+            && IsManagedPackageVersion(version);
+    }
+
     private static Version InstalledPackageVersion(string app)
     {
         using (var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
@@ -146,8 +162,7 @@ internal static class ManagedOpsLinXUpdate
             Version version;
             if (MsiGetProductInfo(product.ToString("B").ToUpperInvariant(), "VersionString", value, ref length) != 0
                 || !Version.TryParse(value.ToString(), out version)
-                || version.Major != 1 || version.Minor < 60 || version.Minor > 62
-                || version.Build < 0 || version.Build > UInt16.MaxValue || version.Revision != -1)
+                || !IsManagedPackageVersion(version))
                 return null;
             return version;
         }
@@ -198,10 +213,8 @@ internal static class ManagedOpsLinXUpdate
             CopyBounded(response, contents, 65536);
             release = json.Deserialize<Release>(Encoding.UTF8.GetString(contents.ToArray()));
         }
-        var version = Regex.Match(release.release_version ?? "", "\\A[0-9]+\\.[0-9]+\\.[0-9]+-g3\\.(60|61|62)\\.([0-9]{1,5})\\z");
         Version target;
-        if (!version.Success || !Version.TryParse("1." + version.Groups[1].Value + "." + version.Groups[2].Value, out target)
-            || target.Build > UInt16.MaxValue) return Failed;
+        if (!TryManagedReleaseVersion(release.release_version, out target)) return Failed;
         var current = InstalledPackageVersion(app);
         if (current == null) return Failed;
         var bundle = host ? release.host_bundle : release.windows_bundle;
@@ -209,7 +222,7 @@ internal static class ManagedOpsLinXUpdate
         {
             string name = bundle.file ?? "";
             string prefix = host ? "Host" : "Vollclient";
-            if (!Regex.IsMatch(name, @"\AOpsLinX-" + prefix + "-" + Regex.Escape(version.Groups[2].Value)
+            if (!Regex.IsMatch(name, @"\AOpsLinX-" + prefix + "-" + target.Build.ToString(CultureInfo.InvariantCulture)
                 + @"-OpsTalX-[0-9]+\.[0-9]+\.[0-9]+-Sammelinstaller\.exe\z")) return Failed;
             string path = Path.Combine(directory, name);
             try
