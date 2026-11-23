@@ -33,6 +33,7 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.util.DisplayMetrics
 import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -288,7 +289,9 @@ class MainActivity : FlutterActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun saveOpsLinxUpdate(updateId: String?, proof: ByteArray?, result: MethodChannel.Result) {
+    private fun prepareOpsLinxUpdate(
+        updateId: String?, proof: ByteArray?, install: Boolean, result: MethodChannel.Result
+    ) {
         thread {
             try {
                 require(updateId != null && Regex("update-[A-Za-z0-9]+").matches(updateId))
@@ -310,7 +313,22 @@ class MainActivity : FlutterActivity() {
                 require(candidate.packageName == packageName &&
                     PackageInfoCompat.getLongVersionCode(candidate) > PackageInfoCompat.getLongVersionCode(installed) &&
                     installedSignatures.isNotEmpty() && candidate.signatures.orEmpty().toSet() == installedSignatures)
+                val uri = if (install) {
+                    FileProvider.getUriForFile(this, "$packageName.opslinx-updates", update)
+                } else null
                 runOnUiThread {
+                    if (uri != null) {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            })
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.error("installer_unavailable", "Android installer could not be opened", null)
+                        }
+                        return@runOnUiThread
+                    }
                     if (pendingPicker != null) {
                         result.error("picker_in_progress", "Another document picker is already open", null)
                         return@runOnUiThread
@@ -352,8 +370,11 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
-                "g3_save_android_update" -> saveOpsLinxUpdate(
-                    call.argument<String>("updateId"), call.argument<ByteArray>("certumProof"), result
+                "g3_prepare_android_update" -> prepareOpsLinxUpdate(
+                    call.argument<String>("updateId"),
+                    call.argument<ByteArray>("certumProof"),
+                    call.argument<Boolean>("install") == true,
+                    result
                 )
                 "g3_addressbook_read", "g3_addressbook_write", "g3_addressbook_delete" -> {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
