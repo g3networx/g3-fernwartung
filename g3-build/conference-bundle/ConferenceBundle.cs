@@ -69,7 +69,10 @@ internal static class ConferenceBundle
             if (updateLinx)
             {
                 // Delegate session state and any disconnect consent to the existing installer.
-                linxExit = Execute(linxSetup, (interactive ? "--g3-install-interactive " : "--g3-install-worker ") + Quote(linxMsi));
+                string linxArguments = interactive
+                    ? "--g3-install-interactive " + Quote(linxMsi) + " --bundle-diagnostics"
+                    : "--g3-install-worker " + Quote(linxMsi);
+                linxExit = Execute(linxSetup, linxArguments);
                 if (linxExit == Busy)
                     return Report(quiet, Busy, productName + " hat das Update zurückgestellt. OpsTalX wurde noch nicht aktualisiert.");
                 if (linxExit != 0 && linxExit != RestartRequired)

@@ -36,6 +36,8 @@ using Microsoft.Win32.SafeHandles;
 
 internal sealed class UpdateBusyException:Exception {
  internal const string Gate="session_gate", Unrecognized="unrecognized_client", Shutdown="client_shutdown", Installer="windows_installer";
+ // Reserved for the signed bundle's interactive child processes. Managed updates still use 1618.
+ internal const int UnrecognizedBundleExit=61001;
  internal readonly string Reason;
  public UpdateBusyException(string reason=Gate):base(Describe(reason)){Reason=reason;}
  static string Describe(string reason){switch(reason){
@@ -134,6 +136,7 @@ internal sealed class SetupForm:Form {
    int exit;
    using(var updater=Process.Start(bundleInfo)){await Task.Run(()=>updater.WaitForExit());exit=updater.ExitCode;}
    if(exit==1602){working=false;Close();return;}
+   if(exit==UpdateBusyException.UnrecognizedBundleExit)throw new UpdateBusyException(UpdateBusyException.Unrecognized);
    if(exit==1618)throw new InvalidOperationException("Das Update wartet auf das Ende einer Fernwartung, einer Konferenz oder eines anderen Installationsvorgangs.");
    if(exit!=0 && exit!=3010)throw new InvalidOperationException("Das gemeinsame Update konnte nicht abgeschlossen werden (Fehler "+exit+").");
    OpenClient();working=false;progressTimer.Stop();Close();return;
@@ -325,7 +328,7 @@ internal sealed class SetupForm:Form {
   blockedPath=companion.GatePath;
   companion.Acquire();
  }
- static int Worker(string source,bool interactive){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
+ static int Worker(string source,bool interactive,bool bundleDiagnostics){var root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"g3-NetworX-Setup-"+AppName+"-"+Version);UpdateSessionGate gate=null;Companion companion=null;bool stoppedByUs=false;try {
 
   if(Directory.Exists(root)&&(File.GetAttributes(root)&FileAttributes.ReparsePoint)!=0)return 13;Directory.CreateDirectory(root);var acl=new DirectorySecurity();acl.SetAccessRuleProtection(true,false);acl.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null));
 
@@ -380,7 +383,7 @@ internal sealed class SetupForm:Form {
   bool repair=String.Equals(Convert.ToString(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\"+AppName+@"\InstallState\"+AppName,"MsiProductCode",null)),ProductCode,StringComparison.OrdinalIgnoreCase);
   var info=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),"/i "+Quote(msi)+" /qn "+(repair?"REINSTALL=ALL REINSTALLMODE=vamus ":"")+"REBOOT=ReallySuppress /norestart MSIRESTARTMANAGERCONTROL=Disable G3_BOOTSTRAP_CLOSED=1 /l*vx! "+Quote(Path.Combine(root,"install.log"))){UseShellExecute=false,CreateNoWindow=true};using(var p=Process.Start(info)){p.WaitForExit();int code=p.ExitCode;if(code==1618)throw new UpdateBusyException(UpdateBusyException.Installer);bool ready=false;if((code==0||code==3010)&&VerifiedInstallation(false)){using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();svc.WaitForStatus(ServiceControllerStatus.Running,TimeSpan.FromSeconds(40));}ready=VerifiedInstallation();}companion.Restore();File.WriteAllText(Path.Combine(root,"result.txt"),"msi_exit="+code+";product_ready="+ready);return ready?code:1603;}
 
- }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_update: "+ex.Reason);}catch{}return 1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
+ }catch(UpdateBusyException ex){try{File.WriteAllText(Path.Combine(root,"result.txt"),"deferred_update: "+ex.Reason);}catch{}return bundleDiagnostics&&ex.Reason==UpdateBusyException.Unrecognized?UpdateBusyException.UnrecognizedBundleExit:1618;}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"update-error.txt"),ex.ToString());}catch{}return 1603;}finally{if(stoppedByUs)try{using(var svc=new ServiceController(AppName)){if(svc.Status==ServiceControllerStatus.Stopped)svc.Start();}}catch{}try{if(companion!=null)companion.Dispose();}catch(Exception ex){try{File.WriteAllText(Path.Combine(root,"companion-restore-error.txt"),ex.ToString());}catch{}}if(gate!=null)gate.Dispose();}}
 
  static int UninstallWorker() {
   var installDirectory = Path.GetDirectoryName(InstalledExe);
@@ -501,8 +504,9 @@ internal sealed class SetupForm:Form {
  [STAThread]static int Main(string[] args){
   bool uninstall = args.Length == 1 && args[0] == "--g3-uninstall-worker";
   if (uninstall && !WindowsIdentity.GetCurrent().IsSystem) return 740;
-  bool interactive=args.Length==2&&args[0]=="--g3-install-interactive";
-  bool worker=args.Length==2&&(args[0]=="--g3-install-worker"||interactive);
+  bool bundleDiagnostics=args.Length==3&&args[0]=="--g3-install-interactive"&&args[2]=="--bundle-diagnostics";
+  bool interactive=bundleDiagnostics||(args.Length==2&&args[0]=="--g3-install-interactive");
+  bool worker=interactive||(args.Length==2&&args[0]=="--g3-install-worker");
   bool bundleInteractive=args.Length==1&&args[0]=="--g3-bundle-interactive";
   if((worker||bundleInteractive)&&!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))return 740;
   if((interactive||bundleInteractive)&&(WindowsIdentity.GetCurrent().IsSystem||!Environment.UserInteractive||Process.GetCurrentProcess().SessionId==0))return 740;
@@ -521,7 +525,7 @@ internal sealed class SetupForm:Form {
     catch(UpdateBusyException) { return 1618; }
     catch(Exception error) { Console.Error.WriteLine(error.Message); return 1603; }
    }
-   if(worker)return Worker(args[1],interactive);
+   if(worker)return Worker(args[1],interactive,bundleDiagnostics);
    int pid=0;
    if(args.Length==2&&args[0]=="--g3-wait-pid")int.TryParse(args[1],out pid);
    Application.EnableVisualStyles();
