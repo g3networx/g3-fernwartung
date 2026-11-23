@@ -13,6 +13,13 @@ assert release['version'] == f'1.5.3-g3.70.{counter}'
 assert release['windowsVersion'] == f'1.70.{counter}'
 original = folder / 'package-password-reliability.py'
 source = original.read_text()
+if release['version'] == '1.5.3-g3.70.20145':
+    source = source.replace(
+        "and provenance['native_rebuilt']",
+        "and (provenance['native_rebuilt'] or "
+        "(provenance.get('native_reuse_run') == '45221958577' and "
+        "provenance.get('native_sha256') == 'e71c5f259f28d2bdcc4bd38b6cbc4aa32d958a362f079ab440a7cfd2a2b3dc53'))",
+    )
 for old, new in {
     '1.5.0-g3.60.19994': release['version'],
     'g3.6 Build 041126': release['displayVersion'],

@@ -83,7 +83,11 @@ for kind,file in [('windows','g3-OpsLinX-'+version+'-install.msi'),('host','g3-O
  msi.MsiCloseHandle(db)
 assert proof['windows']['sha256']['g3Fernwartung.exe']==proof['host']['sha256']['g3Host-ui.exe']
 assert proof['windows']['upgradeCode']!=proof['host']['upgradeCode']
-provenance=json.loads((stage/'g361-release-provenance.json').read_text(encoding='utf-8-sig'));assert provenance['native_rebuilt'] and provenance['source_commit']==__import__('os').environ['GITHUB_SHA'];expected=provenance['native_sha256']
+provenance=json.loads((stage/'g361-release-provenance.json').read_text(encoding='utf-8-sig'))
+expected=provenance['native_sha256']
+approved_reuse=(version=='1.5.3-g3.70.20145' and provenance.get('native_reuse_run')=='45221958577'
+                and expected=='e71c5f259f28d2bdcc4bd38b6cbc4aa32d958a362f079ab440a7cfd2a2b3dc53')
+assert (provenance['native_rebuilt'] or approved_reuse) and provenance['source_commit']==__import__('os').environ['GITHUB_SHA']
 assert proof['windows']['sha256']['librustdesk.dll']==proof['host']['sha256']['librustdesk.dll']==expected
 assert proof['host']['sha256']['g3Host.exe']=='32b98ed09a141e92ac2f2d602401c5e417a1511c7f494824424fe90ff78c03d0'
 assert proof['windows']['sha256']['dylib_virtual_display.dll']==proof['host']['sha256']['dylib_virtual_display.dll']

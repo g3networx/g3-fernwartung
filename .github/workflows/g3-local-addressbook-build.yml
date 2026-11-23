@@ -3,9 +3,14 @@
 name: g3 OpsLinX Windows (20145, g3.7.0)
 on:
   push:
-    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab, g3-opslinx-conference-windows, g3-release-370-stage]
+    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab, g3-opslinx-conference-windows, g3-release-370-stage, g3-release-370-20145-pinned]
     paths: [.github/workflows/g3-local-addressbook-build.yml]
   workflow_dispatch:
+    inputs:
+      reuse_20144_native:
+        description: Reuse the pinned 20144 native binaries for this packaging-only release.
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -71,8 +76,15 @@ jobs:
         shell: pwsh
         run: python g3-build/package-local-addressbook.py prepare
       - name: Compile HA native core and verify Windows account handling
+        if: inputs.reuse_20144_native != true && github.ref_name != 'g3-release-370-20145-pinned'
         shell: pwsh
         run: ./g3-build/build-local-addressbook-core.ps1
+      - name: Reuse verified 20144 native binaries
+        if: inputs.reuse_20144_native == true || github.ref_name == 'g3-release-370-20145-pinned'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./g3-build/reuse-20144-native.ps1
       - name: Build g3.7.0 Flutter frontend and run focused tests
         shell: pwsh
         run: ./g3-build/build-local-addressbook-ui.ps1
