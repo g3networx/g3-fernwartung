@@ -10,6 +10,8 @@ $setup=$buildSource.Substring(0,$boundary).Replace('$source=(Resolve-Path "$PSSc
 $env:G3_BUILD_VERSION='1.5.0-g3.40'
 & ([scriptblock]::Create($setup))
 $env:G3_BUILD_VERSION='1.5.0-g3.60.19994'
+$features='hwcodec,vram,flutter'
+if($env:OPSLINX_TLS_REGISTRATION -eq '1'){$features+=',opslinx-tls-registration'}
 New-Item -ItemType Directory -Force outputs|Out-Null
 $module=(Join-Path $source 'src/platform/windows_logon.rs').Replace('\','/')
 ('#[path = "'+$module+'"] mod windows_logon;')|Set-Content outputs/windows-logon-tests.rs
@@ -17,16 +19,19 @@ rustc --edition 2021 --test outputs/windows-logon-tests.rs -o outputs/windows-lo
 Check
 & ./outputs/windows-logon-tests.exe|Tee-Object outputs/windows-logon-tests.txt
 Check
-cargo build --locked --features hwcodec,vram,flutter --lib --release
+cargo build --locked --features $features --lib --release
 Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_api_policy::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_passwords::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_bootstrap::;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_registry_password::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_otp_handoff::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_password_probe_persistence_tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_self_connection::tests;Check
-cargo test --locked --release --lib --features hwcodec,vram,flutter g3_device_management::outbound_policy_tests;Check
+cargo test --locked --release --lib --features $features g3_api_policy::tests;Check
+cargo test --locked --release --lib --features $features g3_passwords::tests;Check
+cargo test --locked --release --lib --features $features g3_bootstrap::;Check
+cargo test --locked --release --lib --features $features g3_registry_password::tests;Check
+cargo test --locked --release --lib --features $features g3_otp_handoff::tests;Check
+cargo test --locked --release --lib --features $features g3_password_probe_persistence_tests;Check
+cargo test --locked --release --lib --features $features g3_self_connection::tests;Check
+cargo test --locked --release --lib --features $features g3_device_management::outbound_policy_tests;Check
+if($env:OPSLINX_TLS_REGISTRATION -eq '1'){
+    cargo test --locked --release --lib --features $features opslinx_tls_tests;Check
+}
 cargo build --locked --release --package dylib_virtual_display
 Check
 $hash=(Get-FileHash target/release/librustdesk.dll).Hash.ToLowerInvariant()

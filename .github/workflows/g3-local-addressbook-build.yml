@@ -1,9 +1,9 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
-name: g3 OpsLinX Windows (20145, g3.7.0)
+name: g3 OpsLinX Windows (20161, g3.7.0, TLS)
 on:
   push:
-    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab, g3-opslinx-conference-windows, g3-release-370-stage, g3-release-370-20145-pinned]
+    branches: [g3-codesigning-setup, g3-lab-systeminfo-addressbook, g3-next-client-review, g3-webgui-actions-lab, g3-bootstrap-polling-lab, g3-opstalx-windows-lab, g3-opslinx-conference-windows, g3-release-370-stage, g3-release-370-20145-pinned, g3-release-370-20161-tls]
     paths: [.github/workflows/g3-local-addressbook-build.yml]
   workflow_dispatch:
     inputs:
@@ -77,6 +77,8 @@ jobs:
         run: python g3-build/package-local-addressbook.py prepare
       - name: Compile HA native core and verify Windows account handling
         if: inputs.reuse_20144_native != true && github.ref_name != 'g3-release-370-20145-pinned'
+        env:
+          OPSLINX_TLS_REGISTRATION: '1'
         shell: pwsh
         run: ./g3-build/build-local-addressbook-core.ps1
       - name: Reuse verified 20144 native binaries

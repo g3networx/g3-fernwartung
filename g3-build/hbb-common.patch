@@ -1,8 +1,8 @@
 diff --git a/src/config.rs b/src/config.rs
-index 6fe1004..6f78e83 100644
+index 9ee5cac..040acaf 100644
 --- a/src/config.rs
 +++ b/src/config.rs
-@@ -69,18 +69,18 @@ lazy_static::lazy_static! {
+@@ -68,18 +68,18 @@ lazy_static::lazy_static! {
      static ref ONLINE: Mutex<HashMap<String, i64>> = Default::default();
      pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("".to_owned());
      pub static ref EXE_RENDEZVOUS_SERVER: RwLock<String> = Default::default();
@@ -23,11 +23,11 @@ index 6fe1004..6f78e83 100644
 +    pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("disable-account".to_owned(), "Y".to_owned()), ("disable-ab".to_owned(), "Y".to_owned())]); if is_g3_host(){settings.insert("conn-type".to_owned(),"incoming".to_owned());} if is_g3_adhoc(){ settings.insert("conn-type".to_owned(),"incoming".to_owned()); settings.insert("disable-installation".to_owned(),"Y".to_owned());} settings});
 +    pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({let mut settings=HashMap::from([("hide-network-settings".to_owned(), "Y".to_owned()), ("hide-server-settings".to_owned(), "Y".to_owned()), ("hide-proxy-settings".to_owned(), "Y".to_owned()), ("hide-websocket-settings".to_owned(), "Y".to_owned()), ("hide-remote-printer-settings".to_owned(), "Y".to_owned())]); if is_g3_adhoc(){ settings.insert("hide-security-settings".to_owned(),"Y".to_owned()); settings.insert("hide-general-settings".to_owned(),"Y".to_owned());} settings});
  }
- 
+
  #[cfg(target_os = "android")]
-@@ -1044,6 +1044,10 @@ impl Config {
+@@ -1183,6 +1183,10 @@ impl Config {
      }
- 
+
      fn get_auto_id() -> Option<String> {
 +        if APP_NAME.read().unwrap().starts_with("g3") {
 +            return Some(rand::thread_rng().gen_range(1_000_000_000..2_000_000_000).to_string());
@@ -36,7 +36,7 @@ index 6fe1004..6f78e83 100644
          #[cfg(any(target_os = "android", target_os = "ios"))]
          {
              return Some(
-@@ -2362,7 +2366,7 @@
+@@ -2476,7 +2480,7 @@ impl UserDefaultConfig {
              #[cfg(any(target_os = "android", target_os = "ios"))]
              keys::OPTION_VIEW_STYLE => self.get_string(key, "adaptive", vec!["original"]),
              #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -45,7 +45,7 @@ index 6fe1004..6f78e83 100644
              keys::OPTION_SCROLL_STYLE => {
                  self.get_string(key, "scrollauto", vec!["scrolledge", "scrollbar"])
              }
-@@ -3678,3 +3682,23 @@ mod tests {
+@@ -3777,3 +3781,23 @@ mod tests {
          assert_ne!(non_service_root, non_service_user);
      }
  }
@@ -69,10 +69,45 @@ index 6fe1004..6f78e83 100644
 +pub fn g3_reset_key_pair_cache() {
 + *KEY_PAIR.lock().unwrap() = None;
 +}
+diff --git a/src/socket_client.rs b/src/socket_client.rs
+index 096a2e5..a38d602 100644
+--- a/src/socket_client.rs
++++ b/src/socket_client.rs
+@@ -137,6 +137,29 @@ pub async fn connect_tcp<
+             webrtc::WebRTCStream::new(&target.to_string(), false, ms_timeout).await?,
+         ));
+     }
++    if let Some((host, port)) = split_host_port(target.to_string()) {
++        if websocket::opslinx_tls_host(&host) {
++            let route = match port {
++                crate::config::RENDEZVOUS_PORT => Some(("id", port)),
++                crate::config::RELAY_PORT | 443 => Some(("relay", crate::config::RELAY_PORT)),
++                _ => None,
++            };
++            if let Some((path, legacy_port)) = route {
++                let url = format!("wss://{host}/ws/{path}");
++                match websocket::WsFramedStream::new_verified(&url, ms_timeout.min(4_000)).await {
++                    Ok(stream) => {
++                        log::info!("OpsLinX {path} via TLS/443, IPv6={}", stream.local_addr().is_ipv6());
++                        return Ok(Stream::WebSocket(stream));
++                    }
++                    Err(error) if websocket::opslinx_tls_unavailable(&error) => {
++                        log::info!("OpsLinX {path} TLS/443 unavailable; using TCP/{legacy_port}");
++                        return connect_tcp_local(format!("{host}:{legacy_port}"), None, ms_timeout).await;
++                    }
++                    Err(error) => return Err(error),
++                }
++            }
++        }
++    }
+     let target_str = check_ws(&target.to_string());
+     if is_ws_endpoint(&target_str) {
+         return Ok(Stream::WebSocket(
 diff --git a/src/tcp.rs b/src/tcp.rs
+index b457bbe..c7b47cc 100644
 --- a/src/tcp.rs
 +++ b/src/tcp.rs
-@@ -21,7 +21,9 @@
+@@ -21,7 +21,9 @@ use tokio::{
  use tokio_socks::IntoTargetAddr;
  use tokio_util::codec::Framed;
 
@@ -83,7 +118,7 @@ diff --git a/src/tcp.rs b/src/tcp.rs
  pub struct DynTcpStream(pub Box<dyn TcpStreamTrait + Send + Sync>);
 
  /// The newest key exchange version this build speaks. Version 0 is the original scheme, and
-@@ -158,6 +160,10 @@
+@@ -158,6 +160,10 @@ impl FramedStream {
          proxy.connect::<T>(target, local_addr).await
      }
 
@@ -94,7 +129,7 @@ diff --git a/src/tcp.rs b/src/tcp.rs
      pub fn local_addr(&self) -> SocketAddr {
          self.1
      }
-@@ -336,7 +342,13 @@
+@@ -336,7 +342,13 @@ impl AsyncWrite for DynTcpStream {
      }
  }
 
@@ -109,3 +144,108 @@ diff --git a/src/tcp.rs b/src/tcp.rs
 
  impl Encrypt {
      pub fn new(key: Key) -> Self {
+diff --git a/src/websocket.rs b/src/websocket.rs
+index 3a98a84..ab201ea 100644
+--- a/src/websocket.rs
++++ b/src/websocket.rs
+@@ -292,7 +292,7 @@ impl WsFramedStream {
+                             )
+                         }
+                     }
+-                    bail!("WebSocket error: {}", e)
++                    Err(e.into())
+                 }
+             },
+         }
+@@ -317,6 +317,36 @@ impl WsFramedStream {
+         Ok(ws)
+     }
+
++    /// Open an OpsLinX WSS transport with certificate verification even when the
++    /// legacy WebSocket setting allows a certificate exception.
++    pub async fn new_verified(url: &str, ms_timeout: u64) -> ResultType<Self> {
++        let endpoint = url::Url::parse(url)?;
++        let host = endpoint.host_str().ok_or_else(|| {
++            Error::new(ErrorKind::InvalidInput, "Missing OpsLinX TLS hostname")
++        })?;
++        if endpoint.scheme() != "wss" || !opslinx_tls_host(host) {
++            bail!("Unexpected OpsLinX TLS endpoint");
++        }
++        let deadline = Duration::from_millis(ms_timeout);
++        let proxy = Config::get_socks();
++        let (stream, addr) = if let Some(proxy) = proxy.as_ref() {
++            Self::try_connect(
++                url, None, Some(proxy), ms_timeout, TlsType::Rustls, true,
++                Some(false), Some(false),
++            ).await?
++        } else {
++            timeout(deadline, async {
++                let addresses: Vec<_> = tokio::net::lookup_host((host, 443)).await?.collect();
++                let tcp = connect_opslinx_dual_stack(&addresses).await?;
++                let addr = tcp.local_addr()?;
++                let connector = Self::get_connector(&TlsType::Rustls, false)?;
++                let (stream, _) = client_async_tls_with_config(url, tcp, None, connector).await?;
++                Ok::<_, anyhow::Error>((Either::Left(stream), addr))
++            }).await??
++        };
++        Ok(Self { stream, addr, encrypt: None, send_timeout: ms_timeout })
++    }
++
+     #[inline]
+     pub fn set_raw(&mut self) {
+         self.encrypt = None;
+@@ -452,6 +482,54 @@ impl WsFramedStream {
+     }
+ }
+
++async fn connect_opslinx_dual_stack(addresses: &[SocketAddr]) -> io::Result<TcpStream> {
++    let (v6, v4): (Vec<_>, Vec<_>) = addresses.iter().copied().partition(SocketAddr::is_ipv6);
++    if v6.is_empty() || v4.is_empty() {
++        return TcpStream::connect(addresses).await;
++    }
++    let ipv6 = TcpStream::connect(v6.as_slice());
++    let ipv4 = async {
++        tokio::time::sleep(Duration::from_millis(250)).await;
++        TcpStream::connect(v4.as_slice()).await
++    };
++    tokio::pin!(ipv6, ipv4);
++    tokio::select! {
++        result = &mut ipv6 => match result {
++            Ok(socket) => Ok(socket),
++            Err(_) => ipv4.await,
++        },
++        result = &mut ipv4 => match result {
++            Ok(socket) => Ok(socket),
++            Err(_) => ipv6.await,
++        },
++    }
++}
++
++pub fn opslinx_tls_host(host: &str) -> bool {
++    option_env!("OPSLINX_TLS_REGISTRATION") == Some("1")
++        && (matches!(host, "linx.g3nx.net" | "rust.g3nx.net" | "opslinx02.g3nx.net" | "opslinx03.g3nx.net")
++            || option_env!("OPSLINX_TLS_LAB_HOST") == Some(host))
++}
++
++pub fn opslinx_tls_unavailable(error: &anyhow::Error) -> bool {
++    fn unavailable(error: &io::Error) -> bool {
++        matches!(error.kind(), ErrorKind::ConnectionRefused | ErrorKind::ConnectionReset
++            | ErrorKind::ConnectionAborted | ErrorKind::NotConnected | ErrorKind::TimedOut
++            | ErrorKind::UnexpectedEof)
++    }
++    error.chain().any(|cause| {
++        if let Some(ws) = cause.downcast_ref::<tungstenite::Error>() {
++            return match ws {
++                tungstenite::Error::Io(error) => unavailable(error),
++                tungstenite::Error::Http(response) => matches!(response.status().as_u16(), 404 | 502 | 503 | 504),
++                _ => false,
++            };
++        }
++        cause.is::<tokio::time::error::Elapsed>()
++            || cause.downcast_ref::<io::Error>().is_some_and(unavailable)
++    })
++}
++
+ pub fn is_ws_endpoint(endpoint: &str) -> bool {
+     endpoint.starts_with("ws://") || endpoint.starts_with("wss://")
+ }

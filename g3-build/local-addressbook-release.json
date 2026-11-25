@@ -1,8 +1,8 @@
 {
-  "version": "1.5.3-g3.70.20145",
-  "displayVersion": "g3.7.0 Build 231126",
-  "buildDate": "2026-11-23",
-  "windowsVersion": "1.70.20145",
+  "version": "1.5.3-g3.70.20161",
+  "displayVersion": "g3.7.0 Build 251126",
+  "buildDate": "2026-11-25",
+  "windowsVersion": "1.70.20161",
   "dailyInternalSequence": 1,
   "feature": "opstalx-e2ee"
 }
