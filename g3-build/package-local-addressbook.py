@@ -20,6 +20,14 @@ if release['version'] == '1.5.3-g3.70.20145':
         "(provenance.get('native_reuse_run') == '45221958577' and "
         "provenance.get('native_sha256') == 'e71c5f259f28d2bdcc4bd38b6cbc4aa32d958a362f079ab440a7cfd2a2b3dc53'))",
     )
+if release['version'] == '1.5.3-g3.70.20161':
+    source = source.replace(
+        "and provenance['native_rebuilt']",
+        "and (provenance['native_rebuilt'] or "
+        "(provenance.get('native_reuse_run') == '45562171803' and "
+        "provenance.get('native_source_commit') == 'dc4aeef8b0b6bc21f2671150efb96f12952ac2ee' and "
+        "provenance.get('native_sha256') == 'e5efef83e6618a542d3ea9537f18696aa3b71c22ae64ec5e19f48fa488686b06'))",
+    )
 for old, new in {
     '1.5.0-g3.60.19994': release['version'],
     'g3.6 Build 041126': release['displayVersion'],

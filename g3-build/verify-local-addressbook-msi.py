@@ -87,6 +87,10 @@ provenance=json.loads((stage/'g361-release-provenance.json').read_text(encoding=
 expected=provenance['native_sha256']
 approved_reuse=(version=='1.5.3-g3.70.20145' and provenance.get('native_reuse_run')=='45221958577'
                 and expected=='e71c5f259f28d2bdcc4bd38b6cbc4aa32d958a362f079ab440a7cfd2a2b3dc53')
+approved_reuse=approved_reuse or (
+    version=='1.5.3-g3.70.20161' and provenance.get('native_reuse_run')=='45562171803'
+    and provenance.get('native_source_commit')=='dc4aeef8b0b6bc21f2671150efb96f12952ac2ee'
+    and expected=='e5efef83e6618a542d3ea9537f18696aa3b71c22ae64ec5e19f48fa488686b06')
 assert (provenance['native_rebuilt'] or approved_reuse) and provenance['source_commit']==__import__('os').environ['GITHUB_SHA']
 assert proof['windows']['sha256']['librustdesk.dll']==proof['host']['sha256']['librustdesk.dll']==expected
 assert proof['host']['sha256']['g3Host.exe']=='32b98ed09a141e92ac2f2d602401c5e417a1511c7f494824424fe90ff78c03d0'

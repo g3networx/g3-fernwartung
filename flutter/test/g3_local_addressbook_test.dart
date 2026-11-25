@@ -50,7 +50,16 @@ void main() {
     store = G3LocalAddressBookStore(File('${directory.path}/book.json'));
   });
   tearDown(() async {
-    await directory.delete(recursive: true);
+    for (var attempt = 0;; attempt++) {
+      try {
+        await directory.delete(recursive: true);
+        break;
+      } on FileSystemException catch (error) {
+        final sharingViolation = error.osError?.errorCode == 32;
+        if (!Platform.isWindows || !sharingViolation || attempt == 9) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+    }
   });
 
   test('local edits survive reload and export/import to another PC store',
