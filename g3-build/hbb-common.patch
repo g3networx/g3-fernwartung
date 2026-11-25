@@ -70,7 +70,7 @@ index 9ee5cac..040acaf 100644
 + *KEY_PAIR.lock().unwrap() = None;
 +}
 diff --git a/src/socket_client.rs b/src/socket_client.rs
-index 096a2e5..a38d602 100644
+index 096a2e5..e3ec7b7 100644
 --- a/src/socket_client.rs
 +++ b/src/socket_client.rs
 @@ -137,6 +137,29 @@ pub async fn connect_tcp<
@@ -86,7 +86,7 @@ index 096a2e5..a38d602 100644
 +            };
 +            if let Some((path, legacy_port)) = route {
 +                let url = format!("wss://{host}/ws/{path}");
-+                match websocket::WsFramedStream::new_verified(&url, ms_timeout.min(4_000)).await {
++                match websocket::WsFramedStream::new_verified(&url, ms_timeout.min(6_000)).await {
 +                    Ok(stream) => {
 +                        log::info!("OpsLinX {path} via TLS/443, IPv6={}", stream.local_addr().is_ipv6());
 +                        return Ok(Stream::WebSocket(stream));
@@ -145,7 +145,7 @@ index b457bbe..c7b47cc 100644
  impl Encrypt {
      pub fn new(key: Key) -> Self {
 diff --git a/src/websocket.rs b/src/websocket.rs
-index 3a98a84..fedf19a 100644
+index 3a98a84..ec2db40 100644
 --- a/src/websocket.rs
 +++ b/src/websocket.rs
 @@ -292,7 +292,7 @@ impl WsFramedStream {
@@ -157,7 +157,7 @@ index 3a98a84..fedf19a 100644
                  }
              },
          }
-@@ -317,6 +317,36 @@ impl WsFramedStream {
+@@ -317,6 +317,53 @@ impl WsFramedStream {
          Ok(ws)
      }
 
@@ -179,14 +179,31 @@ index 3a98a84..fedf19a 100644
 +                Some(false), Some(false),
 +            ).await?
 +        } else {
-+            timeout(deadline, async {
-+                let addresses: Vec<_> = tokio::net::lookup_host((host, 443)).await?.collect();
-+                let tcp = connect_opslinx_dual_stack(&addresses).await?;
-+                let addr = tcp.local_addr()?;
-+                let connector = Self::get_connector(&TlsType::Rustls, false)?;
-+                let (stream, _) = client_async_tls_with_config(url, tcp, None, connector).await?;
-+                Ok::<_, anyhow::Error>((Either::Left(stream), addr))
-+            }).await??
++            let addresses = timeout(deadline, tokio::net::lookup_host((host, 443))).await??;
++            let (v6, v4): (Vec<_>, Vec<_>) = addresses.partition(SocketAddr::is_ipv6);
++            let start = tokio::time::Instant::now();
++            let try_family = |addresses: Vec<SocketAddr>, delay| async move {
++                timeout(deadline, async {
++                    tokio::time::sleep_until(start + delay).await;
++                    let tcp = TcpStream::connect(addresses.as_slice()).await?;
++                    let addr = tcp.local_addr()?;
++                    let connector = Self::get_connector(&TlsType::Rustls, false)?;
++                    let (stream, _) = client_async_tls_with_config(url, tcp, None, connector).await?;
++                    Ok::<_, anyhow::Error>((Either::Left(stream), addr))
++                }).await?
++            };
++            if v6.is_empty() || v4.is_empty() {
++                let addresses = if v6.is_empty() { v4 } else { v6 };
++                try_family(addresses, Duration::ZERO).await?
++            } else {
++                let ipv6 = try_family(v6, Duration::ZERO);
++                let ipv4 = try_family(v4, Duration::from_millis(250));
++                tokio::pin!(ipv6, ipv4);
++                tokio::select! {
++                    result = &mut ipv6 => finish_opslinx_tls(result, ipv4).await?,
++                    result = &mut ipv4 => finish_opslinx_tls(result, ipv6).await?,
++                }
++            }
 +        };
 +        Ok(Self { stream, addr, encrypt: None, send_timeout: ms_timeout })
 +    }
@@ -194,30 +211,21 @@ index 3a98a84..fedf19a 100644
      #[inline]
      pub fn set_raw(&mut self) {
          self.encrypt = None;
-@@ -452,6 +482,55 @@ impl WsFramedStream {
+@@ -452,6 +499,46 @@ impl WsFramedStream {
      }
  }
 
-+async fn connect_opslinx_dual_stack(addresses: &[SocketAddr]) -> io::Result<TcpStream> {
-+    let (v6, v4): (Vec<_>, Vec<_>) = addresses.iter().copied().partition(SocketAddr::is_ipv6);
-+    if v6.is_empty() || v4.is_empty() {
-+        return TcpStream::connect(addresses).await;
-+    }
-+    let ipv6 = TcpStream::connect(v6.as_slice());
-+    let ipv4 = async {
-+        tokio::time::sleep(Duration::from_millis(250)).await;
-+        TcpStream::connect(v4.as_slice()).await
++async fn finish_opslinx_tls(
++    first: ResultType<(WsStream, SocketAddr)>,
++    other: impl std::future::Future<Output = ResultType<(WsStream, SocketAddr)>>,
++) -> ResultType<(WsStream, SocketAddr)> {
++    let first_error = match first {
++        Ok(stream) => return Ok(stream),
++        Err(error) => error,
 +    };
-+    tokio::pin!(ipv6, ipv4);
-+    tokio::select! {
-+        result = &mut ipv6 => match result {
-+            Ok(socket) => Ok(socket),
-+            Err(_) => ipv4.await,
-+        },
-+        result = &mut ipv4 => match result {
-+            Ok(socket) => Ok(socket),
-+            Err(_) => ipv6.await,
-+        },
++    match other.await {
++        Err(_) if !opslinx_tls_unavailable(&first_error) => Err(first_error),
++        result => result,
 +    }
 +}
 +

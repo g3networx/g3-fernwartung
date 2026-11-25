@@ -763,7 +763,7 @@ impl RendezvousMediator {
         #[cfg(feature = "opslinx-tls-registration")]
         if let Some(domain) = tls_registration_host(&host) {
             let url = format!("wss://{domain}/ws/register");
-            match hbb_common::websocket::WsFramedStream::new_verified(&url, 4_000).await {
+            match hbb_common::websocket::WsFramedStream::new_verified(&url, 6_000).await {
                 Ok(connection) => return Self::start_tls(server, host, connection).await,
                 Err(error) if hbb_common::websocket::opslinx_tls_unavailable(&error) => {
                     log::info!("OpsLinX registration TLS/443 unavailable; using legacy registration");
