@@ -105,6 +105,12 @@ mod opslinx_tls_tests {
         assert!(!opslinx_tls_unavailable(&certificate.into()));
         assert!(!opslinx_tls_unavailable(&hbb_common::anyhow::anyhow!("registration rejected")));
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_port_block_is_a_transport_failure() {
+        assert!(opslinx_tls_unavailable(&Error::from_raw_os_error(10013).into()));
+    }
 }
 
 fn connection_meta(

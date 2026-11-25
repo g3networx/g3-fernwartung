@@ -145,7 +145,7 @@ index b457bbe..c7b47cc 100644
  impl Encrypt {
      pub fn new(key: Key) -> Self {
 diff --git a/src/websocket.rs b/src/websocket.rs
-index 3a98a84..ab201ea 100644
+index 3a98a84..fedf19a 100644
 --- a/src/websocket.rs
 +++ b/src/websocket.rs
 @@ -292,7 +292,7 @@ impl WsFramedStream {
@@ -194,7 +194,7 @@ index 3a98a84..ab201ea 100644
      #[inline]
      pub fn set_raw(&mut self) {
          self.encrypt = None;
-@@ -452,6 +482,54 @@ impl WsFramedStream {
+@@ -452,6 +482,55 @@ impl WsFramedStream {
      }
  }
 
@@ -232,6 +232,7 @@ index 3a98a84..ab201ea 100644
 +        matches!(error.kind(), ErrorKind::ConnectionRefused | ErrorKind::ConnectionReset
 +            | ErrorKind::ConnectionAborted | ErrorKind::NotConnected | ErrorKind::TimedOut
 +            | ErrorKind::UnexpectedEof)
++            || (cfg!(windows) && matches!(error.raw_os_error(), Some(10013 | 10051 | 10065)))
 +    }
 +    error.chain().any(|cause| {
 +        if let Some(ws) = cause.downcast_ref::<tungstenite::Error>() {

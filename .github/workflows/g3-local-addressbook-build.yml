@@ -1,5 +1,6 @@
 # Internal1.60.19994: ignore only confirmed exited processes; live/unknown states and native lease remain blocking.
 # Registry authority includes daemon-confirmed GUI writes and seed-only Web enrollment.
+# The TLS lab covers the Windows outbound-firewall failure mode.
 name: g3 OpsLinX Windows (20161, g3.7.0, TLS)
 on:
   push:
