@@ -5,11 +5,19 @@ on:
     # schedule build every night
     - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      publish-nightly:
+        description: Publish the built files to the nightly prerelease
+        type: boolean
+        default: false
 
 jobs:
   run-flutter-nightly-build:
+    permissions:
+      contents: write
     uses: ./.github/workflows/flutter-build.yml
     secrets: inherit
     with:
       upload-artifact: true
+      publish-release: ${{ github.event_name == 'schedule' || inputs.publish-nightly }}
       upload-tag: "nightly"
