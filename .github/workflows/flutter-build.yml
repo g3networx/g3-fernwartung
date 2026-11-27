@@ -2068,6 +2068,7 @@ jobs:
               distro: ubuntu18.04,
               deb_arch: amd64,
               sciter_arch: x64,
+              sciter_sha256: a1682fbf55e004f1862d6ace31b5220121d20906bdbf308d0a9237b451e4db86,
               vcpkg-triplet: x64-linux,
               extra_features: ",hwcodec,unix-file-copy-paste",
             }
@@ -2078,6 +2079,7 @@ jobs:
               distro: ubuntu18.04-rustdesk,
               deb_arch: armhf,
               sciter_arch: arm32,
+              sciter_sha256: e68092ef9182ab42c69f0954de5709ccc9266a2e73af47dc1eeab3a5114fe435,
               vcpkg-triplet: arm-linux,
               extra_features: ",unix-file-copy-paste",
             }
@@ -2093,6 +2095,19 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Download and verify the Sciter runtime
+        env:
+          SCITER_ARCH: ${{ matrix.job.sciter_arch }}
+          SCITER_SHA256: ${{ matrix.job.sciter_sha256 }}
+        run: |
+          sciter_revision=f33df075d9eb2f8d252cb88f1b2c8096e56197ed
+          runtime=.sciter-runtime/libsciter-gtk.so
+          mkdir -p .sciter-runtime
+          curl --fail --show-error --silent --location --connect-timeout 15 \
+            --max-time 60 --retry 4 --retry-all-errors --output "$runtime" \
+            "https://raw.githubusercontent.com/c-smile/sciter-sdk/${sciter_revision}/bin.lnx/${SCITER_ARCH}/libsciter-gtk.so"
+          printf '%s  %s\n' "$SCITER_SHA256" "$runtime" | sha256sum --check
 
       - name: Modify vcpkg.json for armv7
         if: matrix.job.vcpkg-triplet == 'arm-linux'
@@ -2266,7 +2281,7 @@ jobs:
             # make debian package
             mkdir -p ./Release
             mv ./target/release/rustdesk ./Release/rustdesk
-            wget -O ./Release/libsciter-gtk.so https://github.com/c-smile/sciter-sdk/raw/master/bin.lnx/${{ matrix.job.sciter_arch }}/libsciter-gtk.so
+            install -m 0644 .sciter-runtime/libsciter-gtk.so ./Release/libsciter-gtk.so
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             ./build.py --package ./Release
 
