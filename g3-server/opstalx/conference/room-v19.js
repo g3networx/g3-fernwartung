@@ -296,7 +296,10 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
     const note=scene?.textBox;
     textBox.hidden=!note?.text;
     get('moveTextBox').hidden=!host;
-    if(!note?.text)return;
+    if(!note?.text){
+      get('textBoxContent').textContent='';
+      return;
+    }
     const left=note.x*100,top=note.y*100;
     textBox.style.left='clamp(0px,calc('+left+'% - min(37.5%,140px)),calc(100% - min(75%,280px)))';
     textBox.style.top=top+'%';
@@ -322,7 +325,7 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
     get('guestCameras').hidden=!(mobileGuest && self);
     get('rearCamera').disabled=switchingCamera;
     get('frontCamera').disabled=switchingCamera;
-    get('freeze').disabled=!channel;
+    get('freeze').disabled=!secure || !channel;
     get('annotation').hidden=!scene;
     get('resume').hidden=!scene||!host;
     get('annotationTools').hidden=!scene||!host;
@@ -334,7 +337,13 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
       drawingScene=scene?.id;draft=undefined;textDrag=undefined;ink.replaceChildren();
     }
     renderTextBox();
-    if (!scene) { get('snapshot').removeAttribute('src'); return; }
+    if (!scene) {
+      get('snapshot').removeAttribute('src');
+      get('note').value='';
+      get('textBoxInput').value='';
+    }
+    if (!scene?.mark) get('caption').textContent='';
+    if (!scene) return;
     const src='data:image/jpeg;base64,'+scene.image;
     if(get('snapshot').getAttribute('src')!==src) get('snapshot').src=src;
     if(scene.mark) {
@@ -385,6 +394,7 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
         clearInterval(transportWatch);
         secure=true;
         meetingFrame.inert=false;
+        channel=Boolean(room.rtc?._channel?.isOpen?.());
         if(!jwt) void api.isVideoMuted().then(muted=>{
           if(muted&&secure&&room.isE2EEEnabled())api.executeCommand('toggleVideo');
         }).catch(()=>status('Die Kamera konnte nicht automatisch gestartet werden.'));
@@ -397,14 +407,23 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
       // Older WebViews replace the peer connection when enabling encoded streams.
       // Let Jicofo acknowledge the initial muted session before requesting the replacement.
       const sessionStarted='conference.media_session.started';
+      let requested=false;
       const begin=()=>{
+        if(requested)return;
+        requested=true;
         room.off(sessionStarted,begin);
         if (!secure) api.executeCommand('toggleE2EE',true);
       };
       room.on(sessionStarted,begin);
       const unsubscribe=stopEncryptionWatch;
       stopEncryptionWatch=()=>{room.off(sessionStarted,begin);unsubscribe();};
-      transportWatch=setInterval(verifyEncryption,200);
+      const checkTransport=()=>{
+        // The session event may have fired before the iframe reported that it joined.
+        if(connected())begin();
+        verifyEncryption();
+      };
+      transportWatch=setInterval(checkTransport,200);
+      checkTransport();
     } else {
       api.executeCommand('toggleE2EE',true);
     }
@@ -423,13 +442,16 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
     }
   });
   api.on('dataChannelOpened',()=>{channel=true;render();void syncModerator();});
+  api.on('dataChannelClosed',()=>{channel=false;render();});
   api.on('participantLeft',e=>{
     if (e.id===lightController) resetLight();
     if (e.id===lightPeer) {
       clearTimeout(lightRequest?.timeout);
       lightRequest=undefined;lightPeer=undefined;lightOn=false;render();
     }
-    if(e.id===author){scene=undefined;incoming=undefined;author=undefined;render();}
+    if(e.id===author || e.id===scene?.peerId){
+      scene=undefined;incoming=undefined;author=undefined;render();
+    }
   });
   api.on('videoConferenceLeft',()=>{
     stopBackgroundBudget?.();
@@ -489,25 +511,50 @@ import {annotationKey, openAnnotation, sealAnnotation, sealInvitation, verifyInv
       button.disabled=false;
     }
   };
-  get('freeze').onclick=()=>{
-    if(!host||!channel)return;
-    const frame=api.getIFrame().contentDocument;
-    const videos=[...frame.querySelectorAll('video')].filter(v=>v.videoWidth&&v.readyState>=2);
-    const local=localVideoTrack();
-    const remote=videos.find(v=>/^remoteVideo_/i.test(v.id)) ||
-      videos.find(v=>v.id==='largeVideo'&&v.srcObject?.getVideoTracks?.().some(t=>t!==local));
-    if(!remote){status('Das Kamerabild des Gastes ist noch nicht verfügbar.');return;}
+  get('freeze').onclick=async()=>{
+    if(!host||!channel||!secure)return;
+    const iframe=api.getIFrame();
+    const tracks=iframe.contentWindow?.APP?.store?.getState()['features/base/tracks'] || [];
+    const guestCamera=tracks.find(track=>!track.local && track.mediaType==='video'
+      && track.videoType!=='desktop' && track.jitsiTrack?.getTrack?.()?.readyState==='live');
+    const guestTrack=guestCamera?.jitsiTrack?.getTrack?.();
+    const guestId=guestCamera?.participantId ?? guestCamera?.jitsiTrack?.getParticipantId?.();
+    if(!guestTrack){status('Das Kamerabild des Gastes ist noch nicht verfügbar.');return;}
+    const session=self;
+    const remote=document.createElement('video');
+    remote.muted=true;
+    remote.playsInline=true;
+    remote.srcObject=new MediaStream([guestTrack]);
     const canvas=document.createElement('canvas');
     let image;
-    for(const limit of [720,480]){
-      const scale=Math.min(1,limit/Math.max(remote.videoWidth,remote.videoHeight));
-      canvas.width=Math.round(remote.videoWidth*scale);canvas.height=Math.round(remote.videoHeight*scale);
-      canvas.getContext('2d').drawImage(remote,0,0,canvas.width,canvas.height);
-      image=canvas.toDataURL('image/jpeg',.62).split(',')[1];
-      if(image&&image.length<=90000)break;
+    let deadline;
+    try {
+      const playing=await Promise.race([
+        remote.play().then(()=>true),
+        new Promise(resolve=>{deadline=setTimeout(()=>resolve(false),2500);}),
+      ]);
+      if(!host||!channel||!secure||self!==session||guestTrack.readyState!=='live')return;
+      if(!playing||remote.readyState<2||!remote.videoWidth||!remote.videoHeight){
+        status('Das Kamerabild des Gastes ist noch nicht verfügbar.');return;
+      }
+      for(const limit of [720,480]){
+        const scale=Math.min(1,limit/Math.max(remote.videoWidth,remote.videoHeight));
+        canvas.width=Math.round(remote.videoWidth*scale);canvas.height=Math.round(remote.videoHeight*scale);
+        canvas.getContext('2d').drawImage(remote,0,0,canvas.width,canvas.height);
+        image=canvas.toDataURL('image/jpeg',.62).split(',')[1];
+        if(image&&image.length<=90000)break;
+      }
+    } catch (_) {
+      if(self===session)status('Standbild konnte nicht aufgenommen werden.');
+      return;
+    } finally {
+      clearTimeout(deadline);
+      remote.pause();
+      remote.srcObject=null;
+      canvas.width=canvas.height=0;
     }
     if(!image||image.length>90000){status('Standbild konnte nicht geteilt werden.');return;}
-    scene={id:crypto.randomUUID(),image};
+    scene={id:crypto.randomUUID(),image,peerId:guestId};
     const parts=Math.ceil(image.length/imageChunkSize);
     for(let i=0;i<parts;i++) send({type:'image',id:scene.id,i,parts,data:image.slice(i*imageChunkSize,(i+1)*imageChunkSize)});
     render();
